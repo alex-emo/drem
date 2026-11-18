@@ -326,8 +326,11 @@ audit_logs(id, user_id, action, ip, created_at)
 - IndexedDB 持久化（会话/消息）、刷新后恢复上次会话、主题偏好持久化
 - 错误态：无 Key 时 503 可读提示；无效 Key 时上游 401 映射为 502 并透出信息
 - `DREAM_MOCK=1` 本地模拟流，便于无 Key 演示与回归
+- 设置弹窗（通用设置 / 数据管理）
+- 导入 DeepSeek 客户端导出 ZIP（格式版本 3）：按 `current_message_id` 还原当前分支，导入提问、回答、思考；重复会话去重；附件暂不支持
+- 真实 API 联调通过：`deepseek-chat` / `deepseek-reasoner` 均由账号映射到 `deepseek-flash`，思考流返回 `reasoning_content`
 
-验证证据：`npm run typecheck` 与 `npm run build` 通过；浏览器实测新建/切换/删除会话、流式输出、停止生成、刷新恢复、深浅色切换均正常；对 `api.deepseek.com` 的 401 映射测试成功（使用无效 Key）。
+验证证据：`npm run typecheck` 与 `npm run build` 通过；浏览器实测新建/切换/删除会话、流式输出、停止生成、刷新恢复、深浅色切换均正常；对 `api.deepseek.com` 用真实 Key 联调普通回复与深度思考成功（401 映射测试用无效 Key 完成）；导入用构造的 DeepSeek 导出 ZIP 验证（2 会话、分支裁剪、思考块、重复导入跳过、损坏 ZIP 错误提示）。
 
 **实现口径说明**：
 

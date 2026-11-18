@@ -46,6 +46,23 @@ export async function putMessage(message: Message): Promise<void> {
   await db.put("messages", message);
 }
 
+export async function importConversationData(
+  conversations: Conversation[],
+  messages: Message[],
+): Promise<void> {
+  const db = await dbPromise;
+  const tx = db.transaction(["conversations", "messages"], "readwrite");
+  const conversationStore = tx.objectStore("conversations");
+  const messageStore = tx.objectStore("messages");
+  for (const conversation of conversations) {
+    await conversationStore.put(conversation);
+  }
+  for (const message of messages) {
+    await messageStore.put(message);
+  }
+  await tx.done;
+}
+
 export async function deleteConversationData(conversationId: string): Promise<void> {
   const db = await dbPromise;
   const tx = db.transaction(["conversations", "messages"], "readwrite");

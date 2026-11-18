@@ -1,0 +1,225 @@
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import type { ImportOutcome } from "../hooks/useChat";
+import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
+import type { HealthInfo, Theme } from "../lib/types";
+import { CloseIcon, DatabaseIcon, SettingsIcon } from "./Icons";
+
+type Tab = "general" | "data";
+
+type ImportState =
+  | { kind: "idle" }
+  | { kind: "working" }
+  | { kind: "ok"; text: string }
+  | { kind: "error"; text: string };
+
+interface SettingsDialogProps {
+  open: boolean;
+  theme: Theme;
+  health: HealthInfo | null;
+  onClose: () => void;
+  onThemeChange: (theme: Theme) => void;
+  onImport: (archive: Awaited<ReturnType<typeof parseDeepSeekArchive>>) => Promise<ImportOutcome>;
+}
+
+function serverState(health: HealthInfo | null): string {
+  if (!health) return "正在检查…";
+  if (!health.ok) return "未连接本地服务端";
+  if (health.mock) return "演示模式（本地模拟）";
+  if (!health.hasKey) return "服务端已启动，但未配置 DEEPSEEK_API_KEY";
+  return "已连接 DeepSeek API";
+}
+
+export default function SettingsDialog({
+  open,
+  theme,
+  health,
+  onClose,
+  onThemeChange,
+  onImport,
+}: SettingsDialogProps) {
+  const [tab, setTab] = useState<Tab>("data");
+  const [state, setState] = useState<ImportState>({ kind: "idle" });
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previous;
+    };
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setState({ kind: "idle" });
+      setTab("data");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const pickFile = () => {
+    if (state.kind === "working") return;
+    inputRef.current?.click();
+  };
+
+  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setState({ kind: "working" });
+    try {
+      const archive = await parseDeepSeekArchive(file);
+      const outcome = await onImport(archive);
+      if (outcome.added === 0 && outcome.skipped > 0) {
+        setState({
+          kind: "ok",
+          text: `这 ${outcome.skipped} 个对话之前已经导入过，无需重复导入。`,
+        });
+        return;
+      }
+      const extra: string[] = [];
+      if (outcome.skipped > 0) extra.push(`跳过 ${outcome.skipped} 个已存在的对话`);
+      if (outcome.skippedMessages > 0) extra.push(`${outcome.skippedMessages} 条仅含附件/工具调用的消息未导入`);
+      if (outcome.attachments > 0) extra.push(`${outcome.attachments} 个附件暂不导入`);
+      setState({
+        kind: "ok",
+        text: `已导入 ${outcome.added} 个对话、${outcome.messages} 条消息${extra.length ? `；${extra.join("，")}` : ""}。`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof ImportError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "导入失败，请稍后重试。";
+      setState({ kind: "error", text: message });
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="settings"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="settings-head">
+          <h2 id="settings-title">设置</h2>
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="关闭设置">
+            <CloseIcon size={18} />
+          </button>
+        </header>
+
+        <div className="settings-body">
+          <nav className="settings-nav" aria-label="设置分类">
+            <button
+              type="button"
+              className={`settings-tab${tab === "general" ? " active" : ""}`}
+              onClick={() => setTab("general")}
+            >
+              <SettingsIcon size={16} />
+              <span>通用设置</span>
+            </button>
+            <button
+              type="button"
+              className={`settings-tab${tab === "data" ? " active" : ""}`}
+              onClick={() => setTab("data")}
+            >
+              <DatabaseIcon size={16} />
+              <span>数据管理</span>
+            </button>
+          </nav>
+
+          <div className="settings-pane">
+            {tab === "general" ? (
+              <>
+                <section className="settings-section">
+                  <h3>外观</h3>
+                  <div className="segmented" role="group" aria-label="主题">
+                    <button
+                      type="button"
+                      className={theme === "light" ? "active" : ""}
+                      aria-pressed={theme === "light"}
+                      onClick={() => onThemeChange("light")}
+                    >
+                      浅色
+                    </button>
+                    <button
+                      type="button"
+                      className={theme === "dark" ? "active" : ""}
+                      aria-pressed={theme === "dark"}
+                      onClick={() => onThemeChange("dark")}
+                    >
+                      深色
+                    </button>
+                  </div>
+                </section>
+
+                <section className="settings-section">
+                  <h3>数据存储</h3>
+                  <p className="settings-note">
+                    对话记录只保存在当前浏览器的 IndexedDB 中，不会上传到 Dream 服务端。发送消息时，内容会经本地服务端转发给 DeepSeek。
+                  </p>
+                </section>
+
+                <section className="settings-section">
+                  <h3>服务状态</h3>
+                  <p className="settings-note">{serverState(health)}</p>
+                </section>
+              </>
+            ) : (
+              <section className="settings-section">
+                <h3>导入历史对话</h3>
+                <p className="settings-note">
+                  支持 DeepSeek 客户端导出的 <code>deepseek_data-*.zip</code>。会导入提问、回答和深度思考内容；
+                  图片与文件附件暂不支持。导入不会删除现有对话，重复导入同一会话会自动跳过。
+                </p>
+
+                <div className="settings-action">
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={pickFile}
+                    disabled={state.kind === "working"}
+                  >
+                    {state.kind === "working" ? "正在解析…" : "选择 ZIP 文件"}
+                  </button>
+                  <span className="settings-hint">在 DeepSeek App 的「设置 → 数据管理」中导出聊天记录</span>
+                </div>
+
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept=".zip,application/zip"
+                  className="visually-hidden"
+                  onChange={(event) => void handleFile(event)}
+                />
+
+                {state.kind === "ok" ? (
+                  <p className="import-status ok" role="status">
+                    {state.text}
+                  </p>
+                ) : null}
+                {state.kind === "error" ? (
+                  <p className="import-status error" role="alert">
+                    {state.text}
+                  </p>
+                ) : null}
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

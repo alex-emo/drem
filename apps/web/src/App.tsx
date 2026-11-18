@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import ChatView from "./components/ChatView";
+import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
 import type { HealthInfo, Theme } from "./lib/types";
@@ -16,6 +17,7 @@ export default function App() {
   const chat = useChat();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 820);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [health, setHealth] = useState<HealthInfo | null>(null);
 
   useEffect(() => {
@@ -70,9 +72,21 @@ export default function App() {
           }
         }}
         onToggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+        onOpenSettings={() => {
+          setSettingsOpen(true);
+          closeOnMobile();
+        }}
       />
       {sidebarOpen ? <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} /> : null}
       <ChatView chat={chat} health={health} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
+      <SettingsDialog
+        open={settingsOpen}
+        theme={theme}
+        health={health}
+        onClose={() => setSettingsOpen(false)}
+        onThemeChange={setTheme}
+        onImport={chat.importHistory}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 一个尽可能贴近 **DeepSeek C 端体验**的聊天客户端：**Web 优先**，服务端负责持有 API Key 并转发流式回复，聊天记录只保存在浏览器本地。
 
-当前版本 **v0.1（M0 Web MVP）**：可以完成「新建对话 → 输入文本 → 服务端转发 DeepSeek → SSE 流式渲染 → 本地持久化」的完整链路。
+当前版本 **v0.2（M0 + 历史导入）**：可以完成「新建对话 → 输入文本 → 服务端转发 DeepSeek → SSE 流式渲染 → 本地持久化」，并能导入 DeepSeek 客户端导出的聊天记录 ZIP。真实 API 已用 `deepseek-chat` / `deepseek-reasoner` 联调通过。
 
 | 深色 · 空态 | 深色 · 对话 |
 | --- | --- |
@@ -11,6 +11,14 @@
 | 深度思考 | 浅色主题 |
 | --- | --- |
 | ![thinking](docs/screenshots/thinking-dark.png) | ![chat light](docs/screenshots/chat-light.png) |
+
+| 导入历史对话 | 导入后的会话 |
+| --- | --- |
+| ![import](docs/screenshots/settings-import-dark.png) | ![imported](docs/screenshots/imported-chat-dark.png) |
+
+| 真实 DeepSeek API 流式回复 |
+| --- |
+| ![real api](docs/screenshots/real-api-dark.png) |
 
 ## 架构
 
@@ -34,7 +42,7 @@
 
 | 层 | 选型 |
 | --- | --- |
-| Web | React 18.3、TypeScript 5.9、Vite 7、`idb` 8 |
+| Web | React 18.3、TypeScript 5.9、Vite 7、`idb` 8、`fflate`（ZIP 解压） |
 | Markdown | `react-markdown` 10、`remark-gfm` 4、`rehype-highlight` 7 |
 | 服务端 | Node 22+（开发用 26）、Hono 4、`@hono/node-server`、tsx |
 | 存储 | 浏览器 IndexedDB（库名 `dream`）；服务端暂无数据库 |
@@ -78,10 +86,11 @@ apps/
     src/config.ts         # .env 加载与配置
   web/                    # Web 客户端
     src/App.tsx           # 应用外壳、主题、侧边栏状态
-    src/hooks/useChat.ts  # 会话/消息状态机、流式累积、持久化
+    src/hooks/useChat.ts  # 会话/消息状态机、流式累积、持久化、历史导入
     src/lib/api.ts        # SSE 客户端解析
     src/lib/db.ts         # IndexedDB（idb）
-    src/components/       # Sidebar / ChatView / MessageList / Composer / Markdown
+    src/lib/importArchive.ts # DeepSeek 导出 ZIP 解析与格式校验
+    src/components/       # Sidebar / ChatView / MessageList / Composer / Markdown / SettingsDialog
     src/styles/           # 设计 token 与布局（对齐实测 DeepSeek 视觉）
 docs/
   feature-teardown.md     # DeepSeek C 端功能拆解、优先级与实现规格
@@ -100,6 +109,8 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 错误处理：未配置 Key、上游鉴权失败、网络失败会在消息内展示可读错误
 - 界面：深/浅色主题、桌面/移动端响应式侧边栏、空态、健康状态提示条
 - 服务端：请求校验（条数/长度/角色）、SSE 头、AbortSignal 传播、错误信息透出
+- 设置弹窗：通用设置（外观、服务状态）与数据管理
+- 导入历史对话：解析 DeepSeek 客户端导出的 `deepseek_data-*.zip`（格式版本 3），按 `current_message_id` 还原当前分支，导入提问、回答与深度思考；重复会话自动跳过，图片/文件附件暂不导入
 
 ## 服务端接口
 
@@ -135,6 +146,19 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 
 > 如果账号侧模型名发生变化（例如只提供 `deepseek-flash`），修改 `DREAM_MODEL` / `DREAM_REASONER_MODEL` 即可，无需改代码。
 
+## 导入历史对话
+
+入口：左下角「设置」→「数据管理」→「选择 ZIP 文件」。
+
+支持 DeepSeek 客户端导出的 `deepseek_data-*.zip`（导出格式版本 3）：
+
+- 按每个会话的 `current_message_id` 沿 `parent_id` 还原**当前分支**，不会把已切换走的分支混进来
+- 导入提问（`REQUEST`）、回答（`RESPONSE`）、模板回复（`TEMPLATE_RESPONSE`）与思考（`THINK`）
+- 原回复状态映射：失败/超时标记为错误；`INCOMPLETE`/`WIP` 视为停止并保留已生成内容
+- 会话 id 使用 `ds-<导出会话 id>`；重复导入自动跳过，不会覆盖本地修改
+- 图片与文件附件暂不支持，会在结果里提示数量
+- 导入在浏览器内完成，ZIP 不会上传到服务端
+
 ## 本地数据
 
 - IndexedDB 库名 `dream`，v1：
@@ -151,9 +175,10 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 登录、单一设备会话、用户管理后台（服务端当前无鉴权，请勿直接暴露公网）
 - 智能搜索 / 阅读链接 / 文件上传与解析 / 图片理解（DeepSeek 服务端工具）
 - 重新生成、编辑消息、消息分支、继续生成
-- 语音输入 / 朗读、KaTeX、Mermaid、导入导出 DeepSeek ZIP
+- 语音输入 / 朗读、KaTeX、Mermaid
+- 导出聊天记录、导入图片与附件、更多数据管理操作
 - Android（Capacitor）打包、PWA
-- 设置页（语言、所在地、数据管理）
+- 设置页其余项（语言、所在地）
 
 优先级与交互规格见 [docs/feature-teardown.md](docs/feature-teardown.md)。
 
@@ -166,12 +191,15 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 | M2 | 重新生成 / 编辑 / 分支 / 继续生成、会话搜索、设置页 |
 | M3 | 智能搜索、阅读链接、文件上传与解析、引用渲染 |
 | M4 | Capacitor Android 壳、录音权限、TTS、返回键与安全区 |
-| M5 | 导入导出、数据管理、用量统计、审计 |
+| M5 | 导出、完整数据管理、用量统计、审计 |
+
+> M0.5（已完成）：DeepSeek 导出 ZIP 导入、真实 API 联调、设置弹窗。
 
 ## 已知限制
 
-- **真实 DeepSeek API 尚未联调**（本机没有 Key）：链路已按官方 Chat Completions SSE 格式实现，填入 Key 后即可验证；如遇模型名或参数差异，改环境变量或 `apps/server/src/deepseek.ts`。
+- 真实 API 已联调：`deepseek-chat` 与 `deepseek-reasoner` 当前都会落到账号可用的 `deepseek-flash`（后者自动带思考）。如果账号模型名变化，改 `DREAM_MODEL` / `DREAM_REASONER_MODEL` 即可。
 - 只支持纯文本请求；消息里的 Markdown 只做展示，不参与多模态。
+- 导入仅支持 DeepSeek 导出格式版本 3 的文本内容；附件、图片、工具调用细节不会保留。
 - 停止生成会保留已生成的部分内容，暂不支持「继续生成」。
 - 单进程单密钥，无多租户配额；上线前必须补鉴权与限流。
 - pnpm 在「home 目录只读」的沙箱里可能因 store 锁失败，此时用 `npm install`（仓库已配置 npm workspaces）即可。

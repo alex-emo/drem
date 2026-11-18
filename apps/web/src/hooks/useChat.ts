@@ -1,8 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { streamChat } from "../lib/api";
-import { deleteConversationData, getMessages, listConversations, putConversation, putMessage } from "../lib/db";
+import {
+  deleteConversationData,
+  getMessages,
+  importConversationData,
+  listConversations,
+  putConversation,
+  putMessage,
+} from "../lib/db";
+import type { ImportedArchive } from "../lib/importArchive";
 import type { Conversation, Message } from "../lib/types";
 import { makeTitle, newId } from "../lib/utils";
+
+export interface ImportOutcome {
+  added: number;
+  skipped: number;
+  messages: number;
+  skippedMessages: number;
+  attachments: number;
+}
 
 export type ChatController = ReturnType<typeof useChat>;
 
@@ -104,6 +120,35 @@ export function useChat() {
       remember(null);
     }
   }, []);
+
+  const importHistory = useCallback(
+    async (archive: ImportedArchive): Promise<ImportOutcome> => {
+      const existing = new Set(conversationsRef.current.map((conversation) => conversation.id));
+      const fresh = archive.conversations.filter((conversation) => !existing.has(conversation.id));
+      const freshIds = new Set(fresh.map((conversation) => conversation.id));
+      const freshMessages = archive.messages.filter((message) =>
+        freshIds.has(message.conversationId),
+      );
+
+      if (fresh.length > 0) {
+        await importConversationData(fresh, freshMessages);
+        const items = await listConversations();
+        conversationsRef.current = items;
+        setConversations(items);
+        const newest = fresh.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
+        await openConversation(newest.id);
+      }
+
+      return {
+        added: fresh.length,
+        skipped: archive.conversations.length - fresh.length,
+        messages: freshMessages.length,
+        skippedMessages: archive.stats.skippedMessages,
+        attachments: archive.stats.attachments,
+      };
+    },
+    [openConversation],
+  );
 
   const sendMessage = useCallback(
     async (raw: string) => {
@@ -258,5 +303,6 @@ export function useChat() {
     newChat,
     openConversation,
     removeConversation,
+    importHistory,
   };
 }

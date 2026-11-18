@@ -1,5 +1,5 @@
 import type { Conversation, Theme } from "../lib/types";
-import { MoonIcon, PlusIcon, SidebarIcon, SunIcon, TrashIcon } from "./Icons";
+import { MoonIcon, PlusIcon, SettingsIcon, SidebarIcon, SunIcon, TrashIcon } from "./Icons";
 
 interface SidebarProps {
   conversations: Conversation[];
@@ -11,6 +11,7 @@ interface SidebarProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleTheme: () => void;
+  onOpenSettings: () => void;
 }
 
 export default function Sidebar({
@@ -23,6 +24,7 @@ export default function Sidebar({
   onSelect,
   onDelete,
   onToggleTheme,
+  onOpenSettings,
 }: SidebarProps) {
   return (
     <aside className={`sidebar${open ? " open" : ""}`} aria-label="会话列表">
@@ -80,16 +82,28 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar-foot">
-        <button
-          type="button"
-          className="theme-toggle"
-          onClick={onToggleTheme}
-          aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
-        >
-          {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
-          <span>{theme === "dark" ? "浅色模式" : "深色模式"}</span>
-        </button>
-        <span className="version">v0.1</span>
+        <div className="sidebar-foot-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={onToggleTheme}
+            aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+          >
+            {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+            <span>{theme === "dark" ? "浅色模式" : "深色模式"}</span>
+          </button>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={onOpenSettings}
+            aria-label="打开设置"
+            title="设置"
+          >
+            <SettingsIcon size={16} />
+            <span>设置</span>
+          </button>
+        </div>
+        <span className="version">v0.2</span>
       </div>
     </aside>
   );
