@@ -314,6 +314,29 @@ audit_logs(id, user_id, action, ip, created_at)
 
 ---
 
+## 12. 实现进度（2026-11-18）
+
+**M0 已完成并在本地验证**（Web 客户端 + 本地转发服务）：
+
+- monorepo（`apps/web`、`apps/server`）、统一 dev 脚本、README 与截图
+- 设计 token 落地：深/浅色主题、侧边栏 264px、气泡/输入区/代码块样式、移动端断点
+- `POST /api/chat` 服务端校验 + DeepSeek Chat Completions SSE 透传 + AbortSignal 传播
+- Web 流式渲染、停止生成、Markdown/GFM/代码高亮/复制、多轮上下文、自动标题
+- 深度思考开关与 `reasoning_content` 折叠块
+- IndexedDB 持久化（会话/消息）、刷新后恢复上次会话、主题偏好持久化
+- 错误态：无 Key 时 503 可读提示；无效 Key 时上游 401 映射为 502 并透出信息
+- `DREAM_MOCK=1` 本地模拟流，便于无 Key 演示与回归
+
+验证证据：`npm run typecheck` 与 `npm run build` 通过；浏览器实测新建/切换/删除会话、流式输出、停止生成、刷新恢复、深浅色切换均正常；对 `api.deepseek.com` 的 401 映射测试成功（使用无效 Key）。
+
+**实现口径说明**：
+
+- 首版选择自研 React 界面（未 fork chat-demo），按其 UI 规格与实测 token 对齐。
+- 服务端只转发文本 Chat Completions，尚未接入新的 Messages/Files 全家桶工具。
+- 登录、单设备、用户管理尚未实现（M1 下一步）。
+
+---
+
 ## 附：参考链接
 
 - 全家桶应用 API 发布：https://api-docs.deepseek.com/zh-cn/news/news261113/
