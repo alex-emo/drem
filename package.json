@@ -1,0 +1,17 @@
+{
+  "name": "dream",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Dream - a DeepSeek-like chat client (web first, Android via Capacitor later)",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm run dev --workspace @dream/web",
+    "dev:server": "npm run dev --workspace @dream/server",
+    "build": "npm run build --workspace @dream/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "start": "npm run start --workspace @dream/server"
+  },
+  "workspaces": [
+    "apps/*"
+  ]
+}
