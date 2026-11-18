@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ImportOutcome } from "../hooks/useChat";
 import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
-import type { HealthInfo, Theme } from "../lib/types";
+import type { HealthState, Theme } from "../lib/types";
 import { CloseIcon, DatabaseIcon, SettingsIcon } from "./Icons";
 
 type Tab = "general" | "data";
@@ -15,17 +15,17 @@ type ImportState =
 interface SettingsDialogProps {
   open: boolean;
   theme: Theme;
-  health: HealthInfo | null;
+  health: HealthState;
   onClose: () => void;
   onThemeChange: (theme: Theme) => void;
   onImport: (archive: Awaited<ReturnType<typeof parseDeepSeekArchive>>) => Promise<ImportOutcome>;
 }
 
-function serverState(health: HealthInfo | null): string {
-  if (!health) return "正在检查…";
-  if (!health.ok) return "未连接本地服务端";
-  if (health.mock) return "演示模式（本地模拟）";
-  if (!health.hasKey) return "服务端已启动，但未配置 DEEPSEEK_API_KEY";
+function serverState(health: HealthState): string {
+  if (health.kind === "loading") return "正在检查…";
+  if (health.kind === "error") return "未连接本地服务端";
+  if (health.info.mock) return "演示模式（本地模拟）";
+  if (!health.info.hasApiKey) return "服务端已启动，但未配置 DEEPSEEK_API_KEY";
   return "已连接 DeepSeek API";
 }
 

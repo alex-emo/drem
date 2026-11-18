@@ -23,8 +23,19 @@ export interface Message {
 }
 
 export interface HealthInfo {
-  ok: boolean;
+  status: "ok" | "degraded";
+  apiVersion: string;
+  serverVersion: string;
+  serverTime: string;
   mock: boolean;
-  hasKey: boolean;
-  model?: string;
+  hasApiKey: boolean;
+  models: {
+    default: string;
+    reasoner: string;
+  };
 }
+
+export type HealthState =
+  | { kind: "loading" }
+  | { kind: "ok"; info: HealthInfo }
+  | { kind: "error" };

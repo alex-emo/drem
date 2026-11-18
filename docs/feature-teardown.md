@@ -267,7 +267,7 @@ audit_logs(id, user_id, action, ip, created_at)
 | POST | `/api/auth/refresh` | 刷新 access token |
 | POST | `/api/auth/logout` | 注销当前设备 |
 | GET | `/api/me` | 用户信息 + 当前设备 |
-| POST | `/api/chat` | 透传 Messages API（SSE），服务端注入 `deepseek-flash`、`safety_check`、`title`、`latest_reminder` |
+| POST | `/api/v1/chat` | 流式对话（SSE 归一化事件），服务端注入模型与 Key；详见 `docs/api.md` |
 | POST | `/api/files` | multipart → Files API，返回 `file_id`/`purpose` |
 | POST | `/api/asr` | 音频 → 文本 |
 | POST | `/api/tts` | 文本 → 音频 |
@@ -320,7 +320,9 @@ audit_logs(id, user_id, action, ip, created_at)
 
 - monorepo（`apps/web`、`apps/server`）、统一 dev 脚本、README 与截图
 - 设计 token 落地：深/浅色主题、侧边栏 264px、气泡/输入区/代码块样式、移动端断点
-- `POST /api/chat` 服务端校验 + DeepSeek Chat Completions SSE 透传 + AbortSignal 传播
+- `POST /api/v1/chat` 服务端校验 + 上游 SSE 解析归一化（start/thinking/delta/done/error）+ AbortSignal 传播
+- App ↔ Server 契约 v1 已固化：`docs/api.md`（权威）、`docs/openapi.yaml`；统一错误体与错误码、`X-Request-Id`
+- `/api/v1/health`（模式/模型/Key 状态）、`/api/v1/models`
 - Web 流式渲染、停止生成、Markdown/GFM/代码高亮/复制、多轮上下文、自动标题
 - 深度思考开关与 `reasoning_content` 折叠块
 - IndexedDB 持久化（会话/消息）、刷新后恢复上次会话、主题偏好持久化

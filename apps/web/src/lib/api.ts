@@ -1,60 +1,89 @@
 export interface ApiChatMessage {
-  role: "user" | "assistant";
+  role: "system" | "user" | "assistant";
   content: string;
+}
+
+export interface ChatStart {
+  requestId: string;
+  model: string;
+  thinking: boolean;
+  createdAt: string;
+}
+
+export interface ChatDone {
+  requestId: string;
+  finishReason: "stop" | "length" | "content_filter" | "unknown";
+  createdAt: string;
 }
 
 export interface StreamChatOptions {
   messages: ApiChatMessage[];
   thinking: boolean;
   signal: AbortSignal;
+  onStart?: (start: ChatStart) => void;
   onDelta: (text: string) => void;
   onReasoning: (text: string) => void;
+  onDone?: (done: ChatDone) => void;
 }
 
 export class ChatApiError extends Error {
   readonly status: number;
+  readonly code: string;
+  readonly requestId?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code = "UNKNOWN", requestId?: string) {
     super(message);
     this.name = "ChatApiError";
     this.status = status;
+    this.code = code;
+    this.requestId = requestId;
   }
 }
 
-interface ChatChunk {
-  error?: { message?: string } | string;
-  choices?: Array<{
-    delta?: {
-      content?: string;
-      reasoning_content?: string;
-    };
-  }>;
+interface ErrorBody {
+  error?: {
+    code?: string;
+    message?: string;
+    requestId?: string;
+  };
 }
 
-/** 请求本地服务端，解析 SSE 流并回调正文 / 思考内容。 */
-export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { messages, thinking, signal, onDelta, onReasoning } = options;
+export const CHAT_ENDPOINT = "/api/v1/chat";
 
-  const response = await fetch("/api/chat", {
+/**
+ * 请求 Dream Server，解析归一化后的 SSE 事件：
+ * start → (thinking | delta)* → done | error
+ */
+export async function streamChat(options: StreamChatOptions): Promise<void> {
+  const { messages, thinking, signal, onStart, onDelta, onReasoning, onDone } = options;
+
+  const response = await fetch(CHAT_ENDPOINT, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      accept: "text/event-stream",
+    },
     body: JSON.stringify({ messages, thinking }),
     signal,
   });
 
   if (!response.ok) {
-    let message = `请求失败（HTTP ${response.status}）`;
-    try {
-      const data = (await response.json()) as { error?: string };
-      if (data.error) message = data.error;
-    } catch {
-      // 保留默认提示
-    }
-    throw new ChatApiError(message, response.status);
+    const data = (await response.json().catch(() => null)) as ErrorBody | null;
+    throw new ChatApiError(
+      data?.error?.message ?? `请求失败（HTTP ${response.status}）`,
+      response.status,
+      data?.error?.code ?? "HTTP_ERROR",
+      data?.error?.requestId,
+    );
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    throw new ChatApiError("服务端返回了非流式响应", response.status, "INVALID_RESPONSE");
   }
 
   if (!response.body) {
-    throw new ChatApiError("当前浏览器不支持流式响应", 0);
+    throw new ChatApiError("当前浏览器不支持流式响应", 0, "NO_STREAM_SUPPORT");
   }
 
   const reader = response.body.getReader();
@@ -62,51 +91,93 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   let buffer = "";
 
   const handleBlock = (block: string): boolean => {
-    const dataLines = block
-      .split("\n")
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).replace(/^ /, ""));
-    if (dataLines.length === 0) return false;
+    let event = "message";
+    const dataLines: string[] = [];
 
+    for (const line of block.split("\n")) {
+      if (!line || line.startsWith(":")) continue;
+      if (line.startsWith("event:")) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).replace(/^ /, ""));
+      }
+    }
+
+    if (dataLines.length === 0) return false;
     const payload = dataLines.join("\n").trim();
     if (!payload) return false;
-    if (payload === "[DONE]") return true;
 
-    let chunk: ChatChunk;
+    let data: unknown;
     try {
-      chunk = JSON.parse(payload) as ChatChunk;
+      data = JSON.parse(payload) as unknown;
     } catch {
       return false;
     }
 
-    if (chunk.error) {
-      const message = typeof chunk.error === "string" ? chunk.error : chunk.error.message;
-      throw new ChatApiError(message ?? "生成失败，请稍后重试", 0);
+    switch (event) {
+      case "start": {
+        onStart?.(data as ChatStart);
+        return false;
+      }
+      case "delta": {
+        const delta = (data as { delta?: unknown }).delta;
+        if (typeof delta === "string" && delta) onDelta(delta);
+        return false;
+      }
+      case "thinking": {
+        const delta = (data as { delta?: unknown }).delta;
+        if (typeof delta === "string" && delta) onReasoning(delta);
+        return false;
+      }
+      case "done": {
+        onDone?.(data as ChatDone);
+        return true;
+      }
+      case "error": {
+        const error = (data as { error?: { code?: string; message?: string; requestId?: string } })
+          .error;
+        throw new ChatApiError(
+          error?.message ?? "生成失败，请稍后重试",
+          0,
+          error?.code ?? "UPSTREAM_ERROR",
+          error?.requestId,
+        );
+      }
+      default:
+        // 未知事件忽略，保留前向兼容空间
+        return false;
     }
+  };
 
-    const delta = chunk.choices?.[0]?.delta;
-    if (delta?.reasoning_content) onReasoning(delta.reasoning_content);
-    if (delta?.content) onDelta(delta.content);
+  const drain = async (end: boolean) => {
+    for (;;) {
+      const boundary = buffer.indexOf("\n\n");
+      if (boundary === -1) break;
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      if (handleBlock(block)) return true;
+    }
+    if (end && buffer.trim()) return handleBlock(buffer.replace(/\r\n/g, "\n"));
     return false;
   };
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      if (handleBlock(block)) {
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      if (await drain(false)) {
         await reader.cancel().catch(() => undefined);
         return;
       }
-      boundary = buffer.indexOf("\n\n");
     }
-  }
 
-  buffer += decoder.decode();
-  if (buffer.trim()) handleBlock(buffer.replace(/\r\n/g, "\n"));
+    buffer += decoder.decode();
+    if (await drain(true)) return;
+  } catch (err) {
+    await reader.cancel().catch(() => undefined);
+    throw err;
+  }
 }

@@ -3,7 +3,7 @@ import ChatView from "./components/ChatView";
 import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
-import type { HealthInfo, Theme } from "./lib/types";
+import type { HealthInfo, HealthState, Theme } from "./lib/types";
 
 function initialTheme(): Theme {
   try {
@@ -18,7 +18,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 820);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [health, setHealth] = useState<HealthInfo | null>(null);
+  const [health, setHealth] = useState<HealthState>({ kind: "loading" });
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -33,13 +33,16 @@ export default function App() {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/health")
-      .then((response) => response.json())
-      .then((data: HealthInfo) => {
-        if (alive) setHealth(data);
+    fetch("/api/v1/health")
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return (await response.json()) as HealthInfo;
+      })
+      .then((info) => {
+        if (alive) setHealth({ kind: "ok", info });
       })
       .catch(() => {
-        if (alive) setHealth({ ok: false, mock: false, hasKey: false });
+        if (alive) setHealth({ kind: "error" });
       });
     return () => {
       alive = false;

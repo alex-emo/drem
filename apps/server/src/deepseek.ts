@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { ApiError } from "./protocol.js";
 
 export type ChatRole = "system" | "user" | "assistant";
 
@@ -12,53 +13,69 @@ export interface ParsedChatRequest {
   thinking: boolean;
 }
 
-export class ChatRequestError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status = 400) {
-    super(message);
-    this.name = "ChatRequestError";
-    this.status = status;
-  }
-}
-
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 200_000;
 
 /** 校验客户端传来的纯文本消息，返回可转发给上游的结构。 */
 export function parseChatRequest(body: unknown): ParsedChatRequest {
-  if (typeof body !== "object" || body === null) {
-    throw new ChatRequestError("请求体必须是 JSON 对象");
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象");
   }
+
   const data = body as Record<string, unknown>;
+
+  if (data.thinking !== undefined && typeof data.thinking !== "boolean") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "thinking 必须是布尔值", [
+      { field: "thinking", reason: "type" },
+    ]);
+  }
   const thinking = data.thinking === true;
 
   if (!Array.isArray(data.messages) || data.messages.length === 0) {
-    throw new ChatRequestError("messages 不能为空");
+    throw new ApiError(400, "INVALID_ARGUMENT", "messages 不能为空", [
+      { field: "messages", reason: "至少需要一条消息" },
+    ]);
   }
   if (data.messages.length > MAX_MESSAGES) {
-    throw new ChatRequestError(`消息数量超过上限（${MAX_MESSAGES} 条）`);
+    throw new ApiError(400, "INVALID_ARGUMENT", `消息数量超过上限（${MAX_MESSAGES} 条）`, [
+      { field: "messages", reason: "too_many" },
+    ]);
   }
 
   const messages: ChatMessage[] = data.messages.map((item, index) => {
     if (typeof item !== "object" || item === null) {
-      throw new ChatRequestError(`messages[${index}] 格式不正确`);
+      throw new ApiError(400, "INVALID_ARGUMENT", `messages[${index}] 格式不正确`, [
+        { field: `messages[${index}]`, reason: "type" },
+      ]);
     }
     const { role, content } = item as Record<string, unknown>;
     if (role !== "system" && role !== "user" && role !== "assistant") {
-      throw new ChatRequestError(`messages[${index}].role 不合法`);
+      throw new ApiError(400, "INVALID_ARGUMENT", `messages[${index}].role 不合法`, [
+        { field: `messages[${index}].role`, reason: "enum" },
+      ]);
     }
     if (typeof content !== "string" || !content.trim()) {
-      throw new ChatRequestError(`messages[${index}].content 不能为空`);
+      throw new ApiError(400, "INVALID_ARGUMENT", `messages[${index}].content 不能为空`, [
+        { field: `messages[${index}].content`, reason: "required" },
+      ]);
     }
     if (content.length > MAX_CONTENT_LENGTH) {
-      throw new ChatRequestError(`messages[${index}].content 超过长度上限`);
+      throw new ApiError(400, "INVALID_ARGUMENT", `messages[${index}].content 超过长度上限`, [
+        { field: `messages[${index}].content`, reason: "too_long" },
+      ]);
     }
     return { role, content };
   });
 
-  if (!messages.some((m) => m.role === "user")) {
-    throw new ChatRequestError("至少需要一条 user 消息");
+  if (!messages.some((message) => message.role === "user")) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "至少需要一条 user 消息", [
+      { field: "messages", reason: "missing_user" },
+    ]);
+  }
+  if (messages[messages.length - 1]?.role !== "user") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "最后一条消息必须是 user", [
+      { field: "messages", reason: "last_must_be_user" },
+    ]);
   }
 
   return { messages, thinking };
@@ -77,21 +94,20 @@ function extractErrorDetail(raw: string): string {
 }
 
 /**
- * 请求 DeepSeek chat/completions（stream=true），返回上游 SSE 流。
+ * 请求 DeepSeek chat/completions（stream=true），返回上游 SSE 字节流。
  * 客户端断开时通过 signal 中止上游请求。
  */
-export async function proxyChatStream(
+export async function openChatStream(
   parsed: ParsedChatRequest,
   clientSignal: AbortSignal,
 ): Promise<ReadableStream<Uint8Array>> {
   if (!config.apiKey) {
-    throw new ChatRequestError("服务端未配置 DEEPSEEK_API_KEY", 503);
+    throw new ApiError(
+      503,
+      "UPSTREAM_NOT_CONFIGURED",
+      "服务端未配置 DEEPSEEK_API_KEY：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。",
+    );
   }
-
-  const upstreamController = new AbortController();
-  const onClientAbort = () => upstreamController.abort(clientSignal.reason);
-  if (clientSignal.aborted) onClientAbort();
-  else clientSignal.addEventListener("abort", onClientAbort, { once: true });
 
   let upstream: Response;
   try {
@@ -106,53 +122,32 @@ export async function proxyChatStream(
         messages: parsed.messages,
         stream: true,
       }),
-      signal: upstreamController.signal,
+      signal: clientSignal,
     });
   } catch (err) {
     if ((err as Error).name === "AbortError") {
-      throw new ChatRequestError("客户端已断开连接", 499);
+      throw new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接");
     }
-    throw new ChatRequestError(`无法连接 DeepSeek API：${(err as Error).message}`, 502);
+    throw new ApiError(502, "UPSTREAM_ERROR", `无法连接 DeepSeek API：${(err as Error).message}`);
   }
 
   if (!upstream.ok) {
     const detail = extractErrorDetail(await upstream.text().catch(() => ""));
     if (upstream.status === 401) {
-      throw new ChatRequestError(`DeepSeek API 鉴权失败（401）：${detail}`, 502);
+      throw new ApiError(502, "UPSTREAM_AUTH_FAILED", `DeepSeek API 鉴权失败（401）：${detail}`);
     }
-    throw new ChatRequestError(`DeepSeek API 返回 ${upstream.status}：${detail}`, 502);
+    if (upstream.status === 429) {
+      throw new ApiError(429, "RATE_LIMITED", `DeepSeek API 限流（429）：${detail}`);
+    }
+    if (upstream.status === 504) {
+      throw new ApiError(504, "UPSTREAM_TIMEOUT", `DeepSeek API 超时（504）：${detail}`);
+    }
+    throw new ApiError(502, "UPSTREAM_ERROR", `DeepSeek API 返回 ${upstream.status}：${detail}`);
   }
 
   if (!upstream.body) {
-    throw new ChatRequestError("DeepSeek API 未返回流式响应体", 502);
+    throw new ApiError(502, "UPSTREAM_ERROR", "DeepSeek API 未返回流式响应体");
   }
 
-  const reader = upstream.body.getReader();
-
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) controller.enqueue(value);
-        }
-        controller.close();
-      } catch (err) {
-        if ((err as Error).name === "AbortError") {
-          try {
-            controller.close();
-          } catch {
-            // 已被下游取消
-          }
-        } else {
-          controller.error(err);
-        }
-      }
-    },
-    async cancel() {
-      upstreamController.abort();
-      await reader.cancel().catch(() => undefined);
-    },
-  });
+  return upstream.body;
 }

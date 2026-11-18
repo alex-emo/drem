@@ -1,12 +1,12 @@
 import type { ChatController } from "../hooks/useChat";
-import type { HealthInfo } from "../lib/types";
+import type { HealthState } from "../lib/types";
 import Composer from "./Composer";
 import { SidebarIcon } from "./Icons";
 import MessageList from "./MessageList";
 
 interface ChatViewProps {
   chat: ChatController;
-  health: HealthInfo | null;
+  health: HealthState;
   onToggleSidebar: () => void;
 }
 
@@ -22,15 +22,15 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
         <h1 className="header-title">{activeTitle}</h1>
       </header>
 
-      {health && !health.ok ? (
+      {health.kind === "error" ? (
         <div className="banner">
           无法连接本地服务端，请确认已运行 <code>pnpm dev:server</code>。
         </div>
       ) : null}
-      {health?.ok && health.mock ? (
+      {health.kind === "ok" && health.info.mock ? (
         <div className="banner">演示模式：服务端未配置 DEEPSEEK_API_KEY，当前回复由本地模拟生成。</div>
       ) : null}
-      {health?.ok && !health.mock && !health.hasKey ? (
+      {health.kind === "ok" && !health.info.mock && !health.info.hasApiKey ? (
         <div className="banner">服务端已启动，但缺少 DEEPSEEK_API_KEY，发送消息会失败。</div>
       ) : null}
 

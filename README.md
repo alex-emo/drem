@@ -23,7 +23,7 @@
 ## 架构
 
 ```text
-┌──────────────────────────────┐        POST /api/chat (SSE)        ┌───────────────────────┐
+┌──────────────────────────────┐     POST /api/v1/chat (SSE)        ┌───────────────────────┐
 │  Browser / WebView           │ ─────────────────────────────────> │  Dream Server (Hono)  │
 │  React 18 + Vite + TS        │ <───────────────────────────────── │  Node + tsx           │
 │                              │         streamed SSE chunks        │  :8787                │
@@ -80,8 +80,10 @@ DREAM_MOCK=1 pnpm dev
 ```text
 apps/
   server/                 # 本地转发服务
-    src/index.ts          # Hono 路由：/api/health、/api/chat
-    src/deepseek.ts       # 请求校验 + 上游 SSE 透传 + 中断传播
+    src/index.ts          # Hono 路由：/api/v1/health、/api/v1/models、/api/v1/chat
+    src/protocol.ts       # 版本、错误码、统一错误体、SSE 编码
+    src/stream.ts         # 把 DeepSeek 上游流归一化为 Dream 事件
+    src/deepseek.ts       # 请求校验 + 上游请求
     src/mock.ts           # 无 Key 时的本地模拟流
     src/config.ts         # .env 加载与配置
   web/                    # Web 客户端
@@ -93,6 +95,8 @@ apps/
     src/components/       # Sidebar / ChatView / MessageList / Composer / Markdown / SettingsDialog
     src/styles/           # 设计 token 与布局（对齐实测 DeepSeek 视觉）
 docs/
+  api.md                  # App ↔ Server 接口契约（v1，权威）
+  openapi.yaml            # 机器可读 OpenAPI
   feature-teardown.md     # DeepSeek C 端功能拆解、优先级与实现规格
   screenshots/            # 界面截图
 scripts/dev.mjs           # 同时启动 web + server 的开发脚本
@@ -114,24 +118,34 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 
 ## 服务端接口
 
-### `GET /api/health`
+完整契约见 [docs/api.md](docs/api.md)（错误码、SSE 事件顺序、版本策略、M1 鉴权预告），机器可读版本见 [docs/openapi.yaml](docs/openapi.yaml)。
 
-```json
-{ "ok": true, "mock": false, "model": "deepseek-chat", "hasKey": true }
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/health` | 存活、模式、是否配置 Key、模型名 |
+| `GET` | `/api/v1/models` | 服务端配置的模型 |
+| `POST` | `/api/v1/chat` | 流式对话（SSE） |
+
+```bash
+curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
+  -H 'content-type: application/json' \
+  -d '{"messages":[{"role":"user","content":"你好"}],"thinking":false}'
 ```
 
-### `POST /api/chat`
+```text
+event: start
+data: {"requestId":"req_...","model":"deepseek-chat","thinking":false,"createdAt":"..."}
 
-请求：
+event: delta
+data: {"delta":"你好"}
 
-```json
-{
-  "messages": [{ "role": "user", "content": "你好" }],
-  "thinking": false
-}
+event: done
+data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 ```
 
-响应：`text/event-stream`，按 DeepSeek Chat Completions 的 SSE 格式逐块返回；`thinking: true` 时改用 `DREAM_REASONER_MODEL`，思考内容出现在 `delta.reasoning_content`。
+- 所有响应带 `X-Request-Id`；失败统一返回 `{"error":{"code","message","requestId"}}`。
+- 流建立后的错误改用 `event: error`；客户端按事件名分发，未知事件忽略。
+- `thinking: true` 使用 `DREAM_REASONER_MODEL`，思考增量在 `event: thinking`。
 
 ## 配置项
 
