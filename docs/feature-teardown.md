@@ -332,6 +332,7 @@ audit_logs(id, user_id, action, ip, created_at)
 - 导入 DeepSeek 客户端导出 ZIP（格式版本 3）：按 `current_message_id` 还原当前分支，导入提问、回答、思考；重复会话去重；附件暂不支持
 - 真实 API 联调通过：`deepseek-chat` / `deepseek-reasoner` 均由账号映射到 `deepseek-flash`，思考流返回 `reasoning_content`
 - **编辑提问与消息分支**：消息从线性数组升级为 `parentId` 消息树；编辑用户消息会在同一父节点下新增版本并重发，旧提问/回答与后续追问保留为另一分支，通过消息下方 `< 1 / 2 >` 切换；旧会话与导入会话首次打开自动补齐分支字段（见 `apps/web/src/lib/branches.ts`）
+- 内容安全与运维：上游内容拦截会记录到 `moderation_events`（区分主供应商/回退阶段，按请求去重统计）；`error_events` 记录 5xx、内容拦截、限流与上游错误，后台可按用户、错误码、请求编号查看；前端错误块显示错误码与请求编号
 - 账号体系、管理后台（Token 用量）、多 Key 负载均衡、长对话摘要压缩、DeepSeek 导出 ZIP / 分享链接导入均已上线
 
 验证证据：`npm run typecheck` 与 `npm run build` 通过；浏览器实测新建/切换/删除会话、流式输出、停止生成、刷新恢复、深浅色切换均正常；对 `api.deepseek.com` 用真实 Key 联调普通回复与深度思考成功（401 映射测试用无效 Key 完成）；导入用构造的 DeepSeek 导出 ZIP 验证（2 会话、分支裁剪、思考块、重复导入跳过、损坏 ZIP 错误提示）。

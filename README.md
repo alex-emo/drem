@@ -29,6 +29,10 @@
 | ![real api](docs/screenshots/real-api-dark.png) | ![qwen](docs/screenshots/qwen-dark.png) |
 | ![admin](docs/screenshots/admin-dark.png) | ![edit branch](docs/screenshots/edit-branch-dark.png) |
 
+| 管理后台：内容拦截与错误记录 |
+| --- |
+| ![admin moderation](docs/screenshots/admin-moderation-dark.png) |
+
 ## 架构
 
 ```text
@@ -280,11 +284,12 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 登录后访问 `/admin`（或侧边栏底部「后台」）。页面展示：
 
 - 用户总数、近 24h 活跃会话、请求数、输入/输出/总 Token；
-- 每个用户的注册时间、最近活跃、请求与 Token 用量；
+- 每个用户的注册时间、最近活跃、请求与 Token 用量、内容拦截次数与最近拦截时间；
+- 内容拦截记录（按主供应商/回退阶段）与最近错误（错误码、请求编号、用户、接口）；
 - 每个 Key 的可用状态、冷却截止时间、请求数与 Token 用量（只显示序号，不显示密钥）；
 - 数据库、上游、API 版本、运行时长、内存等组件状态；每 30 秒自动刷新。
 
-权限由服务端 `DREAM_ADMIN_USERS` 控制；非管理员访问接口返回 403。Token 明细存 SQLite `usage_events`。
+权限由服务端 `DREAM_ADMIN_USERS` 控制；非管理员访问接口返回 403。Token 明细存 SQLite `usage_events`；内容安全拦截会写入 `moderation_events`，在后台用户行显示拦截次数与最近时间；服务端/上游错误写入 `error_events`，后台「最近错误」可查错误码、请求编号与用户。
 
 ## 安全说明
 

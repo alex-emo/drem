@@ -22,6 +22,9 @@ interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    moderationEvents: number;
+    moderationUsers: number;
+    errorEvents: number;
   };
   users: Array<{
     id: string;
@@ -33,6 +36,8 @@ interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    moderationCount: number;
+    lastModerationAt: string | null;
   }>;
   keys: Array<{
     id: number;
@@ -50,6 +55,28 @@ interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+  }>;
+  moderation: Array<{
+    id: number;
+    username: string;
+    requestId: string;
+    provider: string;
+    model: string | null;
+    stage: string;
+    messageCount: number;
+    detail: string | null;
+    createdAt: string;
+  }>;
+  errors: Array<{
+    id: number;
+    requestId: string;
+    method: string;
+    path: string;
+    status: number;
+    code: string;
+    message: string;
+    username: string | null;
+    createdAt: string;
   }>;
 }
 
@@ -202,6 +229,13 @@ export default function AdminPage() {
             </strong>
             <span className="admin-card-sub">{components.providerLabel} · {components.model}</span>
           </article>
+          <article className={`admin-card ${totals.moderationEvents > 0 ? "warn" : ""}`}>
+            <span className="admin-card-label">内容拦截</span>
+            <strong>{number(totals.moderationEvents)}</strong>
+            <span className="admin-card-sub">
+              涉及 {number(totals.moderationUsers)} 个用户 · 错误 {number(totals.errorEvents)}
+            </span>
+          </article>
         </section>
 
         <section className="admin-panel">
@@ -237,6 +271,8 @@ export default function AdminPage() {
                   <th className="num">输入</th>
                   <th className="num">输出</th>
                   <th className="num">总 tokens</th>
+                  <th className="num">拦截</th>
+                  <th>最近拦截</th>
                 </tr>
               </thead>
               <tbody>
@@ -250,6 +286,16 @@ export default function AdminPage() {
                     <td className="num">{number(user.promptTokens)}</td>
                     <td className="num">{number(user.completionTokens)}</td>
                     <td className="num strong">{number(user.totalTokens)}</td>
+                    <td className="num">
+                      {user.moderationCount > 0 ? (
+                        <span className="admin-tag bad" title={`最近：${formatTime(user.lastModerationAt)}`}>
+                          {number(user.moderationCount)}
+                        </span>
+                      ) : (
+                        0
+                      )}
+                    </td>
+                    <td>{formatTime(user.lastModerationAt)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -295,6 +341,94 @@ export default function AdminPage() {
                     <td>{formatTime(key.lastUsedAt)}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="admin-panel">
+          <div className="admin-panel-head">
+            <h2>内容拦截记录</h2>
+            <span className="admin-muted">最近 50 条 · 不记录聊天正文</span>
+          </div>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>用户</th>
+                  <th>供应商</th>
+                  <th>阶段</th>
+                  <th className="num">消息数</th>
+                  <th>上游说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.moderation.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="admin-muted">
+                      暂无内容拦截记录
+                    </td>
+                  </tr>
+                ) : (
+                  stats.moderation.map((event) => (
+                    <tr key={event.id}>
+                      <td>{formatTime(event.createdAt)}</td>
+                      <td className="admin-user">{event.username}</td>
+                      <td>{event.provider}</td>
+                      <td>{event.stage === "fallback" ? "回退后拦截" : "主供应商拦截"}</td>
+                      <td className="num">{number(event.messageCount)}</td>
+                      <td className="admin-detail" title={event.detail ?? ""}>
+                        {event.detail ?? "—"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="admin-panel">
+          <div className="admin-panel-head">
+            <h2>最近错误</h2>
+            <span className="admin-muted">最近 50 条 · 含上游错误与请求编号</span>
+          </div>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>用户</th>
+                  <th className="num">状态</th>
+                  <th>错误码</th>
+                  <th>请求编号</th>
+                  <th className="num">接口</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.errors.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="admin-muted">
+                      暂无错误记录
+                    </td>
+                  </tr>
+                ) : (
+                  stats.errors.map((event) => (
+                    <tr key={event.id}>
+                      <td>{formatTime(event.createdAt)}</td>
+                      <td className="admin-user">{event.username ?? "—"}</td>
+                      <td className="num">{event.status}</td>
+                      <td><span className="admin-tag bad">{event.code}</span></td>
+                      <td className="admin-request" title={event.requestId}>{event.requestId}</td>
+                      <td className="num" title={event.path}>{event.method} {event.path}</td>
+                      <td className="admin-detail" title={event.message}>
+                        {event.message}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

@@ -430,6 +430,14 @@ button:disabled {
   width: 100%;
 }
 
+.msg-error-meta {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
 /* ---------- Markdown ---------- */
 
 .markdown > :first-child {
@@ -1670,6 +1678,24 @@ button:disabled {
 
 .admin-table .strong {
   font-weight: 620;
+}
+
+.admin-table .admin-detail {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.admin-table .admin-request {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-user {

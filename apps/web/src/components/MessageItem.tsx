@@ -172,7 +172,17 @@ export default function MessageItem({
         </div>
       ) : null}
 
-      {message.status === "error" ? <div className="msg-error">{message.error ?? "生成失败，请稍后重试"}</div> : null}
+      {message.status === "error" ? (
+        <div className="msg-error">
+          <div>{message.error ?? "生成失败，请稍后重试"}</div>
+          {message.errorRequestId ? (
+            <div className="msg-error-meta">
+              {message.errorCode ? `${message.errorCode} · ` : ""}
+              错误编号：{message.errorRequestId}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {message.status === "done" && message.content ? (
         <div className="msg-actions">

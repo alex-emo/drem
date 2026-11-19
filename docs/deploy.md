@@ -78,7 +78,7 @@ DREAM_ADMIN_USERS=Alex
 
 ## 长对话压缩缓存
 
-服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表缓存分段摘要，以及 `usage_events` 表记录每个请求的 Token 用量；两表都随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
+服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表缓存分段摘要、`usage_events` 表记录每个请求的 Token 用量，以及 `moderation_events`、`error_events` 两张运维表（内容拦截与错误记录，不保存聊天正文）。这些表都随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
 
 ## 固定域名（命名隧道）
 

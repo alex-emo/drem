@@ -21,6 +21,9 @@ export interface Message {
   reasoning?: string;
   status: MessageStatus;
   error?: string;
+  /** 服务端错误码与请求编号，便于用户报障时定位日志。 */
+  errorCode?: string;
+  errorRequestId?: string;
   createdAt: number;
   /** 消息树结构：同一父节点下可以有多个版本。 */
   parentId?: string | null;

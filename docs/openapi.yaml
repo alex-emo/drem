@@ -283,10 +283,23 @@ paths:
                 properties:
                   generatedAt: { type: string, format: date-time }
                   components: { type: object, additionalProperties: true }
-                  totals: { type: object, additionalProperties: true }
+                  totals:
+                    type: object
+                    properties:
+                      users: { type: integer }
+                      activeSessions: { type: integer }
+                      requests: { type: integer }
+                      promptTokens: { type: integer }
+                      completionTokens: { type: integer }
+                      totalTokens: { type: integer }
+                      moderationEvents: { type: integer, description: 去重后的内容拦截请求数 }
+                      moderationUsers: { type: integer }
+                      errorEvents: { type: integer }
                   users: { type: array, items: { type: object, additionalProperties: true } }
                   keys: { type: array, items: { type: object, additionalProperties: true } }
                   days: { type: array, items: { type: object, additionalProperties: true } }
+                  moderation: { type: array, items: { type: object, additionalProperties: true } }
+                  errors: { type: array, items: { type: object, additionalProperties: true } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 components:

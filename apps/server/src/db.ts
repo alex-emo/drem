@@ -91,3 +91,38 @@ export function putContextSummary(key: string, summary: string): void {
      ON CONFLICT(key) DO UPDATE SET summary = excluded.summary`,
   ).run(key, summary, Date.now());
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS moderation_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       TEXT NOT NULL,
+    username      TEXT NOT NULL,
+    request_id    TEXT NOT NULL,
+    provider      TEXT NOT NULL,
+    model         TEXT,
+    stage         TEXT NOT NULL,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    detail        TEXT,
+    created_at    TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_moderation_user ON moderation_events(user_id);
+  CREATE INDEX IF NOT EXISTS idx_moderation_created ON moderation_events(created_at);
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS error_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT NOT NULL,
+    method     TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    status     INTEGER NOT NULL,
+    code       TEXT NOT NULL,
+    message    TEXT NOT NULL,
+    username   TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_error_created ON error_events(created_at);
+  CREATE INDEX IF NOT EXISTS idx_error_code ON error_events(code);
+`);

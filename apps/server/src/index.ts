@@ -33,9 +33,15 @@ import {
   sseHeaders,
 } from "./protocol.js";
 import { dreamChatStream } from "./stream.js";
-import { getAdminStats, recordUsage, type TokenUsage } from "./usage.js";
+import {
+  getAdminStats,
+  recordError,
+  recordModeration,
+  recordUsage,
+  type TokenUsage,
+} from "./usage.js";
 
-type AppEnv = { Variables: { requestId: string } };
+type AppEnv = { Variables: { requestId: string; requestUser?: string } };
 
 const app = new Hono<AppEnv>();
 
@@ -181,6 +187,7 @@ app.post("/api/v1/context/warm", async (c) => {
 app.post("/api/v1/chat", async (c) => {
   const requestId = c.get("requestId");
   const { user } = requireUser(c.req.header("authorization"));
+  c.set("requestUser", user.username);
   const body = await readJsonBody(c);
   const parsed = parseChatRequest(body);
 
@@ -222,6 +229,19 @@ app.post("/api/v1/chat", async (c) => {
   const { stream: upstream, keyId, model: effectiveModel } = await openChatStream(
     effective,
     c.req.raw.signal,
+    {
+      onModeration: (report) =>
+        recordModeration({
+          userId: user.id,
+          username: user.username,
+          requestId,
+          provider: report.provider,
+          model: report.model,
+          stage: report.stage,
+          messageCount: effective.messages.length,
+          detail: report.detail,
+        }),
+    },
   );
   const stream = dreamChatStream(
     upstream,
@@ -269,12 +289,35 @@ app.notFound((c) => {
   );
 });
 
+function shouldRecordError(status: number, code: string): boolean {
+  return (
+    status >= 500 ||
+    code === "CONTENT_FILTERED" ||
+    code === "RATE_LIMITED" ||
+    code.startsWith("UPSTREAM_")
+  );
+}
+
 app.onError((err, c) => {
   const requestId = c.get("requestId") ?? "req_unknown";
+  const username = c.get("requestUser") ?? null;
+  const method = c.req.method;
+  const path = c.req.path;
 
   if (err instanceof ApiError) {
-    if (err.status >= 500) {
+    if (err.status >= 500 || err.code === "CONTENT_FILTERED") {
       console.warn(`[dream-server] ${requestId} ${err.status} ${err.code}: ${err.message}`);
+    }
+    if (shouldRecordError(err.status, err.code)) {
+      recordError({
+        requestId,
+        method,
+        path,
+        status: err.status,
+        code: err.code,
+        message: err.message,
+        username,
+      });
     }
     c.header("x-request-id", requestId);
     c.header("x-api-version", API_VERSION);
@@ -282,6 +325,15 @@ app.onError((err, c) => {
   }
 
   console.error(`[dream-server] ${requestId}`, err);
+  recordError({
+    requestId,
+    method,
+    path,
+    status: 500,
+    code: "INTERNAL",
+    message: err instanceof Error ? err.message : String(err),
+    username,
+  });
   return c.json(
     {
       error: {

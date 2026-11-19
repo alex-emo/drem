@@ -58,6 +58,72 @@ export function recordUsage(input: RecordUsageInput): void {
   }
 }
 
+export interface RecordModerationInput {
+  userId: string;
+  username: string;
+  requestId: string;
+  provider: string;
+  model: string;
+  stage: "primary" | "fallback";
+  messageCount: number;
+  detail: string;
+}
+
+/** 记录一次触发的上游内容安全拦截（每个阶段一条，便于排查）。 */
+export function recordModeration(input: RecordModerationInput): void {
+  try {
+    db.prepare(
+      `INSERT INTO moderation_events
+        (user_id, username, request_id, provider, model, stage, message_count, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.userId,
+      input.username,
+      input.requestId,
+      input.provider,
+      input.model,
+      input.stage,
+      input.messageCount,
+      input.detail.slice(0, 1000),
+      new Date().toISOString(),
+    );
+  } catch (error) {
+    console.warn(`[dream-server] failed to record moderation event: ${(error as Error).message}`);
+  }
+}
+
+export interface RecordErrorInput {
+  requestId: string;
+  method: string;
+  path: string;
+  status: number;
+  code: string;
+  message: string;
+  username?: string | null;
+}
+
+/** 记录服务端/上游错误，供后台查看，定位线上问题。 */
+export function recordError(input: RecordErrorInput): void {
+  try {
+    db.prepare(
+      `INSERT INTO error_events
+        (request_id, method, path, status, code, message, username, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      input.requestId,
+      input.method,
+      input.path,
+      input.status,
+      input.code,
+      input.message.slice(0, 2000),
+      input.username ?? null,
+      new Date().toISOString(),
+    );
+  } catch (error) {
+    console.warn(`[dream-server] failed to record error event: ${(error as Error).message}`);
+  }
+}
+
 interface TotalsRow {
   requests: number;
   prompt_tokens: number;
@@ -74,6 +140,8 @@ interface UserStatRow {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  moderation_count: number;
+  last_moderation_at: string | null;
 }
 
 interface KeyStatRow {
@@ -114,6 +182,9 @@ export interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    moderationEvents: number;
+    moderationUsers: number;
+    errorEvents: number;
   };
   users: Array<{
     id: string;
@@ -125,6 +196,8 @@ export interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    moderationCount: number;
+    lastModerationAt: string | null;
   }>;
   keys: Array<{
     id: number;
@@ -142,6 +215,28 @@ export interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+  }>;
+  moderation: Array<{
+    id: number;
+    username: string;
+    requestId: string;
+    provider: string;
+    model: string | null;
+    stage: string;
+    messageCount: number;
+    detail: string | null;
+    createdAt: string;
+  }>;
+  errors: Array<{
+    id: number;
+    requestId: string;
+    method: string;
+    path: string;
+    status: number;
+    code: string;
+    message: string;
+    username: string | null;
+    createdAt: string;
   }>;
 }
 
@@ -174,7 +269,9 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
                 COUNT(e.id) AS requests,
                 COALESCE(SUM(e.prompt_tokens), 0) AS prompt_tokens,
                 COALESCE(SUM(e.completion_tokens), 0) AS completion_tokens,
-                COALESCE(SUM(e.total_tokens), 0) AS total_tokens
+                COALESCE(SUM(e.total_tokens), 0) AS total_tokens,
+                (SELECT COUNT(DISTINCT request_id) FROM moderation_events m WHERE m.user_id = u.id) AS moderation_count,
+                (SELECT MAX(created_at) FROM moderation_events m WHERE m.user_id = u.id) AS last_moderation_at
          FROM users u
          LEFT JOIN usage_events e ON e.user_id = u.id
          GROUP BY u.id
@@ -191,6 +288,8 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
     promptTokens: row.prompt_tokens,
     completionTokens: row.completion_tokens,
     totalTokens: row.total_tokens,
+    moderationCount: row.moderation_count,
+    lastModerationAt: row.last_moderation_at,
   }));
 
   const keyRows = db
@@ -249,6 +348,71 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
     at: string | null;
   };
 
+  const moderationRows = db
+    .prepare(
+      `SELECT id, username, request_id, provider, model, stage, message_count, detail, created_at
+       FROM moderation_events ORDER BY id DESC LIMIT 50`,
+    )
+    .all() as unknown as Array<{
+    id: number;
+    username: string;
+    request_id: string;
+    provider: string;
+    model: string | null;
+    stage: string;
+    message_count: number;
+    detail: string | null;
+    created_at: string;
+  }>;
+  const moderation = moderationRows.map((row) => ({
+    id: row.id,
+    username: row.username,
+    requestId: row.request_id,
+    provider: row.provider,
+    model: row.model,
+    stage: row.stage,
+    messageCount: row.message_count,
+    detail: row.detail,
+    createdAt: row.created_at,
+  }));
+
+  const errorRows = db
+    .prepare(
+      `SELECT id, request_id, method, path, status, code, message, username, created_at
+       FROM error_events ORDER BY id DESC LIMIT 50`,
+    )
+    .all() as unknown as Array<{
+    id: number;
+    request_id: string;
+    method: string;
+    path: string;
+    status: number;
+    code: string;
+    message: string;
+    username: string | null;
+    created_at: string;
+  }>;
+  const errors = errorRows.map((row) => ({
+    id: row.id,
+    requestId: row.request_id,
+    method: row.method,
+    path: row.path,
+    status: row.status,
+    code: row.code,
+    message: row.message,
+    username: row.username,
+    createdAt: row.created_at,
+  }));
+
+  const moderationTotals = db
+    .prepare(
+      `SELECT COUNT(DISTINCT request_id) AS events, COUNT(DISTINCT user_id) AS users FROM moderation_events`,
+    )
+    .get() as unknown as { events: number; users: number };
+  const errorTotal = db.prepare("SELECT COUNT(*) AS count FROM error_events").get() as unknown as {
+    count: number;
+  };
+
   return {
     generatedAt: new Date().toISOString(),
     components: {
@@ -270,9 +434,14 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
       promptTokens: totals.prompt_tokens,
       completionTokens: totals.completion_tokens,
       totalTokens: totals.total_tokens,
+      moderationEvents: moderationTotals.events,
+      moderationUsers: moderationTotals.users,
+      errorEvents: errorTotal.count,
     },
     users,
     keys,
     days,
+    moderation,
+    errors,
   };
 }

@@ -332,14 +332,18 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
     "keys": { "total": 5, "available": 5 },
     "lastRequestAt": "2026-11-19T07:50:06.229Z"
   },
-  "totals": { "users": 8, "activeSessions": 9, "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072 },
-  "users": [{ "username": "Alex", "isAdmin": true, "requests": 4, "promptTokens": 900, "completionTokens": 320, "totalTokens": 1220, "lastSeenAt": "..." }],
+  "totals": { "users": 8, "activeSessions": 9, "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072, "moderationEvents": 3, "moderationUsers": 2, "errorEvents": 1 },
+  "users": [{ "username": "Alex", "isAdmin": true, "requests": 4, "promptTokens": 900, "completionTokens": 320, "totalTokens": 1220, "lastSeenAt": "...", "moderationCount": 2, "lastModerationAt": "..." }],
   "keys": [{ "id": 1, "available": true, "requests": 5, "promptTokens": 3000, "completionTokens": 1200, "totalTokens": 4200, "lastUsedAt": "..." }],
-  "days": [{ "day": "2026-11-19", "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072 }]
+  "days": [{ "day": "2026-11-19", "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072 }],
+  "moderation": [{ "id": 1, "username": "Alex", "requestId": "req_...", "provider": "qwen", "model": "qwen3.7-flash", "stage": "primary", "messageCount": 85, "detail": "DataInspectionFailed: ...", "createdAt": "..." }],
+  "errors": [{ "id": 1, "requestId": "req_...", "method": "POST", "path": "/api/v1/chat", "status": 422, "code": "CONTENT_FILTERED", "message": "...", "username": "Alex", "createdAt": "..." }]
 }
 ```
 
-Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 `usage` 后写入 SQLite `usage_events`（按用户与 Key 归因）；没有 usage 的请求按 0 记录，仍计入请求数。后台入口为 `https://<域名>/admin`。
+Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 `usage` 后写入 SQLite `usage_events`（按用户与 Key 归因）；没有 usage 的请求按 0 记录，仍计入请求数。
+
+内容拦截：主供应商返回内容安全错误时写入 `moderation_events`（每个调用阶段一条，`stage` 为 `primary` 或 `fallback`，不记录聊天正文）；用户表的 `moderationCount` 按 `request_id` 去重，表示触发轮次。`error_events` 记录 `status >= 500`、`CONTENT_FILTERED`、`RATE_LIMITED` 与所有 `UPSTREAM_*` 错误，并带上请求编号，方便按用户报障时间反查。后台入口为 `https://<域名>/admin`。
 
 ## 9. 规划中的端点（M1）
 
@@ -358,6 +362,7 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 | 2026-11-19 | v1.3 | 新增 `DREAM_PROVIDER=qwen`（百炼 Qwen3.7-Flash）；health 增加 provider / providerLabel，models 增加 provider |
 | 2026-11-19 | v1.4 | 长对话自动分段摘要（>1000 条或 >300 万字符）；新增 `POST /api/v1/context/warm`；health 增加 context 阈值 |
 | 2026-11-19 | v1.5 | 新增管理员看板 `GET /api/v1/admin/stats`（按用户/Key 统计 Token）；`DREAM_ADMIN_USERS` 控制权限 |
+| 2026-11-19 | v1.6 | 内容拦截与错误事件落库（`moderation_events` / `error_events`），后台展示用户拦截次数、拦截记录与最近错误；错误响应附带 `requestId` 与可读错误码 |
 
 ## 认证（v0.3）
 

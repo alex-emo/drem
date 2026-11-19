@@ -279,7 +279,11 @@ export function useChat() {
       const acc = { content: "", reasoning: "" };
       let settled = false;
 
-      const finish = async (status: "done" | "error", error?: string) => {
+      const finish = async (
+        status: "done" | "error",
+        error?: string,
+        meta?: { code?: string; requestId?: string },
+      ) => {
         if (settled) return;
         settled = true;
         abortRef.current = null;
@@ -290,6 +294,8 @@ export function useChat() {
           reasoning: acc.reasoning || undefined,
           status,
           error,
+          errorCode: meta?.code,
+          errorRequestId: meta?.requestId,
         };
         allMessagesRef.current = allMessagesRef.current.map((message) =>
           message.id === assistantMessage.id ? final : message,
@@ -349,7 +355,11 @@ export function useChat() {
             error instanceof ChatApiError && error.code === "CONTENT_FILTERED"
               ? "这段对话触发了模型的内容安全策略，暂时无法继续。请修改最近几条消息，或新建一个会话再试。"
               : (error as Error).message || "生成失败，请稍后重试";
-          await finish("error", failure);
+          const meta =
+            error instanceof ChatApiError
+              ? { code: error.code, requestId: error.requestId }
+              : undefined;
+          await finish("error", failure, meta);
         }
       }
     },

@@ -268,9 +268,31 @@ export async function requestUpstreamJson(
 }
 
 /** 请求上游 chat/completions（stream=true），返回 SSE 字节流与所用 Key。 */
+export interface ModerationReport {
+  provider: "deepseek" | "qwen";
+  model: string;
+  stage: "primary" | "fallback";
+  detail: string;
+}
+
+export interface ChatStreamHooks {
+  /** 上游内容安全拦截时通知调用方（会记录到后台）。 */
+  onModeration?: (report: ModerationReport) => void;
+}
+
+function reportModeration(hooks: ChatStreamHooks | undefined, report: ModerationReport): void {
+  try {
+    hooks?.onModeration?.(report);
+  } catch (error) {
+    console.warn(`[dream-server] moderation hook failed: ${(error as Error).message}`);
+  }
+}
+
+/** 请求上游 chat/completions（stream=true），返回 SSE 字节流与所用 Key。 */
 export async function openChatStream(
   parsed: ParsedChatRequest,
   clientSignal: AbortSignal,
+  hooks?: ChatStreamHooks,
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
   keyId: number;
@@ -305,14 +327,19 @@ export async function openChatStream(
   try {
     result = await fetchUpstream(primaryTarget, payload, clientSignal);
   } catch (error) {
-    if (
-      !(error instanceof ApiError) ||
-      error.code !== "CONTENT_FILTERED" ||
-      !config.fallback ||
-      !fallbackTarget
-    ) {
+    if (!(error instanceof ApiError) || error.code !== "CONTENT_FILTERED") {
       throw error;
     }
+
+    reportModeration(hooks, {
+      provider: config.provider,
+      model: servedModel,
+      stage: "primary",
+      detail: error.message,
+    });
+
+    if (!config.fallback || !fallbackTarget) throw error;
+
     const fallbackPayload = {
       model: parsed.thinking ? config.fallback.reasonerModel : config.fallback.model,
       messages: parsed.messages,
@@ -322,7 +349,19 @@ export async function openChatStream(
     console.warn(
       `[dream-server] ${config.providerLabel} 内容安全拦截，回退到 ${config.fallback.label}: ${error.message}`,
     );
-    result = await fetchUpstream(fallbackTarget, fallbackPayload, clientSignal);
+    try {
+      result = await fetchUpstream(fallbackTarget, fallbackPayload, clientSignal);
+    } catch (fallbackError) {
+      if (fallbackError instanceof ApiError && fallbackError.code === "CONTENT_FILTERED") {
+        reportModeration(hooks, {
+          provider: "deepseek",
+          model: String(fallbackPayload.model),
+          stage: "fallback",
+          detail: fallbackError.message,
+        });
+      }
+      throw fallbackError;
+    }
     servedModel = String(fallbackPayload.model);
     servedProvider = "deepseek";
   }
