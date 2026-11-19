@@ -129,12 +129,16 @@ const StepItem = ({
         streaming && lastBlock?.startedAt !== undefined && lastBlock.endedAt === undefined
       return (
         <ContentItem isLast={isLast} active={thinking}>
-          <Markdown
-            content={step.blocks.map((block) => block.thinking).join('')}
-            loading={thinking}
-            cacheKey={`${message.id}-${step.key}`}
-            disableLink
-          />
+          {thinking ? (
+            <div className={styles.streamingText}>{step.blocks.map((block) => block.thinking).join('')}</div>
+          ) : (
+            <Markdown
+              content={step.blocks.map((block) => block.thinking).join('')}
+              loading={false}
+              cacheKey={`${message.id}-${step.key}`}
+              disableLink
+            />
+          )}
         </ContentItem>
       )
     }

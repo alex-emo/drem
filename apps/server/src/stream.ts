@@ -169,18 +169,18 @@ export function dreamChatStream(
         const backlog = pendingChars();
         const speed =
           head.event === "thinking"
-            ? backlog > 2400
-              ? 60
-              : backlog > 800
-                ? 24
-                : 8
-            : backlog > 3600
-              ? 48
-              : backlog > 1200
-                ? 20
-                : backlog > 320
-                  ? 8
-                  : 3;
+            ? backlog > 4000
+              ? 72
+              : backlog > 1500
+                ? 28
+                : 10
+            : backlog > 6000
+              ? 64
+              : backlog > 2500
+                ? 28
+                : backlog > 800
+                  ? 12
+                  : 5;
         const take = Math.min(head.text.length, speed);
         const piece = head.text.slice(0, take);
         head.text = head.text.slice(take);
@@ -190,7 +190,7 @@ export function dreamChatStream(
 
       function ensurePump(): void {
         if (pump || closed || cancelled) return;
-        pump = setInterval(pumpOnce, 24);
+        pump = setInterval(pumpOnce, 32);
       }
 
       const flushThinking = (final: boolean): void => {

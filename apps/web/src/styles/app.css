@@ -1873,3 +1873,11 @@ button:disabled {
 .auth-download:hover {
   text-decoration: underline;
 }
+
+.streaming-plain {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.75;
+}

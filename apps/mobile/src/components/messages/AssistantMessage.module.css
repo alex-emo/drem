@@ -137,3 +137,11 @@
     --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
   }
 }
+
+.streamingText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-markdown-main);
+}

@@ -1,6 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
-import { memo } from 'react'
+import { memo, useEffect } from 'react'
 import { IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
 import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
@@ -17,6 +17,7 @@ import { ReadAloudButton } from './ReadAloudButton.js'
 import { CopyButton } from './CopyButton.js'
 import { ReplyArea } from './ReplyArea.js'
 import { useReplyView } from './useReplyView.js'
+import { useScrollToBottom } from './scrollContext.js'
 import {
   BranchSwitcher,
   type MessageVersions,
@@ -45,6 +46,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 }) {
   const t = useTranslate()
   const view = useReplyView(message, streaming)
+  const scrollToBottom = useScrollToBottom()
   const panelEntry = useSearchPanel((state) => state.entry)
   const notice = streaming ? null : describeReply(message)
   // 安全拒绝：已下发的思考与正文按协议丢弃，只显示模板答复。
@@ -56,6 +58,10 @@ export const AssistantMessage = memo(function AssistantMessage({
   const copyText = responseText || notice?.text
   const waiting = streaming && view.steps.length === 0 && !view.answer && !message.thinking
   const summaryEntry = `${message.id}-summary`
+
+  useEffect(() => {
+    if (streaming && view.answer) scrollToBottom()
+  }, [streaming, view.answer?.text, scrollToBottom])
   return (
     <div className={styles.message}>
       {refused ? null : (
@@ -67,14 +73,18 @@ export const AssistantMessage = memo(function AssistantMessage({
         />
       )}
       {answer ? (
-        <Markdown
-          className="ds-assistant-message-main-content"
-          content={answer.markdown}
-          loading={streaming}
-          cacheKey={message.id}
-          disableLink={false}
-          sources={view.sources}
-        />
+        streaming ? (
+          <div className={styles.streamingText}>{answer.text}</div>
+        ) : (
+          <Markdown
+            className="ds-assistant-message-main-content"
+            content={answer.markdown}
+            loading={false}
+            cacheKey={message.id}
+            disableLink={false}
+            sources={view.sources}
+          />
+        )
       ) : null}
       {waiting ? (
         <div className={styles.waiting}>

@@ -314,3 +314,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.streamingText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-markdown-main);
+}

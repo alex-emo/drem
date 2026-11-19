@@ -161,7 +161,11 @@ export default function MessageItem({
 
       {message.content ? (
         <div className="markdown">
-          <Markdown content={message.content} />
+          {message.status === "streaming" ? (
+            <div className="streaming-plain">{message.content}</div>
+          ) : (
+            <Markdown content={message.content} />
+          )}
           {message.status === "streaming" ? <span className="cursor" aria-hidden="true" /> : null}
         </div>
       ) : message.status === "streaming" ? (
