@@ -132,14 +132,14 @@ async function summarizeSegment(segment: ChatMessage[]): Promise<string> {
     throw new ApiError(
       502,
       "UPSTREAM_ERROR",
-      `整理长对话上下文失败：${config.providerLabel} 返回 ${response.status}${detail ? `（${detail}）` : ""}`,
+      `${config.providerLabel} 返回 ${response.status}${detail ? `（${detail}）` : ""}`,
     );
   }
 
   const data = (await response.json()) as ChatCompletionResponse;
   const summary = data.choices?.[0]?.message?.content?.trim();
   if (!summary) {
-    throw new ApiError(502, "UPSTREAM_ERROR", "整理长对话上下文失败：上游没有返回摘要");
+    throw new ApiError(502, "UPSTREAM_ERROR", "上游没有返回摘要");
   }
   return summary;
 }
@@ -186,9 +186,17 @@ export async function compressContext(messages: ChatMessage[]): Promise<Compress
         cached += 1;
         continue;
       }
-      const summary = await summarizeSegment(segment);
-      putContextSummary(key, summary);
-      summaries[index] = summary;
+      try {
+        const summary = await summarizeSegment(segment);
+        putContextSummary(key, summary);
+        summaries[index] = summary;
+      } catch (error) {
+        // 摘要失败不能拖垮整轮对话：用占位说明替代这一段，原始消息仍保留在客户端。
+        console.warn(
+          `[dream-server] context summary failed (segment ${index + 1}/${segments.length}, ${segment.length} messages, ${contentChars(segment)} chars): ${(error as Error).message}`,
+        );
+        summaries[index] = `（此前 ${segment.length} 条对话因摘要服务暂时不可用而未纳入摘要；请忽略这一条占位说明。）`;
+      }
     }
   };
 

@@ -230,6 +230,9 @@ app.onError((err, c) => {
   const requestId = c.get("requestId") ?? "req_unknown";
 
   if (err instanceof ApiError) {
+    if (err.status >= 500) {
+      console.warn(`[dream-server] ${requestId} ${err.status} ${err.code}: ${err.message}`);
+    }
     c.header("x-request-id", requestId);
     c.header("x-api-version", API_VERSION);
     return c.json(errorBody(err, requestId), err.status as ContentfulStatusCode);
