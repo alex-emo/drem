@@ -22,3 +22,7 @@ pnpm-store-operation-locks/
 
 # local server database
 apps/server/data/
+
+# local runtime data (SQLite)
+data/
+apps/server/data/

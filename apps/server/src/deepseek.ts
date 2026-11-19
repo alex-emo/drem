@@ -1,5 +1,12 @@
 import { config } from "./config.js";
-import { cooldownForStatus, isRetryableStatus, keyPool, type PooledKey } from "./keys.js";
+import {
+  cooldownForStatus,
+  fallbackKeyPool,
+  isRetryableStatus,
+  keyPool,
+  type KeyPool,
+  type PooledKey,
+} from "./keys.js";
 import { ApiError } from "./protocol.js";
 import { normalizeUsage, type TokenUsage } from "./usage.js";
 
@@ -98,25 +105,40 @@ function extractErrorDetail(raw: string): string {
   return raw.slice(0, 500) || "上游未返回错误详情";
 }
 
+/** 上游内容安全拦截：Qwen 以 400 DataInspectionFailed 返回，需要区别于普通参数错误。 */
+function isContentFilterError(status: number, detail: string): boolean {
+  return (
+    status === 400 &&
+    /DataInspectionFailed|inappropriate content|content (?:inspection|filter)|安全策略/i.test(detail)
+  );
+}
+
 /** 把上游 HTTP 状态映射为 Dream 的错误码。 */
-function mapUpstreamError(status: number, detail: string): ApiError {
+function mapUpstreamError(status: number, detail: string, label: string): ApiError {
+  if (isContentFilterError(status, detail)) {
+    return new ApiError(
+      422,
+      "CONTENT_FILTERED",
+      `${label} 的内容安全策略拒绝了这段对话：${detail}`,
+    );
+  }
   if (status === 401 || status === 403) {
     return new ApiError(
       502,
       "UPSTREAM_AUTH_FAILED",
-      `${config.providerLabel} API 鉴权失败（${status}）：${detail}`,
+      `${label} API 鉴权失败（${status}）：${detail}`,
     );
   }
   if (status === 402) {
-    return new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 余额不足（402）：${detail}`);
+    return new ApiError(502, "UPSTREAM_ERROR", `${label} API 余额不足（402）：${detail}`);
   }
   if (status === 429) {
-    return new ApiError(429, "RATE_LIMITED", `${config.providerLabel} API 限流（429）：${detail}`);
+    return new ApiError(429, "RATE_LIMITED", `${label} API 限流（429）：${detail}`);
   }
   if (status === 504) {
-    return new ApiError(504, "UPSTREAM_TIMEOUT", `${config.providerLabel} API 超时（504）：${detail}`);
+    return new ApiError(504, "UPSTREAM_TIMEOUT", `${label} API 超时（504）：${detail}`);
   }
-  return new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 返回 ${status}：${detail}`);
+  return new ApiError(502, "UPSTREAM_ERROR", `${label} API 返回 ${status}：${detail}`);
 }
 
 interface UpstreamResponse {
@@ -124,19 +146,44 @@ interface UpstreamResponse {
   key: PooledKey;
 }
 
+interface UpstreamTarget {
+  pool: KeyPool;
+  baseUrl: string;
+  label: string;
+  keyEnv: string;
+}
+
+const primaryTarget: UpstreamTarget = {
+  pool: keyPool,
+  baseUrl: config.baseUrl,
+  label: config.providerLabel,
+  keyEnv: config.keyEnv,
+};
+
+const fallbackTarget: UpstreamTarget | null =
+  config.fallback && fallbackKeyPool
+    ? {
+        pool: fallbackKeyPool,
+        baseUrl: config.fallback.baseUrl,
+        label: config.fallback.label,
+        keyEnv: config.fallback.keyEnv,
+      }
+    : null;
+
 /**
  * 从 Key 池里轮询取 Key 发请求：连接失败/鉴权失败/限流/5xx 会自动换下一个 Key。
  * 所有 Key 都失败时才抛错；400/404 这类请求本身的错误不重试。
  */
 async function fetchUpstream(
+  target: UpstreamTarget,
   payload: Record<string, unknown>,
   clientSignal?: AbortSignal,
 ): Promise<UpstreamResponse> {
-  if (keyPool.size === 0) {
+  if (target.pool.size === 0) {
     throw new ApiError(
       503,
       "UPSTREAM_NOT_CONFIGURED",
-      `服务端未配置 ${config.keyEnv}：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。`,
+      `服务端未配置 ${target.keyEnv}：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。`,
     );
   }
 
@@ -144,13 +191,13 @@ async function fetchUpstream(
   let lastError: ApiError | null = null;
 
   for (;;) {
-    const key = keyPool.acquire(attempted) ?? keyPool.acquireIgnoringCooldown(attempted);
+    const key = target.pool.acquire(attempted) ?? target.pool.acquireIgnoringCooldown(attempted);
     if (!key) break;
     attempted.add(key.id);
 
     let response: Response;
     try {
-      response = await fetch(`${config.baseUrl}/chat/completions`, {
+      response = await fetch(`${target.baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -165,28 +212,28 @@ async function fetchUpstream(
         throw new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接");
       }
       if (error.name === "TimeoutError") {
-        throw new ApiError(504, "UPSTREAM_TIMEOUT", `${config.providerLabel} API 请求超时`);
+        throw new ApiError(504, "UPSTREAM_TIMEOUT", `${target.label} API 请求超时`);
       }
-      keyPool.markFailure(key, cooldownForStatus());
+      target.pool.markFailure(key, cooldownForStatus());
       lastError = new ApiError(
         502,
         "UPSTREAM_ERROR",
-        `无法连接 ${config.providerLabel} API：${error.message}`,
+        `无法连接 ${target.label} API：${error.message}`,
       );
       console.warn(`[dream-server] upstream key #${key.id} network error: ${error.message}`);
       continue;
     }
 
     if (response.ok) {
-      keyPool.markSuccess(key);
+      target.pool.markSuccess(key);
       return { response, key };
     }
 
     const detail = extractErrorDetail(await response.text().catch(() => ""));
-    const mapped = mapUpstreamError(response.status, detail);
+    const mapped = mapUpstreamError(response.status, detail, target.label);
     if (!isRetryableStatus(response.status)) throw mapped;
 
-    keyPool.markFailure(key, cooldownForStatus(response.status));
+    target.pool.markFailure(key, cooldownForStatus(response.status));
     lastError = mapped;
     console.warn(
       `[dream-server] upstream key #${key.id} failed (${response.status}), trying next key`,
@@ -198,7 +245,7 @@ async function fetchUpstream(
     new ApiError(
       503,
       "UPSTREAM_NOT_CONFIGURED",
-      `服务端没有可用的 ${config.keyEnv}：请配置至少一个密钥后重启服务。`,
+      `服务端没有可用的 ${target.keyEnv}：请配置至少一个密钥后重启服务。`,
     )
   );
 }
@@ -214,7 +261,7 @@ export async function requestUpstreamJson(
   payload: Record<string, unknown>,
   timeoutMs = 120_000,
 ): Promise<UpstreamJsonResult> {
-  const { response, key } = await fetchUpstream(payload, AbortSignal.timeout(timeoutMs));
+  const { response, key } = await fetchUpstream(primaryTarget, payload, AbortSignal.timeout(timeoutMs));
   console.log(`[dream-server] upstream key #${key.id} served non-stream request`);
   const data = (await response.json()) as { usage?: unknown };
   return { data, keyId: key.id, usage: normalizeUsage(data.usage) };
@@ -224,7 +271,12 @@ export async function requestUpstreamJson(
 export async function openChatStream(
   parsed: ParsedChatRequest,
   clientSignal: AbortSignal,
-): Promise<{ stream: ReadableStream<Uint8Array>; keyId: number }> {
+): Promise<{
+  stream: ReadableStream<Uint8Array>;
+  keyId: number;
+  model: string;
+  provider: "deepseek" | "qwen";
+}> {
   const payload =
     config.provider === "qwen"
       ? {
@@ -241,10 +293,51 @@ export async function openChatStream(
           stream_options: { include_usage: true },
         };
 
-  const { response: upstream, key } = await fetchUpstream(payload, clientSignal);
-  if (!upstream.body) {
-    throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 未返回流式响应体`);
+  let result: UpstreamResponse;
+  let servedModel =
+    config.provider === "qwen"
+      ? config.model
+      : parsed.thinking
+        ? config.reasonerModel
+        : config.model;
+  let servedProvider = config.provider;
+
+  try {
+    result = await fetchUpstream(primaryTarget, payload, clientSignal);
+  } catch (error) {
+    if (
+      !(error instanceof ApiError) ||
+      error.code !== "CONTENT_FILTERED" ||
+      !config.fallback ||
+      !fallbackTarget
+    ) {
+      throw error;
+    }
+    const fallbackPayload = {
+      model: parsed.thinking ? config.fallback.reasonerModel : config.fallback.model,
+      messages: parsed.messages,
+      stream: true,
+      stream_options: { include_usage: true },
+    };
+    console.warn(
+      `[dream-server] ${config.providerLabel} 内容安全拦截，回退到 ${config.fallback.label}: ${error.message}`,
+    );
+    result = await fetchUpstream(fallbackTarget, fallbackPayload, clientSignal);
+    servedModel = String(fallbackPayload.model);
+    servedProvider = "deepseek";
   }
-  console.log(`[dream-server] upstream key #${key.id} served stream`);
-  return { stream: upstream.body, keyId: key.id };
+
+  const upstream = result.response;
+  if (!upstream.body) {
+    throw new ApiError(502, "UPSTREAM_ERROR", `${servedProvider} API 未返回流式响应体`);
+  }
+  console.log(
+    `[dream-server] upstream key #${result.key.id} served stream${servedProvider !== config.provider ? ` (fallback ${servedProvider})` : ""}`,
+  );
+  return {
+    stream: upstream.body,
+    keyId: result.key.id,
+    model: servedModel,
+    provider: servedProvider,
+  };
 }

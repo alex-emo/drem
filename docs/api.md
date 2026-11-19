@@ -65,6 +65,7 @@ Authorization: Bearer <access_token>
 | 405 | `METHOD_NOT_ALLOWED` | 方法不允许 |
 | 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 8 MiB |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` 不是 `application/json` |
+| 422 | `CONTENT_FILTERED` | 上游内容安全策略拒绝了这段对话（如 Qwen `DataInspectionFailed`） |
 | 429 | `RATE_LIMITED` | 触发限流（M1） |
 | 500 | `INTERNAL` | 服务端内部错误 |
 | 502 | `UPSTREAM_AUTH_FAILED` | DeepSeek 鉴权失败（服务端 Key 无效） |
@@ -73,6 +74,8 @@ Authorization: Bearer <access_token>
 | 504 | `UPSTREAM_TIMEOUT` | 上游超时（预留） |
 
 > 499 `REQUEST_ABORTED` 仅用于服务端日志：客户端已断开，通常收不到响应。
+
+内容安全回退：当主供应商（Qwen）返回 `DataInspectionFailed` 时，只要服务端配置了 `DEEPSEEK_API_KEYS`，会使用同一份上下文自动回退到 DeepSeek 重试一次；回退仍失败或未配置回退 Key 时，返回 `422 CONTENT_FILTERED`，前端会展示可读原因而不是笼统的 502。日志会记录 `fallback deepseek` 与回退 Key 序号（从 `#101` 起，避免与主池混淆）。
 
 ## 3. `POST /api/v1/chat`
 

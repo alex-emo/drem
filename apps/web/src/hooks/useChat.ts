@@ -345,7 +345,11 @@ export function useChat() {
           if (error instanceof ChatApiError && error.status === 401) {
             window.dispatchEvent(new CustomEvent("dream:unauthorized"));
           }
-          await finish("error", (error as Error).message || "生成失败，请稍后重试");
+          const failure =
+            error instanceof ChatApiError && error.code === "CONTENT_FILTERED"
+              ? "这段对话触发了模型的内容安全策略，暂时无法继续。请修改最近几条消息，或新建一个会话再试。"
+              : (error as Error).message || "生成失败，请稍后重试";
+          await finish("error", failure);
         }
       }
     },

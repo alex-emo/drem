@@ -219,9 +219,10 @@ app.post("/api/v1/chat", async (c) => {
   console.log(
     `[dream-server] ${requestId} chat by ${user.username}: ${effective.messages.length} messages, thinking=${parsed.thinking}`,
   );
-  const { stream: upstream, keyId } = await openChatStream(effective, c.req.raw.signal);
-  const effectiveModel =
-    config.provider === "qwen" || !parsed.thinking ? config.model : config.reasonerModel;
+  const { stream: upstream, keyId, model: effectiveModel } = await openChatStream(
+    effective,
+    c.req.raw.signal,
+  );
   const stream = dreamChatStream(
     upstream,
     {
@@ -305,5 +306,10 @@ serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => 
         config.provider === "deepseek" ? ` / ${config.reasonerModel}` : "（enable_thinking 切换）"
       }`,
     );
+    if (config.fallback) {
+      console.log(
+        `[dream-server] 内容安全回退：${config.fallback.label} ${config.fallback.model} / ${config.fallback.reasonerModel}（${config.fallback.keys.length} 个 Key）`,
+      );
+    }
   }
 });

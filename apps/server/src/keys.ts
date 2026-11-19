@@ -12,13 +12,13 @@ export interface PooledKey {
  * 多个 Key 通常属于不同工作空间/配额，轮询可以摊平限流；
  * 401/402/403/429/5xx 会临时冷却该 Key，让后续请求优先使用其它 Key。
  */
-class KeyPool {
+export class KeyPool {
   private readonly keys: PooledKey[];
   private cursor = 0;
   private readonly cooldownUntil = new Map<number, number>();
 
-  constructor(values: string[]) {
-    this.keys = values.map((value, index) => ({ id: index + 1, value }));
+  constructor(values: string[], idOffset = 0) {
+    this.keys = values.map((value, index) => ({ id: idOffset + index + 1, value }));
   }
 
   get size(): number {
@@ -80,6 +80,8 @@ class KeyPool {
 }
 
 export const keyPool = new KeyPool(config.apiKeys);
+/** DeepSeek 回退池；ID 从 101 开始，避免与主 Key 池统计混淆。 */
+export const fallbackKeyPool = config.fallback ? new KeyPool(config.fallback.keys, 100) : null;
 
 export function isRetryableStatus(status: number): boolean {
   return (
