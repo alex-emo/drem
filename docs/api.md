@@ -99,7 +99,7 @@ X-Request-Id: req_demo_001
 
 | 字段 | 类型 | 必填 | 约束 |
 | --- | --- | --- | --- |
-| `messages` | `Message[]` | 是 | 1–400 条；按时间正序；最后一条必须是 `user` |
+| `messages` | `Message[]` | 是 | 1–10000 条；按时间正序；最后一条必须是 `user` |
 | `messages[].role` | `"system" \| "user" \| "assistant"` | 是 | — |
 | `messages[].content` | `string` | 是 | trim 后非空；单条 ≤ 200,000 字符 |
 | `thinking` | `boolean` | 否 | 默认 `false`；`true` 时使用 `DREAM_REASONER_MODEL`，返回 `thinking` 事件 |
