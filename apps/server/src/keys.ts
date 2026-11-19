@@ -68,6 +68,15 @@ class KeyPool {
   stats(): { total: number; available: number } {
     return { total: this.total, available: this.available };
   }
+
+  /** 管理后台用：每个 Key 的可用状态与冷却截止时间（不含密钥内容）。 */
+  details(): Array<{ id: number; available: boolean; cooldownUntil: number | null }> {
+    const now = Date.now();
+    return this.keys.map((key) => {
+      const until = this.cooldownUntil.get(key.id) ?? 0;
+      return { id: key.id, available: until <= now, cooldownUntil: until > now ? until : null };
+    });
+  }
 }
 
 export const keyPool = new KeyPool(config.apiKeys);

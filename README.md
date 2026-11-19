@@ -27,6 +27,7 @@
 | 真实 DeepSeek API 流式回复 | 切换 Qwen3.7-Flash |
 | --- | --- |
 | ![real api](docs/screenshots/real-api-dark.png) | ![qwen](docs/screenshots/qwen-dark.png) |
+| ![admin](docs/screenshots/admin-dark.png) | |
 
 ## 架构
 
@@ -130,6 +131,7 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 长对话自动压缩：单次上下文超过 1000 条或 300 万字符时，服务端按分段生成摘要，只保留最近 200 条原文再发给模型；摘要按分段内容哈希缓存在 SQLite，追加新消息不会重复计算。导入长对话后会静默预热摘要，过程对用户不可见
 - 分享链接导入：粘贴 `chat.deepseek.com/share/...`，由服务端抓取分享数据、还原当前分支并写入本地
 - 独立部署：服务端同端口托管 Web 构建产物，可通过 systemd + Cloudflare Tunnel 暴露 HTTPS
+- 管理后台：`/admin` 查看用户、请求数、输入/输出 Token 与每个 API Key 的用量、冷却状态；只有 `DREAM_ADMIN_USERS` 名单内的账号可访问
 
 ## 服务端接口
 
@@ -140,7 +142,8 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 | `POST` | `/api/v1/auth/register` | 注册并登录 |
 | `POST` | `/api/v1/auth/login` | 登录 |
 | `POST` | `/api/v1/auth/logout` | 退出登录 |
-| `GET` | `/api/v1/me` | 当前用户 |
+| `GET` | `/api/v1/me` | 当前用户（含 `isAdmin`） |
+| `GET` | `/api/v1/admin/stats` | 管理后台聚合统计（管理员） |
 | `GET` | `/api/v1/import/share` | 通过分享链接抓取并归一化会话 |
 | `GET` | `/api/v1/health` | 存活、模式、是否配置 Key、模型名 |
 | `GET` | `/api/v1/models` | 服务端配置的模型 |
@@ -179,6 +182,8 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 | `QWEN_API_KEY` | 空 | 阿里云百炼 API Key（`DREAM_PROVIDER=qwen` 时使用） |
 | `QWEN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 百炼 OpenAI 兼容端点 |
 | `QWEN_MODEL` | `qwen3.7-flash` | Qwen 模型名 |
+| `QWEN_API_KEYS` | 空 | 多 Key 轮询（逗号/换行分隔，与 `QWEN_API_KEY` 合并去重） |
+| `DREAM_ADMIN_USERS` | 空 | 管理员用户名（逗号分隔），可访问 `/admin` |
 | `DREAM_MOCK` | `0` | `1` 时启用本地模拟流 |
 | `PORT` | `8787` | 服务端端口 |
 
@@ -268,6 +273,17 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 | `npm run start` | 以 tsx 启动服务端（无 watch） |
 
 部署到服务器（systemd、更新、SSH 隧道）见 [docs/deploy.md](docs/deploy.md)。
+
+## 管理后台
+
+登录后访问 `/admin`（或侧边栏底部「后台」）。页面展示：
+
+- 用户总数、近 24h 活跃会话、请求数、输入/输出/总 Token；
+- 每个用户的注册时间、最近活跃、请求与 Token 用量；
+- 每个 Key 的可用状态、冷却截止时间、请求数与 Token 用量（只显示序号，不显示密钥）；
+- 数据库、上游、API 版本、运行时长、内存等组件状态；每 30 秒自动刷新。
+
+权限由服务端 `DREAM_ADMIN_USERS` 控制；非管理员访问接口返回 403。Token 明细存 SQLite `usage_events`。
 
 ## 安全说明
 

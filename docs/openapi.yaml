@@ -267,6 +267,28 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/Unprocessable" }
         "502": { $ref: "#/components/responses/UpstreamError" }
+  /api/v1/admin/stats:
+    get:
+      tags: [admin]
+      summary: 管理后台聚合统计（用户 / 请求 / Token / Key）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 统计数据
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generatedAt: { type: string, format: date-time }
+                  components: { type: object, additionalProperties: true }
+                  totals: { type: object, additionalProperties: true }
+                  users: { type: array, items: { type: object, additionalProperties: true } }
+                  keys: { type: array, items: { type: object, additionalProperties: true } }
+                  days: { type: array, items: { type: object, additionalProperties: true } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 components:
   securitySchemes:
     bearerAuth:
@@ -296,7 +318,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     PayloadTooLarge:
-      description: 请求体超过 1 MiB
+      description: 请求体超过 8 MiB
       content:
         application/json:
           schema:
@@ -315,6 +337,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     Conflict:
       description: 用户名已被占用
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: 没有管理员权限
       content:
         application/json:
           schema:
@@ -352,6 +380,7 @@ components:
         username: { type: string }
         displayName: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
+        isAdmin: { type: boolean }
     AuthResponse:
       type: object
       properties:

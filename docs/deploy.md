@@ -66,9 +66,19 @@ QWEN_MODEL=qwen3.7-flash
 
 然后 `systemctl restart dream-server`；前端无需重新构建，health 会返回新的 `provider` / `models`。
 
+## 管理员看板
+
+生产 `.env` 增加管理员名单（逗号分隔，大小写不敏感），重启服务后生效：
+
+```bash
+DREAM_ADMIN_USERS=Alex
+```
+
+管理员访问 `https://dream.pum.org.cn/admin`，可查看用户、请求次数、输入/输出 Token，以及每个 Key 的用量和冷却状态。Token 明细写入 SQLite `usage_events` 表，随 `DREAM_DB_PATH` 一起备份。非管理员访问会返回 403。
+
 ## 长对话压缩缓存
 
-服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表，缓存分段摘要；该表随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
+服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表缓存分段摘要，以及 `usage_events` 表记录每个请求的 Token 用量；两表都随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
 
 ## 固定域名（命名隧道）
 

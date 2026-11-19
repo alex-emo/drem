@@ -133,6 +133,11 @@ export default function Sidebar({
               <span>设置</span>
             </button>
           </div>
+          {user.isAdmin ? (
+            <a className="admin-entry" href="/admin" title="管理后台">
+              后台
+            </a>
+          ) : null}
           <span className="version">v0.2</span>
         </div>
       </div>

@@ -51,6 +51,7 @@ export interface AuthUser {
   username: string;
   displayName: string | null;
   createdAt: string;
+  isAdmin?: boolean;
 }
 
 export interface AuthResult {

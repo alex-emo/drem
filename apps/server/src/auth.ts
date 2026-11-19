@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { db, type UserRow } from "./db.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { ApiError } from "./protocol.js";
+import { config } from "./config.js";
 
 const USERNAME_RE = /^[A-Za-z0-9_\u4e00-\u9fa5]{3,32}$/;
 const PASSWORD_MIN = 8;
@@ -13,11 +14,16 @@ export interface PublicUser {
   username: string;
   displayName: string | null;
   createdAt: string;
+  isAdmin: boolean;
 }
 
 export interface AuthResult {
   token: string;
   user: PublicUser;
+}
+
+export function isAdminUsername(username: string): boolean {
+  return config.adminUsers.some((name) => name.toLowerCase() === username.toLowerCase());
 }
 
 function toPublic(row: UserRow): PublicUser {
@@ -26,6 +32,7 @@ function toPublic(row: UserRow): PublicUser {
     username: row.username,
     displayName: row.display_name,
     createdAt: row.created_at,
+    isAdmin: isAdminUsername(row.username),
   };
 }
 
@@ -153,6 +160,15 @@ export function requireUser(authorization: string | undefined): {
   );
 
   return { user: toPublic(row), sessionId: row.session_id };
+}
+
+/** 管理接口：在登录基础上校验管理员名单。 */
+export function requireAdmin(authorization: string | undefined): PublicUser {
+  const { user } = requireUser(authorization);
+  if (!user.isAdmin) {
+    throw new ApiError(403, "FORBIDDEN", "需要管理员权限");
+  }
+  return user;
 }
 
 export function logoutUser(authorization: string | undefined): void {

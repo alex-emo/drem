@@ -4,6 +4,7 @@ import { getContextSummary, putContextSummary } from "./db.js";
 import type { ChatMessage } from "./deepseek.js";
 import { ApiError } from "./protocol.js";
 import { requestUpstreamJson } from "./deepseek.js";
+import type { TokenUsage } from "./usage.js";
 
 /** 超过任一阈值就压缩历史：1000 条或 300 万字符。 */
 export const COMPRESS_MESSAGE_THRESHOLD = 1000;
@@ -84,7 +85,10 @@ function segmentKey(segment: ChatMessage[]): string {
   return createHash("sha256").update(JSON.stringify(segment)).digest("hex");
 }
 
-async function summarizeSegment(segment: ChatMessage[]): Promise<string> {
+async function summarizeSegment(
+  segment: ChatMessage[],
+  onUsage?: (usage: TokenUsage | null, keyId: number) => void,
+): Promise<string> {
   const payload =
     config.provider === "qwen"
       ? {
@@ -111,7 +115,9 @@ async function summarizeSegment(segment: ChatMessage[]): Promise<string> {
 
   let data: ChatCompletionResponse;
   try {
-    data = (await requestUpstreamJson(payload, 120_000)) as ChatCompletionResponse;
+    const result = await requestUpstreamJson(payload, 120_000);
+    data = result.data as ChatCompletionResponse;
+    onUsage?.(result.usage, result.keyId);
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(
@@ -133,7 +139,10 @@ async function summarizeSegment(segment: ChatMessage[]): Promise<string> {
  * 把过长的历史压成分段摘要，只保留最近一段原文。
  * 摘要按分段内容哈希缓存，追加新消息时旧分段不会重复计算。
  */
-export async function compressContext(messages: ChatMessage[]): Promise<CompressionOutcome> {
+export async function compressContext(
+  messages: ChatMessage[],
+  options: { onUsage?: (usage: TokenUsage | null, keyId: number) => void } = {},
+): Promise<CompressionOutcome> {
   if (!needsCompression(messages)) {
     return { messages, compressed: false, segments: 0, cached: 0, originalMessages: messages.length };
   }
@@ -172,7 +181,7 @@ export async function compressContext(messages: ChatMessage[]): Promise<Compress
         continue;
       }
       try {
-        const summary = await summarizeSegment(segment);
+        const summary = await summarizeSegment(segment, options.onUsage);
         putContextSummary(key, summary);
         summaries[index] = summary;
       } catch (error) {

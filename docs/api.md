@@ -315,14 +315,34 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 }
 ```
 
-## 8. 规划中的端点（M1）
+## 8. `GET /api/v1/admin/stats`（管理员）
 
-以下路径尚未实现，仅确定命名与风格，避免后续破坏性改动：
+返回后台看板所需的聚合数据：用户、请求次数、输入/输出 Token、Key 用量与组件状态。需要 Bearer，且用户名在服务端 `DREAM_ADMIN_USERS` 名单内，否则返回 403 `FORBIDDEN`。
+
+```json
+{
+  "generatedAt": "2026-11-19T07:50:08.000Z",
+  "components": {
+    "api": "v1", "serverVersion": "0.2.0", "uptimeSeconds": 41,
+    "memoryMb": 98, "database": "ok",
+    "provider": "qwen", "providerLabel": "Qwen", "model": "qwen3.7-flash",
+    "keys": { "total": 5, "available": 5 },
+    "lastRequestAt": "2026-11-19T07:50:06.229Z"
+  },
+  "totals": { "users": 8, "activeSessions": 9, "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072 },
+  "users": [{ "username": "Alex", "isAdmin": true, "requests": 4, "promptTokens": 900, "completionTokens": 320, "totalTokens": 1220, "lastSeenAt": "..." }],
+  "keys": [{ "id": 1, "available": true, "requests": 5, "promptTokens": 3000, "completionTokens": 1200, "totalTokens": 4200, "lastUsedAt": "..." }],
+  "days": [{ "day": "2026-11-19", "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072 }]
+}
+```
+
+Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 `usage` 后写入 SQLite `usage_events`（按用户与 Key 归因）；没有 usage 的请求按 0 记录，仍计入请求数。后台入口为 `https://<域名>/admin`。
+
+## 9. 规划中的端点（M1）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/v1/auth/refresh` | 刷新 access token |
-| `GET` | `/api/v1/admin/users` | 用户列表（管理员） |
 | `DELETE` | `/api/v1/admin/devices/:id` | 踢下线（管理员） |
 
 ## 9. 变更记录
@@ -334,6 +354,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 | 2026-11-19 | v1.2 | 新增 `GET /api/v1/import/share` 分享链接导入 |
 | 2026-11-19 | v1.3 | 新增 `DREAM_PROVIDER=qwen`（百炼 Qwen3.7-Flash）；health 增加 provider / providerLabel，models 增加 provider |
 | 2026-11-19 | v1.4 | 长对话自动分段摘要（>1000 条或 >300 万字符）；新增 `POST /api/v1/context/warm`；health 增加 context 阈值 |
+| 2026-11-19 | v1.5 | 新增管理员看板 `GET /api/v1/admin/stats`（按用户/Key 统计 Token）；`DREAM_ADMIN_USERS` 控制权限 |
 
 ## 认证（v0.3）
 
@@ -344,6 +365,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 | POST | `/api/v1/auth/register` | `{ username, password, displayName?, deviceId? }` → `201 { token, user }` |
 | POST | `/api/v1/auth/login` | `{ username, password, deviceId? }` → `{ token, user }` |
 | POST | `/api/v1/auth/logout` | 使当前 token 失效 |
-| GET | `/api/v1/me` | 当前用户 `{ user }` |
+| GET | `/api/v1/me` | 当前用户 `{ user }`（含 `isAdmin`） |
+| GET | `/api/v1/admin/stats` | 管理员看板统计数据 |
 
 错误码新增：`INVALID_CREDENTIALS`（401）、`USERNAME_TAKEN`（409）、`UNAUTHORIZED`（401）。

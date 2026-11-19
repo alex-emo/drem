@@ -50,6 +50,25 @@ export interface SessionRow {
 }
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS usage_events (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           TEXT NOT NULL,
+    username          TEXT NOT NULL,
+    key_id            INTEGER NOT NULL,
+    model             TEXT NOT NULL,
+    kind              TEXT NOT NULL,
+    prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens      INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_events(user_id);
+  CREATE INDEX IF NOT EXISTS idx_usage_key ON usage_events(key_id);
+  CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS context_summaries (
     key        TEXT PRIMARY KEY,
     summary    TEXT NOT NULL,

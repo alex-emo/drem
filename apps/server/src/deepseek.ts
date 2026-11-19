@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { cooldownForStatus, isRetryableStatus, keyPool, type PooledKey } from "./keys.js";
 import { ApiError } from "./protocol.js";
+import { normalizeUsage, type TokenUsage } from "./usage.js";
 
 export type ChatRole = "system" | "user" | "assistant";
 
@@ -202,33 +203,42 @@ async function fetchUpstream(
   );
 }
 
+export interface UpstreamJsonResult {
+  data: unknown;
+  keyId: number;
+  usage: TokenUsage | null;
+}
+
 /** 非流式上游请求（摘要等），同样走 Key 池与重试。 */
 export async function requestUpstreamJson(
   payload: Record<string, unknown>,
   timeoutMs = 120_000,
-): Promise<unknown> {
+): Promise<UpstreamJsonResult> {
   const { response, key } = await fetchUpstream(payload, AbortSignal.timeout(timeoutMs));
   console.log(`[dream-server] upstream key #${key.id} served non-stream request`);
-  return response.json();
+  const data = (await response.json()) as { usage?: unknown };
+  return { data, keyId: key.id, usage: normalizeUsage(data.usage) };
 }
 
-/** 请求上游 chat/completions（stream=true），返回 SSE 字节流。 */
+/** 请求上游 chat/completions（stream=true），返回 SSE 字节流与所用 Key。 */
 export async function openChatStream(
   parsed: ParsedChatRequest,
   clientSignal: AbortSignal,
-): Promise<ReadableStream<Uint8Array>> {
+): Promise<{ stream: ReadableStream<Uint8Array>; keyId: number }> {
   const payload =
     config.provider === "qwen"
       ? {
           model: config.model,
           messages: parsed.messages,
           stream: true,
+          stream_options: { include_usage: true },
           enable_thinking: parsed.thinking,
         }
       : {
           model: parsed.thinking ? config.reasonerModel : config.model,
           messages: parsed.messages,
           stream: true,
+          stream_options: { include_usage: true },
         };
 
   const { response: upstream, key } = await fetchUpstream(payload, clientSignal);
@@ -236,5 +246,5 @@ export async function openChatStream(
     throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 未返回流式响应体`);
   }
   console.log(`[dream-server] upstream key #${key.id} served stream`);
-  return upstream.body;
+  return { stream: upstream.body, keyId: key.id };
 }

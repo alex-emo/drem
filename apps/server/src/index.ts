@@ -15,7 +15,9 @@ import {
 import {
   loginUser,
   logoutUser,
+  isAdminUsername,
   registerUser,
+  requireAdmin,
   requireUser,
 } from "./auth.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
@@ -31,6 +33,7 @@ import {
   sseHeaders,
 } from "./protocol.js";
 import { dreamChatStream } from "./stream.js";
+import { getAdminStats, recordUsage, type TokenUsage } from "./usage.js";
 
 type AppEnv = { Variables: { requestId: string } };
 
@@ -141,6 +144,11 @@ app.get("/api/v1/me", (c) => {
   return c.json({ user });
 });
 
+app.get("/api/v1/admin/stats", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  return c.json(getAdminStats(isAdminUsername));
+});
+
 app.get("/api/v1/import/share", async (c) => {
   requireUser(c.req.header("authorization"));
   const url = c.req.query("url") ?? "";
@@ -148,10 +156,20 @@ app.get("/api/v1/import/share", async (c) => {
 });
 
 app.post("/api/v1/context/warm", async (c) => {
-  requireUser(c.req.header("authorization"));
+  const { user } = requireUser(c.req.header("authorization"));
   const body = await readJsonBody(c);
   const parsed = parseChatRequest(body, { requireLastUser: false });
-  const outcome = await compressContext(parsed.messages);
+  const outcome = await compressContext(parsed.messages, {
+    onUsage: (usage: TokenUsage | null, keyId: number) =>
+      recordUsage({
+        userId: user.id,
+        username: user.username,
+        keyId,
+        model: config.model,
+        kind: "summary",
+        usage,
+      }),
+  });
   return c.json({
     compressed: outcome.compressed,
     segments: outcome.segments,
@@ -181,7 +199,17 @@ app.post("/api/v1/chat", async (c) => {
   let effective = parsed;
   if (needsCompression(parsed.messages)) {
     const startedAt = Date.now();
-    const compressed = await compressContext(parsed.messages);
+    const compressed = await compressContext(parsed.messages, {
+      onUsage: (usage: TokenUsage | null, keyId: number) =>
+        recordUsage({
+          userId: user.id,
+          username: user.username,
+          keyId,
+          model: config.model,
+          kind: "summary",
+          usage,
+        }),
+    });
     effective = { ...parsed, messages: compressed.messages };
     console.log(
       `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ${compressed.segments} segments (${compressed.cached} cached) in ${Date.now() - startedAt}ms`,
@@ -191,16 +219,27 @@ app.post("/api/v1/chat", async (c) => {
   console.log(
     `[dream-server] ${requestId} chat by ${user.username}: ${effective.messages.length} messages, thinking=${parsed.thinking}`,
   );
-  const upstream = await openChatStream(effective, c.req.raw.signal);
+  const { stream: upstream, keyId } = await openChatStream(effective, c.req.raw.signal);
+  const effectiveModel =
+    config.provider === "qwen" || !parsed.thinking ? config.model : config.reasonerModel;
   const stream = dreamChatStream(
     upstream,
     {
       requestId,
-      model:
-        config.provider === "qwen" || !parsed.thinking ? config.model : config.reasonerModel,
+      model: effectiveModel,
       thinking: parsed.thinking,
     },
     c.req.raw.signal,
+    ({ usage }) => {
+      recordUsage({
+        userId: user.id,
+        username: user.username,
+        keyId,
+        model: effectiveModel,
+        kind: "chat",
+        usage,
+      });
+    },
   );
   return new Response(stream, { headers: sseHeaders(requestId) });
 });

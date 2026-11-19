@@ -1,4 +1,5 @@
 import { sseEncode } from "./protocol.js";
+import { normalizeUsage, type TokenUsage } from "./usage.js";
 
 export interface ChatStreamMeta {
   requestId: string;
@@ -16,6 +17,11 @@ interface UpstreamChunk {
     };
     finish_reason?: string | null;
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
 }
 
 const KNOWN_FINISH_REASONS = new Set(["stop", "length", "content_filter"]);
@@ -44,13 +50,16 @@ export function dreamChatStream(
   upstream: ReadableStream<Uint8Array>,
   meta: ChatStreamMeta,
   clientSignal?: AbortSignal,
+  onFinish?: (info: { finishReason: FinishReason; usage: TokenUsage | null }) => void,
 ): ReadableStream<Uint8Array> {
   const reader = upstream.getReader();
   const decoder = new TextDecoder();
 
   let closed = false;
   let cancelled = false;
+  let finished = false;
   let finishReason: FinishReason = "stop";
+  let usage: TokenUsage | null = null;
 
   const safeEnqueue = (
     controller: ReadableStreamDefaultController<Uint8Array>,
@@ -89,6 +98,14 @@ export function dreamChatStream(
   ) => {
     emit(controller, event, data);
     close(controller);
+    if (!finished) {
+      finished = true;
+      try {
+        onFinish?.({ finishReason, usage });
+      } catch (error) {
+        console.warn(`[dream-server] onFinish callback failed: ${(error as Error).message}`);
+      }
+    }
     // 结束事件发出后立即释放上游连接，避免上游不主动断开导致客户端挂到超时。
     void reader.cancel().catch(() => undefined);
   };
@@ -140,6 +157,8 @@ export function dreamChatStream(
             }
 
             const chunk = JSON.parse(payload) as UpstreamChunk;
+            const parsedUsage = normalizeUsage(chunk.usage);
+            if (parsedUsage) usage = parsedUsage;
             const choice = chunk.choices?.[0];
             const delta = choice?.delta;
 

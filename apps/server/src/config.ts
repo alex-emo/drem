@@ -46,6 +46,19 @@ const apiKeys =
     ? splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS)
     : splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS);
 
+function splitList(...values: Array<string | undefined>): string[] {
+  const out: string[] = [];
+  for (const value of values) {
+    for (const part of (value ?? "").split(/[\s,]+/)) {
+      const item = part.trim();
+      if (item && !out.some((existing) => existing.toLowerCase() === item.toLowerCase())) {
+        out.push(item);
+      }
+    }
+  }
+  return out;
+}
+
 const model =
   provider === "qwen"
     ? (process.env.QWEN_MODEL ?? "qwen3.7-flash")
@@ -70,4 +83,5 @@ export const config = {
   mock: process.env.DREAM_MOCK === "1" || process.env.DREAM_MOCK === "true",
   dbPath: process.env.DREAM_DB_PATH ?? "data/dream.db",
   webDir: process.env.DREAM_WEB_DIR ?? "web",
+  adminUsers: splitList(process.env.DREAM_ADMIN_USERS),
 } as const;
