@@ -961,6 +961,10 @@ button:disabled {
     max-width: 88%;
   }
 
+  .msg-editor {
+    max-width: 88%;
+  }
+
   .composer-wrap {
     padding: 4px 10px max(12px, env(safe-area-inset-bottom));
   }
@@ -1703,4 +1707,78 @@ button:disabled {
   .admin-updated {
     display: none;
   }
+}
+
+/* ---------- 消息编辑与版本切换 ---------- */
+
+.msg.user .msg-actions {
+  justify-content: flex-end;
+}
+
+.msg:last-child .msg-actions {
+  opacity: 1;
+}
+
+.msg-editor {
+  width: 100%;
+  max-width: 80%;
+  box-sizing: border-box;
+  border: 1px solid var(--brand);
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.msg-editor-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: 202px;
+  padding: 10px 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.msg-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.btn.small {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+.branch-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+}
+
+.branch-switcher .icon-btn {
+  opacity: 0.85;
+}
+
+.branch-count {
+  min-width: 34px;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }

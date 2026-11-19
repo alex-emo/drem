@@ -146,3 +146,28 @@ export function LogoutIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function EditIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" />
+      <path d="M14.5 6.5l3 3" />
+    </Icon>
+  );
+}
+
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14.5 6 9 12l5.5 6" />
+    </Icon>
+  );
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.5 6 15 12l-5.5 6" />
+    </Icon>
+  );
+}

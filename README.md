@@ -27,7 +27,7 @@
 | 真实 DeepSeek API 流式回复 | 切换 Qwen3.7-Flash |
 | --- | --- |
 | ![real api](docs/screenshots/real-api-dark.png) | ![qwen](docs/screenshots/qwen-dark.png) |
-| ![admin](docs/screenshots/admin-dark.png) | |
+| ![admin](docs/screenshots/admin-dark.png) | ![edit branch](docs/screenshots/edit-branch-dark.png) |
 
 ## 架构
 
@@ -118,6 +118,7 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 会话列表：新建、切换、删除，首条用户消息自动生成标题（超长截断）
 - 流式对话：SSE 逐块追加渲染；发送中显示「停止生成」，客户端中断会同步中止上游请求
 - 多轮上下文：回传历史用户消息与已完成助手消息（错误消息与空回复不进入上下文）
+- 编辑提问与消息版本：鼠标悬停用户消息可见「编辑消息」，原地修改后发送会生成新回答；旧提问与旧回答保留为另一个版本，用消息下方的「1 / 2」切换，切回旧版本后继续追问会延续旧分支。数据层从线性消息升级为按 `parentId` 组织的消息树，旧会话与导入会话首次打开时自动补齐分支字段
 - 深度思考：开关后切换到思考模型（DeepSeek 用 `deepseek-reasoner`，Qwen 用 `enable_thinking`），思考增量渲染为默认折叠的思考块
 - 消息渲染：Markdown、GFM 表格、代码块高亮、语言标签、一键复制、链接新窗口打开
 - 本地持久化：会话/消息存 IndexedDB；刷新后自动恢复上次打开的会话；主题偏好存 localStorage
@@ -228,7 +229,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 - 单一设备会话（在线互踢）、邀请码/管理员审批、用户管理后台、限流（当前开放注册，请勿把 Key 共享给不可信用户）
 - 智能搜索 / 阅读链接 / 文件上传与解析 / 图片理解（DeepSeek 服务端工具）
-- 重新生成、编辑消息、消息分支、继续生成
+- 重新生成、继续生成（编辑消息与消息分支已实现）
 - 语音输入 / 朗读、KaTeX、Mermaid
 - 导出聊天记录、导入图片与附件、更多数据管理操作
 - Android（Capacitor）打包、PWA

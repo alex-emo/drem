@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatApiError, streamChat, warmContext } from "../lib/api";
+import {
+  buildVersions,
+  getVisibleMessages,
+  normalizeMessages,
+  selectVersion,
+} from "../lib/branches";
 import {
   deleteConversationData,
   getMessages,
@@ -7,6 +13,7 @@ import {
   listConversations,
   putConversation,
   putMessage,
+  putMessages,
 } from "../lib/db";
 import type { ImportedArchive } from "../lib/importArchive";
 import { buildShareImport } from "../lib/shareImport";
@@ -39,10 +46,23 @@ function warmLongConversations(conversations: Conversation[], messages: Message[
   }
 }
 
+function historyFor(messages: Message[]) {
+  return messages
+    .filter(
+      (message) =>
+        message.role === "user" ||
+        (message.role === "assistant" && message.status === "done" && message.content.trim().length > 0),
+    )
+    .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
+}
+
 export function useChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  /** 当前分支上可见的消息。 */
   const [messages, setMessages] = useState<Message[]>([]);
+  /** 全部版本的消息树。 */
+  const [allMessages, setAllMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [thinking, setThinking] = useState(false);
 
@@ -50,11 +70,9 @@ export function useChat() {
   const activeRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const messagesRef = useRef<Message[]>([]);
+  const allMessagesRef = useRef<Message[]>([]);
+  const rootRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -68,6 +86,8 @@ export function useChat() {
     streamingRef.current = streaming;
   }, [streaming]);
 
+  const versions = useMemo(() => buildVersions(allMessages), [allMessages]);
+
   const remember = (id: string | null) => {
     try {
       if (id) localStorage.setItem("dream-active-id", id);
@@ -76,6 +96,51 @@ export function useChat() {
       // 忽略隐私模式下的存储错误
     }
   };
+
+  const showVisible = useCallback((all: Message[], rootId: string | null) => {
+    const visible = getVisibleMessages(all, rootId);
+    messagesRef.current = visible;
+    setMessages(visible);
+    return visible;
+  }, []);
+
+  const updateConversation = useCallback(async (updated: Conversation) => {
+    conversationsRef.current = conversationsRef.current.map((item) =>
+      item.id === updated.id ? updated : item,
+    );
+    setConversations((prev) => {
+      const list = prev.map((item) => (item.id === updated.id ? updated : item));
+      return list.sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+    await putConversation(updated);
+  }, []);
+
+  const loadConversation = useCallback(
+    async (id: string) => {
+      const raw = await getMessages(id);
+      const normalized = normalizeMessages(raw);
+      const conversation = conversationsRef.current.find((item) => item.id === id);
+      const preferred =
+        conversation?.rootMessageId &&
+        normalized.messages.some((message) => message.id === conversation.rootMessageId)
+          ? conversation.rootMessageId
+          : normalized.rootId;
+
+      allMessagesRef.current = normalized.messages;
+      setAllMessages(normalized.messages);
+      rootRef.current = preferred;
+      activeRef.current = id;
+      setActiveId(id);
+      showVisible(normalized.messages, preferred);
+
+      if (normalized.changed) await putMessages(normalized.messages);
+      if (conversation && conversation.rootMessageId !== preferred) {
+        await updateConversation({ ...conversation, rootMessageId: preferred });
+      }
+      if (conversation) warmLongConversations([conversation], getVisibleMessages(normalized.messages, preferred));
+    },
+    [showVisible, updateConversation],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -91,19 +156,14 @@ export function useChat() {
       conversationsRef.current = items;
       setConversations(items);
       if (saved && items.some((item) => item.id === saved)) {
-        const restored = await getMessages(saved);
-        if (!alive) return;
-        activeRef.current = saved;
-        setActiveId(saved);
-        setMessages(restored);
-        messagesRef.current = restored;
+        await loadConversation(saved);
       }
     })().catch(() => undefined);
     return () => {
       alive = false;
       abortRef.current?.abort();
     };
-  }, []);
+  }, [loadConversation]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -112,21 +172,23 @@ export function useChat() {
   const newChat = useCallback(() => {
     abortRef.current?.abort();
     setActiveId(null);
+    activeRef.current = null;
     setMessages([]);
     messagesRef.current = [];
+    setAllMessages([]);
+    allMessagesRef.current = [];
+    rootRef.current = null;
     remember(null);
   }, []);
 
-  const openConversation = useCallback(async (id: string) => {
-    abortRef.current?.abort();
-    const items = await getMessages(id);
-    setActiveId(id);
-    setMessages(items);
-    messagesRef.current = items;
-    remember(id);
-    const conversation = conversationsRef.current.find((item) => item.id === id);
-    if (conversation) warmLongConversations([conversation], items);
-  }, []);
+  const openConversation = useCallback(
+    async (id: string) => {
+      abortRef.current?.abort();
+      await loadConversation(id);
+      remember(id);
+    },
+    [loadConversation],
+  );
 
   const removeConversation = useCallback(async (id: string) => {
     await deleteConversationData(id);
@@ -134,8 +196,12 @@ export function useChat() {
     if (activeRef.current === id) {
       abortRef.current?.abort();
       setActiveId(null);
+      activeRef.current = null;
       setMessages([]);
       messagesRef.current = [];
+      setAllMessages([]);
+      allMessagesRef.current = [];
+      rootRef.current = null;
       remember(null);
     }
   }, []);
@@ -199,65 +265,12 @@ export function useChat() {
     [openConversation],
   );
 
-  const sendMessage = useCallback(
-    async (raw: string) => {
-      const text = raw.trim();
-      if (!text || streamingRef.current) return;
-
-      const now = Date.now();
-      let conversationId = activeRef.current;
-      let conversation = conversationId
-        ? (conversationsRef.current.find((item) => item.id === conversationId) ?? null)
-        : null;
-
-      if (!conversationId) {
-        conversationId = newId();
-        conversation = {
-          id: conversationId,
-          title: makeTitle(text),
-          createdAt: now,
-          updatedAt: now,
-        };
-        await putConversation(conversation);
-        setConversations((prev) => [conversation as Conversation, ...prev]);
-        setActiveId(conversationId);
-        activeRef.current = conversationId;
-        remember(conversationId);
-      }
-
-      const userMessage: Message = {
-        id: newId(),
-        conversationId,
-        role: "user",
-        content: text,
-        status: "done",
-        createdAt: now,
-      };
-
-      const assistantMessage: Message = {
-        id: newId(),
-        conversationId,
-        role: "assistant",
-        content: "",
-        status: "streaming",
-        createdAt: now + 1,
-      };
-
-      // 只回传纯文本历史：用户消息 + 已完成的助手消息
-      const history = [...messagesRef.current, userMessage]
-        .filter(
-          (message) =>
-            message.role === "user" ||
-            (message.role === "assistant" && message.status === "done" && message.content.trim().length > 0),
-        )
-        .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
-
-      const nextMessages = [...messagesRef.current, userMessage, assistantMessage];
-      messagesRef.current = nextMessages;
-      setMessages(nextMessages);
-      await putMessage(userMessage);
-      await putMessage(assistantMessage);
-
+  const runReply = useCallback(
+    async (
+      conversation: Conversation,
+      assistantMessage: Message,
+      history: { role: "user" | "assistant"; content: string }[],
+    ) => {
       setStreaming(true);
       streamingRef.current = true;
 
@@ -278,28 +291,25 @@ export function useChat() {
           status,
           error,
         };
-
+        allMessagesRef.current = allMessagesRef.current.map((message) =>
+          message.id === assistantMessage.id ? final : message,
+        );
+        setAllMessages(allMessagesRef.current);
         messagesRef.current = messagesRef.current.map((message) =>
           message.id === assistantMessage.id ? final : message,
         );
-        setMessages((prev) => prev.map((message) => (message.id === assistantMessage.id ? final : message)));
+        setMessages(messagesRef.current);
         setStreaming(false);
         streamingRef.current = false;
 
         try {
           await putMessage(final);
-          const base = conversationsRef.current.find((item) => item.id === conversationId) ?? conversation;
-          if (base) {
-            const updated: Conversation = { ...base, updatedAt: Date.now() };
-            await putConversation(updated);
-            conversationsRef.current = conversationsRef.current.map((item) =>
-              item.id === updated.id ? updated : item,
-            );
-            setConversations((prev) => {
-              const list = prev.map((item) => (item.id === updated.id ? updated : item));
-              return list.sort((a, b) => b.updatedAt - a.updatedAt);
-            });
-          }
+          const base = conversationsRef.current.find((item) => item.id === conversation.id) ?? conversation;
+          await updateConversation({
+            ...base,
+            rootMessageId: rootRef.current,
+            updatedAt: Date.now(),
+          });
         } catch {
           // 本地存储失败不影响界面展示
         }
@@ -328,29 +338,202 @@ export function useChat() {
           },
         });
         await finish("done");
-      } catch (err) {
-        const error = err as Error;
-        if (error.name === "AbortError") {
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
           await finish("done");
         } else {
           if (error instanceof ChatApiError && error.status === 401) {
             window.dispatchEvent(new CustomEvent("dream:unauthorized"));
           }
-          await finish("error", error.message || "生成失败，请稍后重试");
+          await finish("error", (error as Error).message || "生成失败，请稍后重试");
         }
       }
     },
-    [thinking],
+    [thinking, updateConversation],
+  );
+
+  const sendMessage = useCallback(
+    async (raw: string) => {
+      const text = raw.trim();
+      if (!text || streamingRef.current) return;
+
+      const now = Date.now();
+      let conversationId = activeRef.current;
+      let conversation = conversationId
+        ? (conversationsRef.current.find((item) => item.id === conversationId) ?? null)
+        : null;
+      const visible = messagesRef.current;
+      const parentId = visible.at(-1)?.id ?? null;
+
+      if (!conversationId) {
+        conversationId = newId();
+        conversation = {
+          id: conversationId,
+          title: makeTitle(text),
+          createdAt: now,
+          updatedAt: now,
+          rootMessageId: null,
+        };
+        await putConversation(conversation);
+        conversationsRef.current = [conversation, ...conversationsRef.current];
+        setConversations((prev) => [conversation as Conversation, ...prev]);
+        setActiveId(conversationId);
+        activeRef.current = conversationId;
+        remember(conversationId);
+        rootRef.current = null;
+      }
+
+      const userMessage: Message = {
+        id: newId(),
+        conversationId,
+        role: "user",
+        content: text,
+        status: "done",
+        createdAt: now,
+        parentId,
+        selectedChildId: null,
+      };
+
+      const assistantMessage: Message = {
+        id: newId(),
+        conversationId,
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        createdAt: now + 1,
+        parentId: userMessage.id,
+        selectedChildId: null,
+      };
+      userMessage.selectedChildId = assistantMessage.id;
+
+      const rootId = rootRef.current ?? userMessage.id;
+      rootRef.current = rootId;
+
+      const all = [
+        ...allMessagesRef.current.map((message) =>
+          message.id === parentId ? { ...message, selectedChildId: userMessage.id } : message,
+        ),
+        userMessage,
+        assistantMessage,
+      ];
+      allMessagesRef.current = all;
+      setAllMessages(all);
+      const nextVisible = [...visible, userMessage, assistantMessage];
+      messagesRef.current = nextVisible;
+      setMessages(nextVisible);
+      await putMessage(userMessage);
+      await putMessage(assistantMessage);
+      if (conversation && conversation.rootMessageId !== rootId) {
+        await putConversation({ ...conversation, rootMessageId: rootId });
+      }
+
+      const history = [...historyFor(visible), { role: "user" as const, content: text }];
+      await runReply(conversation as Conversation, assistantMessage, history);
+    },
+    [runReply],
+  );
+
+  /** 编辑用户消息：在同一个父节点下新增版本并重新生成，旧分支仍可切回。 */
+  const editMessage = useCallback(
+    async (messageId: string, raw: string): Promise<boolean> => {
+      const text = raw.trim();
+      if (!text || streamingRef.current) return false;
+      const conversationId = activeRef.current;
+      const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+      if (!conversationId || !conversation) return false;
+
+      const visible = messagesRef.current;
+      const index = visible.findIndex((message) => message.id === messageId);
+      const previous = visible[index];
+      if (index < 0 || !previous || previous.role !== "user") return false;
+
+      const now = Date.now();
+      const parentId = previous.parentId ?? null;
+      const userMessage: Message = {
+        id: newId(),
+        conversationId,
+        role: "user",
+        content: text,
+        status: "done",
+        createdAt: now,
+        parentId,
+        selectedChildId: null,
+      };
+      const assistantMessage: Message = {
+        id: newId(),
+        conversationId,
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        createdAt: now + 1,
+        parentId: userMessage.id,
+        selectedChildId: null,
+      };
+      userMessage.selectedChildId = assistantMessage.id;
+
+      const rootId = parentId === null ? userMessage.id : (rootRef.current ?? userMessage.id);
+      rootRef.current = rootId;
+
+      const before = visible.slice(0, index);
+      const all = [
+        ...allMessagesRef.current.map((message) =>
+          parentId !== null && message.id === parentId
+            ? { ...message, selectedChildId: userMessage.id }
+            : message,
+        ),
+        userMessage,
+        assistantMessage,
+      ];
+      allMessagesRef.current = all;
+      setAllMessages(all);
+      const nextVisible = [...before, userMessage, assistantMessage];
+      messagesRef.current = nextVisible;
+      setMessages(nextVisible);
+
+      await putMessage(userMessage);
+      await putMessage(assistantMessage);
+      await putConversation({ ...conversation, rootMessageId: rootId, updatedAt: now });
+
+      const history = [...historyFor(before), { role: "user" as const, content: text }];
+      await runReply(conversation, assistantMessage, history);
+      return true;
+    },
+    [runReply],
+  );
+
+  const selectMessageVersion = useCallback(
+    async (messageId: string) => {
+      if (streamingRef.current) return;
+      const target = allMessagesRef.current.find((message) => message.id === messageId);
+      if (!target) return;
+      const result = selectVersion(allMessagesRef.current, messageId, rootRef.current);
+      allMessagesRef.current = result.messages;
+      setAllMessages(result.messages);
+      if (result.rootId !== rootRef.current) {
+        rootRef.current = result.rootId;
+        const conversationId = activeRef.current;
+        const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+        if (conversation) await updateConversation({ ...conversation, rootMessageId: result.rootId });
+      } else if (target.parentId) {
+        const parent = result.messages.find((message) => message.id === target.parentId);
+        if (parent) await putMessage(parent);
+      }
+      showVisible(result.messages, result.rootId);
+    },
+    [showVisible, updateConversation],
   );
 
   return {
     conversations,
     activeId,
     messages,
+    versions,
     streaming,
     thinking,
     setThinking,
     sendMessage,
+    editMessage,
+    selectMessageVersion,
     stop,
     newChat,
     openConversation,

@@ -46,6 +46,16 @@ export async function putMessage(message: Message): Promise<void> {
   await db.put("messages", message);
 }
 
+export async function putMessages(messages: Message[]): Promise<void> {
+  if (messages.length === 0) return;
+  const db = await dbPromise;
+  const tx = db.transaction("messages", "readwrite");
+  for (const message of messages) {
+    await tx.store.put(message);
+  }
+  await tx.done;
+}
+
 export async function importConversationData(
   conversations: Conversation[],
   messages: Message[],

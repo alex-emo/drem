@@ -9,6 +9,8 @@ export interface Conversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  /** 消息树的根节点；编辑第一条提问后可能换根。 */
+  rootMessageId?: string | null;
 }
 
 export interface Message {
@@ -20,6 +22,9 @@ export interface Message {
   status: MessageStatus;
   error?: string;
   createdAt: number;
+  /** 消息树结构：同一父节点下可以有多个版本。 */
+  parentId?: string | null;
+  selectedChildId?: string | null;
 }
 
 export interface HealthInfo {

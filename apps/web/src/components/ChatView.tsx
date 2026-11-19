@@ -45,7 +45,13 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
           </div>
         </div>
       ) : (
-        <MessageList messages={chat.messages} />
+        <MessageList
+          messages={chat.messages}
+          versions={chat.versions}
+          streaming={chat.streaming}
+          onEdit={chat.editMessage}
+          onSelectVersion={chat.selectMessageVersion}
+        />
       )}
 
       <div className="composer-wrap">

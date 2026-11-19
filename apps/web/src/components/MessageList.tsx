@@ -1,8 +1,23 @@
 import { useEffect, useRef } from "react";
+import type { VersionInfo } from "../lib/branches";
 import type { Message } from "../lib/types";
 import MessageItem from "./MessageItem";
 
-export default function MessageList({ messages }: { messages: Message[] }) {
+interface MessageListProps {
+  messages: Message[];
+  versions: Map<string, VersionInfo>;
+  streaming: boolean;
+  onEdit: (messageId: string, content: string) => Promise<boolean>;
+  onSelectVersion: (messageId: string) => void;
+}
+
+export default function MessageList({
+  messages,
+  versions,
+  streaming,
+  onEdit,
+  onSelectVersion,
+}: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
 
@@ -25,7 +40,14 @@ export default function MessageList({ messages }: { messages: Message[] }) {
     >
       <div className="chat-inner">
         {messages.map((message) => (
-          <MessageItem key={message.id} message={message} />
+          <MessageItem
+            key={message.id}
+            message={message}
+            versions={versions.get(message.id)}
+            streaming={streaming}
+            onEdit={onEdit}
+            onSelectVersion={onSelectVersion}
+          />
         ))}
       </div>
     </div>

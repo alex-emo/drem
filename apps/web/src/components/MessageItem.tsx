@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { VersionInfo } from "../lib/branches";
 import type { Message } from "../lib/types";
-import { CheckIcon, CopyIcon } from "./Icons";
+import BranchSwitcher from "./BranchSwitcher";
+import { CheckIcon, CopyIcon, EditIcon } from "./Icons";
 import Markdown from "./Markdown";
 
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
@@ -26,16 +28,38 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
   );
 }
 
-export default function MessageItem({ message }: { message: Message }) {
-  const [copied, setCopied] = useState(false);
+interface MessageItemProps {
+  message: Message;
+  versions?: VersionInfo;
+  streaming: boolean;
+  onEdit: (messageId: string, content: string) => Promise<boolean>;
+  onSelectVersion: (messageId: string) => void;
+}
 
-  if (message.role === "user") {
-    return (
-      <div className="msg user">
-        <div className="bubble">{message.content}</div>
-      </div>
-    );
-  }
+export default function MessageItem({
+  message,
+  versions,
+  streaming,
+  onEdit,
+  onSelectVersion,
+}: MessageItemProps) {
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!editing || !textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 202)}px`;
+    textarea.focus();
+  }, [editing, draft]);
+
+  useEffect(() => {
+    if (streaming) setEditing(false);
+  }, [streaming]);
 
   const copy = async () => {
     try {
@@ -46,6 +70,90 @@ export default function MessageItem({ message }: { message: Message }) {
       // 忽略
     }
   };
+
+  const save = async () => {
+    if (!draft.trim() || saving) return;
+    setSaving(true);
+    try {
+      const ok = await onEdit(message.id, draft);
+      if (ok) setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (message.role === "user") {
+    return (
+      <div className="msg user">
+        {editing ? (
+          <div className="msg-editor">
+            <textarea
+              ref={textareaRef}
+              className="msg-editor-input"
+              aria-label="编辑消息"
+              rows={1}
+              value={draft}
+              disabled={saving}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === "Escape") {
+                  setEditing(false);
+                } else if (event.key === "Enter" && !event.shiftKey && window.innerWidth > 700) {
+                  event.preventDefault();
+                  void save();
+                }
+              }}
+            />
+            <div className="msg-editor-actions">
+              <button type="button" className="btn ghost small" onClick={() => setEditing(false)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn primary small"
+                disabled={!draft.trim() || saving}
+                onClick={() => void save()}
+              >
+                {saving ? "发送中…" : "发送"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="bubble">{message.content}</div>
+            <div className="msg-actions">
+              <button
+                type="button"
+                className="icon-btn small"
+                onClick={() => void copy()}
+                aria-label="复制消息"
+                title="复制"
+              >
+                {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
+              </button>
+              <button
+                type="button"
+                className="icon-btn small"
+                onClick={() => {
+                  setDraft(message.content);
+                  setEditing(true);
+                }}
+                aria-label="编辑消息"
+                title="编辑消息"
+                disabled={streaming}
+              >
+                <EditIcon size={15} />
+              </button>
+            </div>
+            {versions && versions.ids.length > 1 ? (
+              <BranchSwitcher versions={versions} disabled={streaming} onSelect={onSelectVersion} />
+            ) : null}
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="msg assistant">
@@ -68,9 +176,12 @@ export default function MessageItem({ message }: { message: Message }) {
 
       {message.status === "done" && message.content ? (
         <div className="msg-actions">
-          <button type="button" className="icon-btn small" onClick={copy} aria-label="复制回复" title="复制">
+          <button type="button" className="icon-btn small" onClick={() => void copy()} aria-label="复制回复" title="复制">
             {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
           </button>
+          {versions && versions.ids.length > 1 ? (
+            <BranchSwitcher versions={versions} disabled={streaming} onSelect={onSelectVersion} />
+          ) : null}
         </div>
       ) : null}
     </div>
