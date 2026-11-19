@@ -26,12 +26,8 @@ function serverState(health: HealthState): string {
   if (health.kind === "loading") return "正在检查…";
   if (health.kind === "error") return "未连接本地服务端";
   if (health.info.mock) return "演示模式（本地模拟）";
-  const keyName = health.info.provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS";
-  if (!health.info.hasApiKey) return `服务端已启动，但未配置 ${keyName}`;
-  const label = health.info.providerLabel ?? (health.info.provider === "qwen" ? "Qwen" : "DeepSeek");
-  const keys = health.info.keys;
-  const keyText = keys && keys.total > 1 ? ` · ${keys.available}/${keys.total} 个密钥可用` : "";
-  return `已连接 ${label} API · ${health.info.models.default}${keyText}`;
+  if (!health.info.hasApiKey) return "Dream 模型服务暂不可用，请联系管理员";
+  return "Dream 模型服务 · 已连接";
 }
 
 export default function SettingsDialog({
@@ -204,7 +200,7 @@ export default function SettingsDialog({
                 <section className="settings-section">
                   <h3>数据存储</h3>
                   <p className="settings-note">
-                    对话记录只保存在当前浏览器的 IndexedDB 中，不会上传到 Dream 服务端。发送消息时，内容会经本地服务端转发给当前模型供应商。
+                    对话记录只保存在当前浏览器的 IndexedDB 中，不会上传到 Dream 服务端。发送消息时，内容会经本地服务端转发给 Dream 模型服务。
                   </p>
                 </section>
 

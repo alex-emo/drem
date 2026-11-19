@@ -187,6 +187,9 @@ app.post("/api/v1/context/warm", async (c) => {
   });
 });
 
+/** 对外 SSE 只暴露 Dream 模型名，不暴露真实上游模型。 */
+const publicModel = (thinking: boolean): string => (thinking ? "dream-thinking" : "dream");
+
 app.post("/api/v1/chat", async (c) => {
   const requestId = c.get("requestId");
   const { user } = requireUser(c.req.header("authorization"));
@@ -246,7 +249,7 @@ app.post("/api/v1/chat", async (c) => {
         detail: error.message,
       });
       console.log(`[dream-server] ${requestId} content refused by ${config.providerLabel}`);
-      return new Response(refusalStream({ requestId, model: config.model, thinking: parsed.thinking }), {
+      return new Response(refusalStream({ requestId, model: publicModel(parsed.thinking), thinking: parsed.thinking }), {
         headers: sseHeaders(requestId),
       });
     }
@@ -257,7 +260,7 @@ app.post("/api/v1/chat", async (c) => {
     upstream,
     {
       requestId,
-      model: effectiveModel,
+      model: publicModel(parsed.thinking),
       thinking: parsed.thinking,
     },
     c.req.raw.signal,

@@ -81,7 +81,7 @@ event: start
 data: {...}
 
 event: refusal
-data: {"requestId":"req_...","model":"qwen3.7-flash","message":"你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。"}
+data: {"requestId":"req_...","model":"dream","message":"你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。"}
 
 event: done
 data: {"requestId":"req_...","finishReason":"content_filter","createdAt":"..."}
@@ -152,7 +152,7 @@ data: {"requestId":"req_demo_001","finishReason":"stop","createdAt":"2026-11-18T
 
 | 事件 | 次数 | data 字段 | 说明 |
 | --- | --- | --- | --- |
-| `start` | 1 | `requestId`, `model`, `thinking`, `createdAt` | 连接建立后立即发送；`model` 为服务端向当前上游请求的模型名（DeepSeek 账号侧可能映射到 `deepseek-flash`；Qwen 为 `qwen3.7-flash`） |
+| `start` | 1 | `requestId`, `model`, `thinking`, `createdAt` | 连接建立后立即发送；`model` 为对外展示名 `dream` / `dream-thinking`，真实上游模型只在 health/admin 中可见 |
 | `thinking` | 0+ | `delta` | 思考增量；仅在 `thinking: true` 时出现 |
 | `delta` | 0+ | `delta` | 正文增量 |
 | `refusal` | 0–1 | `requestId`, `model`, `message` | 内容安全拒绝；出现时随后必有 `done`（`finishReason:"content_filter"`），无 `delta` |
@@ -165,7 +165,9 @@ SSE 编码规则：
 - 以 `:` 开头的行是注释（如心跳），客户端必须忽略。
 - 事件名缺失时按 `message` 处理并忽略（前向兼容）。
 - 不支持 `Last-Event-ID` 断线重传；连接中断时客户端应重新发起请求（是否重试由业务决定）。
-- 客户端 `AbortController` 断开后，服务端同步中止上游 DeepSeek 请求。
+- 客户端 `AbortController` 断开后，服务端同步中止上游模型请求。
+- 服务端对 `thinking`/`delta` 做伪流式节拍（约 24ms 一片，按 backlog 自适应速度）；`done` 只会在所有文本出完后发送，客户端无需额外平滑。
+- `thinking` 会先完整接收上游思考、脱敏后按节拍下发，因此可能比正文更晚开始出现。
 
 ### curl 示例
 
@@ -182,6 +184,14 @@ curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
 2. 逐块解析 SSE，按事件名分发；未知事件忽略。
 3. 收到 `done` 结束本次流并保存消息；收到 `error` 记为失败并展示 `message`。
 4. 用户点「停止」时 abort 请求；已收到的增量照常保存。
+
+### 3.1 模型身份
+
+服务端会在每次转发前注入固定的 system prompt，并移除客户端自带的冲突身份提示：
+
+- 对外身份统一为 **Dream 模型 / Dream 团队**。
+- 不向终端用户暴露 Qwen、通义千问、阿里云、DeepSeek、深度求索等底层模型或供应商名称。
+- 客户端不需要、也不应该再自行注入厂商身份提示；即使传入，服务端也会过滤。
 
 ## 4. `GET /api/v1/health`
 

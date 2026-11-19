@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { withDreamIdentity } from "./identity.js";
 import {
   cooldownForStatus,
   isRetryableStatus,
@@ -270,14 +271,14 @@ export async function openChatStream(
     config.provider === "qwen"
       ? {
           model: config.model,
-          messages: parsed.messages,
+          messages: withDreamIdentity(parsed.messages),
           stream: true,
           stream_options: { include_usage: true },
           enable_thinking: parsed.thinking,
         }
       : {
           model: parsed.thinking ? config.reasonerModel : config.model,
-          messages: parsed.messages,
+          messages: withDreamIdentity(parsed.messages),
           stream: true,
           stream_options: { include_usage: true },
         };

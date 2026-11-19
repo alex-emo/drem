@@ -31,11 +31,7 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
         <div className="banner">演示模式：当前回复由本地模拟生成，未调用上游模型。</div>
       ) : null}
       {health.kind === "ok" && !health.info.mock && !health.info.hasApiKey ? (
-        <div className="banner">
-          服务端已启动，但缺少{" "}
-          {health.info.provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS"}
-          ，发送消息会失败。
-        </div>
+        <div className="banner">Dream 模型服务暂不可用，请联系管理员。</div>
       ) : null}
 
       {chat.messages.length === 0 ? (

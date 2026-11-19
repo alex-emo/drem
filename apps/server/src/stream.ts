@@ -26,6 +26,23 @@ interface UpstreamChunk {
 
 const KNOWN_FINISH_REASONS = new Set(["stop", "length", "content_filter"]);
 
+/** 思考/正文都可能泄露底层模型名，统一替换成 Dream。 */
+const THINKING_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/通义千问|通义|qwen|qianwen/gi, "Dream"],
+  [/阿里云|阿里巴巴|阿里|alibaba(?:\s*cloud)?/gi, "Dream"],
+  [/深度求索|deepseek/gi, "Dream"],
+  [/anthropic|claude|openai|chatgpt|gpt-?4|google|gemini/gi, "Dream"],
+  [/system\s*prompt|系统提示词?/gi, "设定"],
+];
+
+function redactOutput(text: string): string {
+  let output = text;
+  for (const [pattern, replacement] of THINKING_REPLACEMENTS) {
+    output = output.replace(pattern, replacement);
+  }
+  return output.replace(/Dream\s*\/\s*Dream/g, "Dream").replace(/Dream(?:\s+Dream)+/g, "Dream");
+}
+
 function parseFinishReason(raw: string | null | undefined): FinishReason {
   if (!raw) return "stop";
   return KNOWN_FINISH_REASONS.has(raw) ? (raw as FinishReason) : "unknown";
@@ -42,9 +59,15 @@ function extractData(block: string): string | null {
   return payload || null;
 }
 
+type PendingEvent = { event: "thinking" | "delta"; text: string };
+
 /**
- * 把 DeepSeek 的 chat.completion.chunk 流归一化为 Dream 事件流：
- * start → (thinking | delta)* → done | error
+ * 把上游 chat.completion.chunk 流归一化为 Dream 事件流：
+ * start → (thinking | delta)* → done | error。
+ *
+ * 上游通常按句/大块到达，直接转发会让前端一阵一阵跳字。这里先把文本放进队列，
+ * 固定 24ms 节拍按 backlog 自适应出字（伪流式），backlog 越大出字越快；
+ * 全部出完后才发 done，保证客户端按顺序收尾。
  */
 export function dreamChatStream(
   upstream: ReadableStream<Uint8Array>,
@@ -58,70 +81,164 @@ export function dreamChatStream(
   let closed = false;
   let cancelled = false;
   let finished = false;
+  let upstreamEnded = false;
   let finishReason: FinishReason = "stop";
   let usage: TokenUsage | null = null;
 
-  const safeEnqueue = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-    bytes: Uint8Array,
-  ): boolean => {
-    if (closed || cancelled) return false;
-    try {
-      controller.enqueue(bytes);
-      return true;
-    } catch {
-      closed = true;
-      return false;
-    }
-  };
+  let thinkingBuffer = "";
+  let contentBuffer = "";
+  const queue: PendingEvent[] = [];
 
-  const emit = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-    event: string,
-    data: unknown,
-  ) => safeEnqueue(controller, sseEncode(event, data));
-
-  const close = (controller: ReadableStreamDefaultController<Uint8Array>) => {
-    if (closed) return;
-    closed = true;
-    try {
-      controller.close();
-    } catch {
-      // 下游已取消
-    }
-  };
-
-  const finish = (
-    controller: ReadableStreamDefaultController<Uint8Array>,
-    event: "done" | "error",
-    data: unknown,
-  ) => {
-    emit(controller, event, data);
-    close(controller);
-    if (!finished) {
-      finished = true;
-      try {
-        onFinish?.({ finishReason, usage });
-      } catch (error) {
-        console.warn(`[dream-server] onFinish callback failed: ${(error as Error).message}`);
-      }
-    }
-    // 结束事件发出后立即释放上游连接，避免上游不主动断开导致客户端挂到超时。
-    void reader.cancel().catch(() => undefined);
-  };
-
-  const onAbort = () => {
-    cancelled = true;
-    void reader.cancel().catch(() => undefined);
-  };
-  if (clientSignal) {
-    if (clientSignal.aborted) onAbort();
-    else clientSignal.addEventListener("abort", onAbort, { once: true });
-  }
+  const pendingChars = (): number => queue.reduce((sum, item) => sum + item.text.length, 0);
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      emit(controller, "start", {
+      const safeEnqueue = (bytes: Uint8Array): boolean => {
+        if (closed || cancelled) return false;
+        try {
+          controller.enqueue(bytes);
+          return true;
+        } catch {
+          closed = true;
+          return false;
+        }
+      };
+
+      const emit = (event: string, data: unknown): boolean => safeEnqueue(sseEncode(event, data));
+
+      const close = (): void => {
+        if (closed) return;
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // 下游已取消
+        }
+      };
+
+      let pump: ReturnType<typeof setInterval> | null = null;
+
+      const stopPump = (): void => {
+        if (pump) {
+          clearInterval(pump);
+          pump = null;
+        }
+      };
+
+      const finish = (event: "done" | "error", data: unknown): void => {
+        stopPump();
+        emit(event, data);
+        close();
+        if (!finished) {
+          finished = true;
+          try {
+            onFinish?.({ finishReason, usage });
+          } catch (error) {
+            console.warn(`[dream-server] onFinish callback failed: ${(error as Error).message}`);
+          }
+        }
+        void reader.cancel().catch(() => undefined);
+      };
+
+      const finishDone = (): void => {
+        finish("done", {
+          requestId: meta.requestId,
+          finishReason,
+          createdAt: new Date().toISOString(),
+        });
+      };
+
+      const enqueue = (event: "thinking" | "delta", text: string): void => {
+        if (!text) return;
+        queue.push({ event, text });
+        ensurePump();
+      };
+
+      const pumpOnce = (): void => {
+        if (closed || cancelled) {
+          stopPump();
+          return;
+        }
+        const head = queue[0];
+        if (!head) {
+          if (upstreamEnded) finishDone();
+          else stopPump();
+          return;
+        }
+
+        const backlog = pendingChars();
+        const speed =
+          head.event === "thinking"
+            ? backlog > 2400
+              ? 60
+              : backlog > 800
+                ? 24
+                : 8
+            : backlog > 3600
+              ? 48
+              : backlog > 1200
+                ? 20
+                : backlog > 320
+                  ? 8
+                  : 3;
+        const take = Math.min(head.text.length, speed);
+        const piece = head.text.slice(0, take);
+        head.text = head.text.slice(take);
+        if (!head.text) queue.shift();
+        emit(head.event, { delta: piece });
+      };
+
+      function ensurePump(): void {
+        if (pump || closed || cancelled) return;
+        pump = setInterval(pumpOnce, 24);
+      }
+
+      const flushThinking = (final: boolean): void => {
+        if (!thinkingBuffer) return;
+        let cut = thinkingBuffer.length;
+        if (!final) {
+          let lastBoundary = -1;
+          for (let index = 0; index < thinkingBuffer.length; index += 1) {
+            if ("\n。！？!?.".includes(thinkingBuffer[index])) lastBoundary = index;
+          }
+          if (lastBoundary < 0 || thinkingBuffer.length - lastBoundary <= 32) return;
+          cut = lastBoundary + 1;
+        }
+        const text = thinkingBuffer.slice(0, cut);
+        thinkingBuffer = thinkingBuffer.slice(cut);
+        enqueue("thinking", redactOutput(text));
+      };
+
+      const flushContent = (final: boolean): void => {
+        if (!contentBuffer) return;
+        let cut = contentBuffer.length;
+        if (!final) {
+          let lastBoundary = -1;
+          for (let index = 0; index < contentBuffer.length; index += 1) {
+            if ("\n。！？!?.".includes(contentBuffer[index])) lastBoundary = index;
+          }
+          if (lastBoundary < 0 || contentBuffer.length - lastBoundary <= 32) return;
+          cut = lastBoundary + 1;
+        }
+        const text = contentBuffer.slice(0, cut);
+        contentBuffer = contentBuffer.slice(cut);
+        enqueue("delta", redactOutput(text));
+      };
+
+      const onAbort = (): void => {
+        cancelled = true;
+        queue.length = 0;
+        stopPump();
+        close();
+        void reader.cancel().catch(() => undefined);
+      };
+
+      if (clientSignal) {
+        if (clientSignal.aborted) onAbort();
+        else clientSignal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      emit("start", {
         requestId: meta.requestId,
         model: meta.model,
         thinking: meta.thinking,
@@ -132,10 +249,7 @@ export function dreamChatStream(
       try {
         for (;;) {
           const { done, value } = await reader.read();
-          if (cancelled) {
-            close(controller);
-            return;
-          }
+          if (cancelled) return;
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
@@ -148,12 +262,8 @@ export function dreamChatStream(
             const payload = extractData(block);
             if (!payload) continue;
             if (payload === "[DONE]") {
-              finish(controller, "done", {
-                requestId: meta.requestId,
-                finishReason,
-                createdAt: new Date().toISOString(),
-              });
-              return;
+              upstreamEnded = true;
+              break;
             }
 
             const chunk = JSON.parse(payload) as UpstreamChunk;
@@ -163,34 +273,34 @@ export function dreamChatStream(
             const delta = choice?.delta;
 
             if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
-              emit(controller, "thinking", { delta: delta.reasoning_content });
+              thinkingBuffer += delta.reasoning_content;
+              flushThinking(false);
             }
             if (typeof delta?.content === "string" && delta.content) {
-              emit(controller, "delta", { delta: delta.content });
+              flushThinking(true);
+              contentBuffer += delta.content;
+              flushContent(false);
             }
             if (choice?.finish_reason) {
               finishReason = parseFinishReason(choice.finish_reason);
             }
           }
+          if (upstreamEnded) break;
         }
 
-        if (cancelled) {
-          close(controller);
-          return;
-        }
-        // 上游未发送 [DONE] 正常关闭时，补一个 done，保证客户端总能收尾。
-        finish(controller, "done", {
-          requestId: meta.requestId,
-          finishReason,
-          createdAt: new Date().toISOString(),
-        });
+        if (cancelled) return;
+        flushThinking(true);
+        flushContent(true);
+        upstreamEnded = true;
+        if (queue.length === 0) finishDone();
+        else ensurePump();
       } catch (err) {
         if (cancelled || (err as Error).name === "AbortError") {
-          close(controller);
+          close();
           return;
         }
         console.error(`[dream-server] ${meta.requestId} upstream stream error`, err);
-        finish(controller, "error", {
+        finish("error", {
           error: {
             code: "UPSTREAM_ERROR",
             message: "生成过程中连接中断，请稍后重试。",
@@ -208,6 +318,7 @@ export function dreamChatStream(
     },
     cancel() {
       cancelled = true;
+      queue.length = 0;
       void reader.cancel().catch(() => undefined);
     },
   });
