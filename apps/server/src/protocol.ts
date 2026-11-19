@@ -9,6 +9,8 @@ export const MAX_BODY_BYTES = 1024 * 1024;
 export type ApiErrorCode =
   | "INVALID_ARGUMENT"
   | "UNAUTHORIZED"
+  | "INVALID_CREDENTIALS"
+  | "USERNAME_TAKEN"
   | "SESSION_REVOKED"
   | "FORBIDDEN"
   | "NOT_FOUND"

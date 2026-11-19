@@ -1,9 +1,16 @@
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { config } from "./config.js";
+import {
+  loginUser,
+  logoutUser,
+  registerUser,
+  requireUser,
+} from "./auth.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
 import { mockChatStream } from "./mock.js";
 import {
@@ -93,8 +100,29 @@ app.get("/api/v1/models", (c) =>
   }),
 );
 
+app.post("/api/v1/auth/register", async (c) => {
+  const body = await readJsonBody(c);
+  return c.json(registerUser(body), 201);
+});
+
+app.post("/api/v1/auth/login", async (c) => {
+  const body = await readJsonBody(c);
+  return c.json(loginUser(body));
+});
+
+app.post("/api/v1/auth/logout", (c) => {
+  logoutUser(c.req.header("authorization"));
+  return c.json({ ok: true });
+});
+
+app.get("/api/v1/me", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  return c.json({ user });
+});
+
 app.post("/api/v1/chat", async (c) => {
   const requestId = c.get("requestId");
+  const { user } = requireUser(c.req.header("authorization"));
   const body = await readJsonBody(c);
   const parsed = parseChatRequest(body);
 
@@ -111,7 +139,7 @@ app.post("/api/v1/chat", async (c) => {
   }
 
   console.log(
-    `[dream-server] ${requestId} chat: ${parsed.messages.length} messages, thinking=${parsed.thinking}`,
+    `[dream-server] ${requestId} chat by ${user.username}: ${parsed.messages.length} messages, thinking=${parsed.thinking}`,
   );
   const upstream = await openChatStream(parsed, c.req.raw.signal);
   const stream = dreamChatStream(
@@ -124,6 +152,14 @@ app.post("/api/v1/chat", async (c) => {
     c.req.raw.signal,
   );
   return new Response(stream, { headers: sseHeaders(requestId) });
+});
+
+// 同一进程托管 Web 静态文件（生产环境单端口 + 单隧道即可）。
+app.use("/*", serveStatic({ root: config.webDir }));
+
+app.get("*", (c, next) => {
+  if (c.req.path.startsWith("/api/")) return next();
+  return serveStatic({ path: `${config.webDir}/index.html` })(c, next);
 });
 
 app.notFound((c) => {

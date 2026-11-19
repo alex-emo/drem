@@ -1,9 +1,68 @@
 import { useEffect, useState } from "react";
 import ChatView from "./components/ChatView";
+import LoginScreen from "./components/LoginScreen";
 import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
-import type { HealthInfo, HealthState, Theme } from "./lib/types";
+import { fetchMe, logoutAccount } from "./lib/api";
+import { clearSession, getToken } from "./lib/auth";
+import type { AuthUser, HealthInfo, HealthState, Theme } from "./lib/types";
+
+type AuthState =
+  | { kind: "checking" }
+  | { kind: "anon" }
+  | { kind: "authed"; user: AuthUser };
+
+export default function App() {
+  const [auth, setAuth] = useState<AuthState>(() =>
+    getToken() ? { kind: "checking" } : { kind: "anon" },
+  );
+
+  useEffect(() => {
+    if (!getToken()) return;
+    let alive = true;
+    fetchMe()
+      .then((user) => {
+        if (alive) setAuth({ kind: "authed", user });
+      })
+      .catch(() => {
+        clearSession();
+        if (alive) setAuth({ kind: "anon" });
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      clearSession();
+      setAuth({ kind: "anon" });
+    };
+    window.addEventListener("dream:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("dream:unauthorized", onUnauthorized);
+  }, []);
+
+  const logout = async () => {
+    await logoutAccount();
+    clearSession();
+    setAuth({ kind: "anon" });
+  };
+
+  if (auth.kind === "checking") {
+    return (
+      <div className="auth-screen">
+        <p className="auth-muted">正在检查登录状态…</p>
+      </div>
+    );
+  }
+
+  if (auth.kind === "anon") {
+    return <LoginScreen onAuthenticated={(user) => setAuth({ kind: "authed", user })} />;
+  }
+
+  return <ChatShell user={auth.user} onLogout={() => void logout()} />;
+}
 
 function initialTheme(): Theme {
   try {
@@ -13,7 +72,7 @@ function initialTheme(): Theme {
   }
 }
 
-export default function App() {
+function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const chat = useChat();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 820);
@@ -60,6 +119,7 @@ export default function App() {
         activeId={chat.activeId}
         open={sidebarOpen}
         theme={theme}
+        user={user}
         onClose={() => setSidebarOpen(false)}
         onNew={() => {
           chat.newChat();
@@ -79,6 +139,7 @@ export default function App() {
           setSettingsOpen(true);
           closeOnMobile();
         }}
+        onLogout={onLogout}
       />
       {sidebarOpen ? <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} /> : null}
       <ChatView chat={chat} health={health} onToggleSidebar={() => setSidebarOpen((value) => !value)} />

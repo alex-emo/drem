@@ -1,17 +1,27 @@
-import type { Conversation, Theme } from "../lib/types";
-import { MoonIcon, PlusIcon, SettingsIcon, SidebarIcon, SunIcon, TrashIcon } from "./Icons";
+import type { AuthUser, Conversation, Theme } from "../lib/types";
+import {
+  LogoutIcon,
+  MoonIcon,
+  PlusIcon,
+  SettingsIcon,
+  SidebarIcon,
+  SunIcon,
+  TrashIcon,
+} from "./Icons";
 
 interface SidebarProps {
   conversations: Conversation[];
   activeId: string | null;
   open: boolean;
   theme: Theme;
+  user: AuthUser;
   onClose: () => void;
   onNew: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
+  onLogout: () => void;
 }
 
 export default function Sidebar({
@@ -19,12 +29,14 @@ export default function Sidebar({
   activeId,
   open,
   theme,
+  user,
   onClose,
   onNew,
   onSelect,
   onDelete,
   onToggleTheme,
   onOpenSettings,
+  onLogout,
 }: SidebarProps) {
   return (
     <aside className={`sidebar${open ? " open" : ""}`} aria-label="会话列表">
@@ -82,6 +94,23 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar-foot">
+        <div className="sidebar-user">
+          <span className="avatar" aria-hidden="true">
+            {(user.displayName || user.username).slice(0, 1).toUpperCase()}
+          </span>
+          <span className="sidebar-user-name" title={user.displayName || user.username}>
+            {user.displayName || user.username}
+          </span>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onLogout}
+            aria-label="退出登录"
+            title="退出登录"
+          >
+            <LogoutIcon size={16} />
+          </button>
+        </div>
         <div className="sidebar-foot-actions">
           <button
             type="button"

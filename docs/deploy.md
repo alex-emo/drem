@@ -72,3 +72,10 @@ curl http://127.0.0.1:8787/api/v1/health
 2. 在 nginx 层加 Basic Auth / IP 白名单，并仅通过 HTTPS 暴露 `/api/`。
 
 若后续要挂到现有 nginx，注意：`/api/v1/chat` 是 SSE，需要 `proxy_buffering off`、`proxy_read_timeout` 至少 300s，并保留 `X-Request-Id` 透传。
+
+## 独立应用与账号（2026-11-19）
+
+- 服务端与 Web 合并为单一进程：`server.mjs` 同时提供 `/api/v1/*` 与 `web/` 静态文件，`DREAM_WEB_DIR=/srv/blog/dream/web`。
+- 账号：SQLite（`DREAM_DB_PATH=/srv/blog/dream/data/dream.db`），scrypt 密码哈希，`sessions` 表保存 token 哈希；`/api/v1/chat` 强制 Bearer 鉴权。
+- systemd：`dream-server.service` 增加 `ReadWritePaths=/srv/blog/dream/data`（`ProtectSystem=strict` 下允许写库）；新增 `dream-tunnel.service` 运行 `cloudflared tunnel --url http://127.0.0.1:8787`。
+- 当前公网入口（quick tunnel）：https://silicon-grip-contained-signal.trycloudflare.com 。重启后域名会变；固定域名需命名隧道 + 子域名 DNS。

@@ -34,4 +34,6 @@ export const config = {
   model: process.env.DREAM_MODEL ?? "deepseek-chat",
   reasonerModel: process.env.DREAM_REASONER_MODEL ?? "deepseek-reasoner",
   mock: process.env.DREAM_MOCK === "1" || process.env.DREAM_MOCK === "true",
+  dbPath: process.env.DREAM_DB_PATH ?? "data/dream.db",
+  webDir: process.env.DREAM_WEB_DIR ?? "web",
 } as const;

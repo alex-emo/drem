@@ -264,3 +264,16 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 | 日期 | 版本 | 变更 |
 | --- | --- | --- |
 | 2026-11-18 | v1 | 初版：health / models / chat（归一化 SSE）、统一错误体、请求 ID、版本前缀 |
+
+## 认证（v0.3）
+
+除 `health`、`models` 外，所有 `/api/v1/*` 需要 `Authorization: Bearer <token>`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/v1/auth/register` | `{ username, password, displayName?, deviceId? }` → `201 { token, user }` |
+| POST | `/api/v1/auth/login` | `{ username, password, deviceId? }` → `{ token, user }` |
+| POST | `/api/v1/auth/logout` | 使当前 token 失效 |
+| GET | `/api/v1/me` | 当前用户 `{ user }` |
+
+错误码新增：`INVALID_CREDENTIALS`（401）、`USERNAME_TAKEN`（409）、`UNAUTHORIZED`（401）。

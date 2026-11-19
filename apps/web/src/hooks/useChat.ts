@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { streamChat } from "../lib/api";
+import { ChatApiError, streamChat } from "../lib/api";
 import {
   deleteConversationData,
   getMessages,
@@ -284,6 +284,9 @@ export function useChat() {
         if (error.name === "AbortError") {
           await finish("done");
         } else {
+          if (error instanceof ChatApiError && error.status === 401) {
+            window.dispatchEvent(new CustomEvent("dream:unauthorized"));
+          }
           await finish("error", error.message || "生成失败，请稍后重试");
         }
       }

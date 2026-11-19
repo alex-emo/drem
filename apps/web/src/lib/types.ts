@@ -39,3 +39,15 @@ export type HealthState =
   | { kind: "loading" }
   | { kind: "ok"; info: HealthInfo }
   | { kind: "error" };
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  displayName: string | null;
+  createdAt: string;
+}
+
+export interface AuthResult {
+  token: string;
+  user: AuthUser;
+}

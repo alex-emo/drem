@@ -1,3 +1,6 @@
+import { getToken } from "./auth";
+import type { AuthResult, AuthUser } from "./types";
+
 export interface ApiChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -50,6 +53,69 @@ interface ErrorBody {
 
 export const CHAT_ENDPOINT = "/api/v1/chat";
 
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
+async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      ...authHeaders(),
+      ...(init.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as ErrorBody | null;
+    throw new ChatApiError(
+      data?.error?.message ?? `请求失败（HTTP ${response.status}）`,
+      response.status,
+      data?.error?.code ?? "HTTP_ERROR",
+      data?.error?.requestId,
+    );
+  }
+
+  return (await response.json()) as T;
+}
+
+export async function registerAccount(input: {
+  username: string;
+  password: string;
+  displayName?: string;
+}): Promise<AuthResult> {
+  return requestJson<AuthResult>("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function loginAccount(input: {
+  username: string;
+  password: string;
+}): Promise<AuthResult> {
+  return requestJson<AuthResult>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function fetchMe(): Promise<AuthUser> {
+  const data = await requestJson<{ user: AuthUser }>("/api/v1/me");
+  return data.user;
+}
+
+export async function logoutAccount(): Promise<void> {
+  try {
+    await requestJson<{ ok: boolean }>("/api/v1/auth/logout", { method: "POST" });
+  } catch {
+    // 本地凭证无论如何都要清掉
+  }
+}
+
 /**
  * 请求 Dream Server，解析归一化后的 SSE 事件：
  * start → (thinking | delta)* → done | error
@@ -62,6 +128,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     headers: {
       "content-type": "application/json",
       accept: "text/event-stream",
+      ...authHeaders(),
     },
     body: JSON.stringify({ messages, thinking }),
     signal,
