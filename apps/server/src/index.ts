@@ -18,6 +18,7 @@ import {
   API_VERSION,
   ApiError,
   MAX_BODY_BYTES,
+  MAX_BODY_MIB,
   SERVER_VERSION,
   errorBody,
   sseHeaders,
@@ -61,12 +62,12 @@ async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
 
   const declared = Number(c.req.header("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "请求体超过 1 MiB 上限");
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", `请求体超过 ${MAX_BODY_MIB} MiB 上限`);
   }
 
   const text = await c.req.text();
   if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "请求体超过 1 MiB 上限");
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", `请求体超过 ${MAX_BODY_MIB} MiB 上限`);
   }
 
   try {

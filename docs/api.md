@@ -63,7 +63,7 @@ Authorization: Bearer <access_token>
 | 403 | `FORBIDDEN` | 无权限（M1） |
 | 404 | `NOT_FOUND` | 路径不存在 |
 | 405 | `METHOD_NOT_ALLOWED` | 方法不允许 |
-| 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 1 MiB |
+| 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 8 MiB |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` 不是 `application/json` |
 | 429 | `RATE_LIMITED` | 触发限流（M1） |
 | 500 | `INTERNAL` | 服务端内部错误 |
@@ -99,12 +99,12 @@ X-Request-Id: req_demo_001
 
 | 字段 | 类型 | 必填 | 约束 |
 | --- | --- | --- | --- |
-| `messages` | `Message[]` | 是 | 1–100 条；按时间正序；最后一条必须是 `user` |
+| `messages` | `Message[]` | 是 | 1–400 条；按时间正序；最后一条必须是 `user` |
 | `messages[].role` | `"system" \| "user" \| "assistant"` | 是 | — |
 | `messages[].content` | `string` | 是 | trim 后非空；单条 ≤ 200,000 字符 |
 | `thinking` | `boolean` | 否 | 默认 `false`；`true` 时使用 `DREAM_REASONER_MODEL`，返回 `thinking` 事件 |
 
-- 请求体（含全部消息）≤ **1 MiB**。
+- 请求体（含全部消息）≤ **8 MiB**。
 - 未知字段忽略（便于客户端灰度）。
 - 本端点幂等性为 **no**：重复请求会产生新生成。
 

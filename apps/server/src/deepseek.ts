@@ -13,7 +13,7 @@ export interface ParsedChatRequest {
   thinking: boolean;
 }
 
-const MAX_MESSAGES = 100;
+const MAX_MESSAGES = 400;
 const MAX_CONTENT_LENGTH = 200_000;
 
 /** 校验客户端传来的纯文本消息，返回可转发给上游的结构。 */
