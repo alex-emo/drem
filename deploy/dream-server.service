@@ -1,0 +1,28 @@
+[Unit]
+Description=Dream Server (DeepSeek forwarding API)
+Documentation=https://github.com/deepseek-ai/dream
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dream
+Group=dream
+WorkingDirectory=/srv/blog/dream
+# .env 由应用自身读取（WorkingDirectory 下），避免 systemd 对引号/注释的解析差异
+ExecStart=/opt/node22/bin/node /srv/blog/dream/server.mjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

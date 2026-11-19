@@ -28,6 +28,7 @@ loadDotenv(resolve(process.cwd(), ".env"));
 
 export const config = {
   port: Number(process.env.PORT ?? 8787),
+  host: process.env.DREAM_HOST ?? "127.0.0.1",
   apiKey: process.env.DEEPSEEK_API_KEY ?? "",
   baseUrl: (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, ""),
   model: process.env.DREAM_MODEL ?? "deepseek-chat",

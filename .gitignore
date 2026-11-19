@@ -17,3 +17,5 @@ coverage/
 .pnpm-home/
 .tmp/
 pnpm-store-operation-locks/
+
+.deploy/

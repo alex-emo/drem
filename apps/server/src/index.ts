@@ -164,8 +164,8 @@ app.onError((err, c) => {
   );
 });
 
-serve({ fetch: app.fetch, port: config.port }, (info) => {
-  console.log(`[dream-server] listening on http://127.0.0.1:${info.port}`);
+serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
+  console.log(`[dream-server] listening on http://${config.host}:${info.port}`);
   if (config.mock) {
     console.log("[dream-server] DREAM_MOCK=1，使用本地模拟流式响应（不会请求 DeepSeek）");
   } else if (!config.apiKey) {

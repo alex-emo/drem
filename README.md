@@ -226,8 +226,11 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 | `npm run dev:server` | 只启动服务端（tsx watch） |
 | `npm run dev:web` | 只启动 Web（vite） |
 | `npm run build` | 类型检查 + 构建 Web |
+| `npm run build:server` | 打包服务端为单文件 `apps/server/dist/server.mjs` |
 | `npm run typecheck` | 两个 workspace 的类型检查 |
 | `npm run start` | 以 tsx 启动服务端（无 watch） |
+
+部署到服务器（systemd、更新、SSH 隧道）见 [docs/deploy.md](docs/deploy.md)。
 
 ## 安全说明
 

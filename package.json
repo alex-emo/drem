@@ -8,10 +8,14 @@
     "dev:web": "npm run dev --workspace @dream/web",
     "dev:server": "npm run dev --workspace @dream/server",
     "build": "npm run build --workspace @dream/web",
+    "build:server": "esbuild apps/server/src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=apps/server/dist/server.mjs --log-level=warning",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "start": "npm run start --workspace @dream/server"
   },
   "workspaces": [
     "apps/*"
-  ]
+  ],
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }
