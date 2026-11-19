@@ -19,3 +19,6 @@ coverage/
 pnpm-store-operation-locks/
 
 .deploy/
+
+# local server database
+apps/server/data/

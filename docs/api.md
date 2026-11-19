@@ -25,15 +25,15 @@
 - 客户端必须忽略未知字段、未知 SSE 事件与 `:` 开头的注释行。
 - 删除/改名/语义变化一律升级到 `/api/v2`，旧版本至少保留一个里程碑。
 
-### 鉴权（M1，尚未实现）
+### 鉴权（v0.3 起）
 
-`v1` 当前为本地开发模式，不做鉴权。M1 起所有非公开端点要求：
+除 `/api/v1/health`、`/api/v1/models` 外，所有端点要求：
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-未携带或过期返回 `401 UNAUTHORIZED`；同一账号新设备登录踢掉旧设备后，旧设备请求返回 `401 SESSION_REVOKED`。`/api/v1/health` 与 `/api/v1/models` 保持匿名可访问。
+未携带或无效返回 `401 UNAUTHORIZED`。注册接口为 `POST /api/v1/auth/register`（开放注册）。单设备踢下线与 `SESSION_REVOKED` 仍属 M1 规划。
 
 ## 2. 错误模型
 
@@ -209,7 +209,52 @@ curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
 }
 ```
 
-## 6. 健康检查与错误示例
+## 6. `GET /api/v1/import/share`
+
+需要 `Authorization: Bearer`。由服务端抓取 DeepSeek 分享页数据（浏览器直接请求会被 CORS 拦截），归一化后返回，客户端再写入本地 IndexedDB。
+
+### 查询参数
+
+| 参数 | 必填 | 说明 |
+| --- | --- | --- |
+| `url` | 是 | 完整分享链接（`https://chat.deepseek.com/share/<id>`）或 16–64 位分享 id |
+
+### 成功响应（200）
+
+```json
+{
+  "shareId": "n6gxbmxevd26qxjj5a",
+  "title": "这期神了",
+  "attachments": 15,
+  "messages": [
+    {
+      "role": "user",
+      "content": "这期神了",
+      "reasoning": "",
+      "status": "done",
+      "createdAt": 1794896419865
+    }
+  ]
+}
+```
+
+- 只保留当前分支：从最后一条消息按 `parent_id` 回溯。
+- 用户文本取 `REQUEST` / `TEMPLATE_RESPONSE`，助手文本取 `RESPONSE` / `TEMPLATE_RESPONSE`，`THINK` 归入 `reasoning`。
+- 纯附件消息的用户文本为 `"[图片]"`；`attachments` 表示未导入的附件数量。
+- `status` 为 `done`；DeepSeek 侧 `FAILED` / `TIMEOUT` / `CONTEXT_LENGTH_EXCEEDED` 映射为 `error`。
+
+### 错误
+
+`400 INVALID_ARGUMENT`（链接格式不对）、`401 UNAUTHORIZED`、`404 NOT_FOUND`（分享不存在或已删除）、`422 INVALID_ARGUMENT`（没有可导入的文字）、`502 UPSTREAM_ERROR`（DeepSeek 不可达或返回异常）。
+
+### curl 示例
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:8787/api/v1/import/share?url=https%3A%2F%2Fchat.deepseek.com%2Fshare%2Fn6gxbmxevd26qxjj5a"
+```
+
+## 7. 健康检查与错误示例
 
 ```bash
 # 缺少 Key
@@ -246,24 +291,23 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 }
 ```
 
-## 7. 规划中的端点（M1）
+## 8. 规划中的端点（M1）
 
 以下路径尚未实现，仅确定命名与风格，避免后续破坏性改动：
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/v1/auth/login` | `{ username, password, device: { id, name, platform } }` → `{ accessToken, refreshToken, expiresIn, user }` |
 | `POST` | `/api/v1/auth/refresh` | 刷新 access token |
-| `POST` | `/api/v1/auth/logout` | 注销当前设备 |
-| `GET` | `/api/v1/me` | 当前用户与设备信息 |
 | `GET` | `/api/v1/admin/users` | 用户列表（管理员） |
 | `DELETE` | `/api/v1/admin/devices/:id` | 踢下线（管理员） |
 
-## 8. 变更记录
+## 9. 变更记录
 
 | 日期 | 版本 | 变更 |
 | --- | --- | --- |
 | 2026-11-18 | v1 | 初版：health / models / chat（归一化 SSE）、统一错误体、请求 ID、版本前缀 |
+| 2026-11-19 | v1.1 | 注册/登录/登出/me；chat 要求 Bearer |
+| 2026-11-19 | v1.2 | 新增 `GET /api/v1/import/share` 分享链接导入 |
 
 ## 认证（v0.3）
 

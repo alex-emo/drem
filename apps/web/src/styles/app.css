@@ -220,10 +220,18 @@ button:disabled {
 
 .sidebar-foot {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 2px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-foot-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 6px 0;
-  border-top: 1px solid var(--border);
+  gap: 6px;
 }
 
 .theme-toggle {
@@ -1333,9 +1341,7 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 6px 10px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  padding: 2px 4px 6px;
 }
 
 .avatar {
@@ -1364,4 +1370,46 @@ button:disabled {
 .sidebar-user .icon-btn {
   width: 26px;
   height: 26px;
+}
+
+.settings-divider {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
+}
+
+.share-import-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.share-import-input {
+  flex: 1;
+  min-width: 200px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.share-import-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.share-import-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(86, 134, 254, 0.15);
+}
+
+@media (max-width: 520px) {
+  .share-import-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

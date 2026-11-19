@@ -2,7 +2,7 @@
 
 一个尽可能贴近 **DeepSeek C 端体验**的聊天客户端：**Web 优先**，服务端负责持有 API Key 并转发流式回复，聊天记录只保存在浏览器本地。
 
-当前版本 **v0.2（M0 + 历史导入）**：可以完成「新建对话 → 输入文本 → 服务端转发 DeepSeek → SSE 流式渲染 → 本地持久化」，并能导入 DeepSeek 客户端导出的聊天记录 ZIP。真实 API 已用 `deepseek-chat` / `deepseek-reasoner` 联调通过。
+当前版本 **v0.3（M1 起步：账号体系 + 历史导入）**：可以完成「注册/登录 → 新建对话 → 输入文本 → 服务端转发 DeepSeek → SSE 流式渲染 → 本地持久化」，并支持导入 DeepSeek 客户端导出的聊天记录 ZIP 或**分享链接**。真实 API 已用 `deepseek-chat` / `deepseek-reasoner` 联调通过。
 
 | 深色 · 空态 | 深色 · 对话 |
 | --- | --- |
@@ -15,6 +15,14 @@
 | 导入历史对话 | 导入后的会话 |
 | --- | --- |
 | ![import](docs/screenshots/settings-import-dark.png) | ![imported](docs/screenshots/imported-chat-dark.png) |
+
+| 登录 / 注册 | 分享链接导入 |
+| --- | --- |
+| ![login](docs/screenshots/login-public.png) | ![share settings](docs/screenshots/settings-share-dark.png) |
+
+| 分享导入后的会话 |
+| --- |
+| ![share imported](docs/screenshots/share-import-dark.png) |
 
 | 真实 DeepSeek API 流式回复 |
 | --- |
@@ -113,8 +121,11 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 错误处理：未配置 Key、上游鉴权失败、网络失败会在消息内展示可读错误
 - 界面：深/浅色主题、桌面/移动端响应式侧边栏、空态、健康状态提示条
 - 服务端：请求校验（条数/长度/角色）、SSE 头、AbortSignal 传播、错误信息透出
+- 账号体系：注册 / 登录 / 退出；服务端 scrypt 存密码、token 哈希入库；除 health/models 外的 API 均要求 `Authorization: Bearer`
 - 设置弹窗：通用设置（外观、服务状态）与数据管理
 - 导入历史对话：解析 DeepSeek 客户端导出的 `deepseek_data-*.zip`（格式版本 3），按 `current_message_id` 还原当前分支，导入提问、回答与深度思考；重复会话自动跳过，图片/文件附件暂不导入
+- 分享链接导入：粘贴 `chat.deepseek.com/share/...`，由服务端抓取分享数据、还原当前分支并写入本地
+- 独立部署：服务端同端口托管 Web 构建产物，可通过 systemd + Cloudflare Tunnel 暴露 HTTPS
 
 ## 服务端接口
 
@@ -122,9 +133,14 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | 注册并登录 |
+| `POST` | `/api/v1/auth/login` | 登录 |
+| `POST` | `/api/v1/auth/logout` | 退出登录 |
+| `GET` | `/api/v1/me` | 当前用户 |
+| `GET` | `/api/v1/import/share` | 通过分享链接抓取并归一化会话 |
 | `GET` | `/api/v1/health` | 存活、模式、是否配置 Key、模型名 |
 | `GET` | `/api/v1/models` | 服务端配置的模型 |
-| `POST` | `/api/v1/chat` | 流式对话（SSE） |
+| `POST` | `/api/v1/chat` | 流式对话（SSE，需 Bearer） |
 
 ```bash
 curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
@@ -162,6 +178,17 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 ## 导入历史对话
 
+### 方式一：分享链接
+
+入口：左下角「设置」→「数据管理」→「从分享链接导入」，粘贴 `https://chat.deepseek.com/share/<id>`。
+
+- 服务端请求 DeepSeek 分享接口并把内容归一化（浏览器直接请求会被 CORS 拦截）
+- 按 `parent_id` 还原当前分支；导入提问、回答与深度思考
+- 会话 id 使用 `ds-share-<分享 id>`；重复导入自动跳过
+- 图片与文件附件暂不支持，会在结果里提示数量
+
+### 方式二：导出 ZIP
+
 入口：左下角「设置」→「数据管理」→「选择 ZIP 文件」。
 
 支持 DeepSeek 客户端导出的 `deepseek_data-*.zip`（导出格式版本 3）：
@@ -186,7 +213,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 ## 尚未实现（下一步）
 
-- 登录、单一设备会话、用户管理后台（服务端当前无鉴权，请勿直接暴露公网）
+- 单一设备会话（在线互踢）、邀请码/管理员审批、用户管理后台、限流（当前开放注册，请勿把 Key 共享给不可信用户）
 - 智能搜索 / 阅读链接 / 文件上传与解析 / 图片理解（DeepSeek 服务端工具）
 - 重新生成、编辑消息、消息分支、继续生成
 - 语音输入 / 朗读、KaTeX、Mermaid
@@ -201,13 +228,15 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 | 阶段 | 内容 |
 | --- | --- |
 | M0 ✅ | Web 骨架、流式聊天、本地持久化、深度思考、主题与响应式 |
-| M1 | 服务端登录（JWT）+ `device_id` 单设备会话 + 用户/设备管理 + 限流 |
+| M1 🚧 | 账号注册/登录 ✅；单设备会话、邀请码、用户管理后台、限流待做 |
 | M2 | 重新生成 / 编辑 / 分支 / 继续生成、会话搜索、设置页 |
 | M3 | 智能搜索、阅读链接、文件上传与解析、引用渲染 |
 | M4 | Capacitor Android 壳、录音权限、TTS、返回键与安全区 |
 | M5 | 导出、完整数据管理、用量统计、审计 |
 
 > M0.5（已完成）：DeepSeek 导出 ZIP 导入、真实 API 联调、设置弹窗。
+>
+> M1（进行中）：账号体系已上线；分享链接导入已支持。
 
 ## 已知限制
 

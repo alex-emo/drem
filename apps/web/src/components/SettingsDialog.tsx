@@ -19,6 +19,7 @@ interface SettingsDialogProps {
   onClose: () => void;
   onThemeChange: (theme: Theme) => void;
   onImport: (archive: Awaited<ReturnType<typeof parseDeepSeekArchive>>) => Promise<ImportOutcome>;
+  onImportShare: (url: string) => Promise<ImportOutcome>;
 }
 
 function serverState(health: HealthState): string {
@@ -36,9 +37,12 @@ export default function SettingsDialog({
   onClose,
   onThemeChange,
   onImport,
+  onImportShare,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<Tab>("data");
   const [state, setState] = useState<ImportState>({ kind: "idle" });
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareState, setShareState] = useState<ImportState>({ kind: "idle" });
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -58,6 +62,8 @@ export default function SettingsDialog({
   useEffect(() => {
     if (!open) {
       setState({ kind: "idle" });
+      setShareState({ kind: "idle" });
+      setShareUrl("");
       setTab("data");
     }
   }, [open]);
@@ -101,6 +107,32 @@ export default function SettingsDialog({
             ? error.message
             : "导入失败，请稍后重试。";
       setState({ kind: "error", text: message });
+    }
+  };
+
+  const handleImportShare = async () => {
+    const url = shareUrl.trim();
+    if (!url || shareState.kind === "working") return;
+    setShareState({ kind: "working" });
+    try {
+      const outcome = await onImportShare(url);
+      if (outcome.added === 0) {
+        setShareState({ kind: "ok", text: "这个分享之前已经导入过，无需重复导入。" });
+        return;
+      }
+      const extra: string[] = [];
+      if (outcome.skippedMessages > 0)
+        extra.push(`${outcome.skippedMessages} 条仅含工具调用的消息未导入`);
+      if (outcome.attachments > 0) extra.push(`${outcome.attachments} 个附件暂不导入`);
+      setShareState({
+        kind: "ok",
+        text: `已从分享导入 1 个对话、${outcome.messages} 条消息${extra.length ? `；${extra.join("，")}` : ""}。`,
+      });
+    } catch (error) {
+      setShareState({
+        kind: "error",
+        text: error instanceof Error ? error.message : "导入失败，请稍后重试。",
+      });
     }
   };
 
@@ -213,6 +245,45 @@ export default function SettingsDialog({
                 {state.kind === "error" ? (
                   <p className="import-status error" role="alert">
                     {state.text}
+                  </p>
+                ) : null}
+
+                <hr className="settings-divider" />
+
+                <h3>从分享链接导入</h3>
+                <p className="settings-note">
+                  在 DeepSeek 中打开对话，点击分享并复制链接，粘贴到这里。会导入提问、回答和深度思考；
+                  图片与文件附件暂不支持。
+                </p>
+                <div className="share-import-row">
+                  <input
+                    type="url"
+                    className="share-import-input"
+                    placeholder="https://chat.deepseek.com/share/…"
+                    value={shareUrl}
+                    onChange={(event) => setShareUrl(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void handleImportShare();
+                    }}
+                    disabled={shareState.kind === "working"}
+                  />
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => void handleImportShare()}
+                    disabled={!shareUrl.trim() || shareState.kind === "working"}
+                  >
+                    {shareState.kind === "working" ? "导入中…" : "导入分享"}
+                  </button>
+                </div>
+                {shareState.kind === "ok" ? (
+                  <p className="import-status ok" role="status">
+                    {shareState.text}
+                  </p>
+                ) : null}
+                {shareState.kind === "error" ? (
+                  <p className="import-status error" role="alert">
+                    {shareState.text}
                   </p>
                 ) : null}
               </section>

@@ -116,6 +116,25 @@ export async function logoutAccount(): Promise<void> {
   }
 }
 
+export interface SharedChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  reasoning: string;
+  status: "done" | "error";
+  createdAt: number;
+}
+
+export interface SharedChatResponse {
+  shareId: string;
+  title: string;
+  attachments: number;
+  messages: SharedChatMessage[];
+}
+
+export async function fetchSharedChat(url: string): Promise<SharedChatResponse> {
+  return requestJson<SharedChatResponse>(`/api/v1/import/share?url=${encodeURIComponent(url)}`);
+}
+
 /**
  * 请求 Dream Server，解析归一化后的 SSE 事件：
  * start → (thinking | delta)* → done | error

@@ -12,6 +12,7 @@ import {
   requireUser,
 } from "./auth.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
+import { fetchSharedChat } from "./share.js";
 import { mockChatStream } from "./mock.js";
 import {
   API_VERSION,
@@ -118,6 +119,12 @@ app.post("/api/v1/auth/logout", (c) => {
 app.get("/api/v1/me", (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   return c.json({ user });
+});
+
+app.get("/api/v1/import/share", async (c) => {
+  requireUser(c.req.header("authorization"));
+  const url = c.req.query("url") ?? "";
+  return c.json(await fetchSharedChat(url));
 });
 
 app.post("/api/v1/chat", async (c) => {

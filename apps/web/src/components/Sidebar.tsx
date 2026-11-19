@@ -111,8 +111,9 @@ export default function Sidebar({
             <LogoutIcon size={16} />
           </button>
         </div>
-        <div className="sidebar-foot-actions">
-          <button
+        <div className="sidebar-foot-row">
+          <div className="sidebar-foot-actions">
+            <button
             type="button"
             className="theme-toggle"
             onClick={onToggleTheme}
@@ -129,10 +130,11 @@ export default function Sidebar({
             title="设置"
           >
             <SettingsIcon size={16} />
-            <span>设置</span>
-          </button>
+              <span>设置</span>
+            </button>
+          </div>
+          <span className="version">v0.2</span>
         </div>
-        <span className="version">v0.2</span>
       </div>
     </aside>
   );

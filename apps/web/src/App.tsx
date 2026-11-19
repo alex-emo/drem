@@ -150,6 +150,7 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
         onClose={() => setSettingsOpen(false)}
         onThemeChange={setTheme}
         onImport={chat.importHistory}
+        onImportShare={chat.importShare}
       />
     </div>
   );

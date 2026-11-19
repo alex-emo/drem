@@ -9,6 +9,7 @@ import {
   putMessage,
 } from "../lib/db";
 import type { ImportedArchive } from "../lib/importArchive";
+import { buildShareImport } from "../lib/shareImport";
 import type { Conversation, Message } from "../lib/types";
 import { makeTitle, newId } from "../lib/utils";
 
@@ -145,6 +146,36 @@ export function useChat() {
         messages: freshMessages.length,
         skippedMessages: archive.stats.skippedMessages,
         attachments: archive.stats.attachments,
+      };
+    },
+    [openConversation],
+  );
+
+  const importShare = useCallback(
+    async (url: string): Promise<ImportOutcome> => {
+      const archive = await buildShareImport(url);
+      if (conversationsRef.current.some((item) => item.id === archive.conversation.id)) {
+        return {
+          added: 0,
+          skipped: 1,
+          messages: 0,
+          skippedMessages: archive.messages.length,
+          attachments: archive.attachments,
+        };
+      }
+
+      await importConversationData([archive.conversation], archive.messages);
+      const items = await listConversations();
+      conversationsRef.current = items;
+      setConversations(items);
+      await openConversation(archive.conversation.id);
+
+      return {
+        added: 1,
+        skipped: 0,
+        messages: archive.messages.length,
+        skippedMessages: 0,
+        attachments: archive.attachments,
       };
     },
     [openConversation],
@@ -307,5 +338,6 @@ export function useChat() {
     openConversation,
     removeConversation,
     importHistory,
+    importShare,
   };
 }
