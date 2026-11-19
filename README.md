@@ -282,5 +282,5 @@ MIT（见 [LICENSE](LICENSE)）。本项目是非官方实现，仅用于学习�
 
 - 账号：`POST /api/v1/auth/register`、`POST /api/v1/auth/login`；成功后返回 `{ token, user }`，客户端以 `Authorization: Bearer <token>` 调用 `/api/v1/chat` 与 `/api/v1/me`。密码使用 scrypt 加盐哈希，账号与会话存在服务端 SQLite。
 - 服务端不再接受匿名聊天：未携带有效 token 时 `/api/v1/chat` 返回 `401 UNAUTHORIZED`。
-- 生产部署为独立应用：`dream-server.service`（仅监听 127.0.0.1:8787，同进程托管 `web/` 静态站点）+ `dream-tunnel.service`（Cloudflare quick tunnel 提供 HTTPS），不依赖博客服务。
-- 临时公网地址：https://silicon-grip-contained-signal.trycloudflare.com 。quick tunnel 的域名会随服务重启变化；需要固定域名时换用 Cloudflare 命名隧道并绑定子域名。
+- 生产部署为独立应用：`dream-server.service`（仅监听 127.0.0.1:8787，同进程托管 `web/` 静态站点）+ `dream-named-tunnel.service`（Cloudflare 命名隧道，token-file 方式），不依赖博客服务。
+- 固定公网地址：https://dream.pum.org.cn 。早期 trycloudflare quick tunnel 已停用。

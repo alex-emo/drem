@@ -68,42 +68,41 @@ QWEN_MODEL=qwen3.7-flash
 
 服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表，缓存分段摘要；该表随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
 
-## 固定域名（命名隧道，参考博客）
+## 固定域名（命名隧道）
 
-博客的做法是「Cloudflare 控制台创建隧道 → 复制 token → `cloudflared service install <token>`」，隧道配置（hostname → service）在控制台维护。Dream 也可以用同样方式：
+Dream 使用独立的 Cloudflare 命名隧道 `dream`（Tunnel ID `21e95c01-02ab-4e7b-97a1-78c1c6061515`）暴露 `https://dream.pum.org.cn`，与博客的 `cloudflared.service` 互不影响。
 
-1. Cloudflare Zero Trust → Networks → Tunnels → Create a tunnel（Cloudflared），命名 `dream`；
-2. 复制安装命令里的 token，服务器上执行 `cloudflared service install <token>`（token 会落到 `/etc/cloudflared/token`）；
-3. 在隧道的 Public Hostname 里添加 `dream.pum.org.cn → http://127.0.0.1:8787`，保存后 Cloudflare 自动建 CNAME；
-4. `systemctl enable --now cloudflared`（若与博客共用同一个 cloudflared 服务，则不用新起服务，直接在博客隧道的 Public Hostname 里加一条）。
+1. 控制台创建隧道后，把安装命令里的完整 token 写入 `/etc/cloudflared/dream-token`：
 
-服务器上目前没有 Cloudflare API Token，因此也可以走 CLI 登录方式（需要账号所有者点一次授权链接）：
+   ```bash
+   sudo mkdir -p /etc/cloudflared
+   sudo sh -c "printf '%s\n' '<token>' > /etc/cloudflared/dream-token"
+   sudo chmod 600 /etc/cloudflared/dream-token
+   ```
 
-```bash
-cloudflared tunnel login                 # 打开输出的 URL，选择 pum.org.cn 授权
-cloudflared tunnel create dream          # 记下 Tunnel ID
-mkdir -p /etc/cloudflared
-mv /root/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/
-chmod 600 /etc/cloudflared/<TUNNEL_ID>.json
-cloudflared tunnel route dns dream dream.pum.org.cn
-```
+   不要执行面板里的 `cloudflared service install <token>`，那会覆盖博客现有的 `cloudflared.service`。
 
-`/etc/cloudflared/dream.yml`：
+2. 安装本仓库的 `deploy/dream-named-tunnel.service`：
 
-```yaml
-tunnel: <TUNNEL_ID>
-credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
-ingress:
-  - hostname: dream.pum.org.cn
-    service: http://127.0.0.1:8787
-  - service: http_status:404
-```
+   ```bash
+   sudo cp deploy/dream-named-tunnel.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now dream-named-tunnel
+   ```
 
-安装 `deploy/dream-tunnel.service` 到 `/etc/systemd/system/`，`systemctl enable --now dream-tunnel`，再停掉临时的 quick tunnel（`dream-tunnel.service` 若指向 trycloudflare 的临时地址，直接 disable）。验证：
+   服务用 `cloudflared tunnel run --token-file /etc/cloudflared/dream-token`，启动后应有 4 条连接注册（connIndex 0–3）。
 
-```bash
-curl -s https://dream.pum.org.cn/api/v1/health
-```
+3. 在隧道 Public Hostname 添加 `dream.pum.org.cn → http://127.0.0.1:8787`。Cloudflare 会自动创建 CNAME；没有这条 ingress，connector 会返回 503。
+
+4. 验证：
+
+   ```bash
+   curl -4 -s https://dream.pum.org.cn/api/v1/health
+   ```
+
+本机若没有 IPv6 路由，`curl` 默认可能先走 IPv6 超时，加 `-4` 或 `--ipv4` 即可。
+
+> 备选：用 `cloudflared tunnel login` + `tunnel create` 建本地托管隧道，再写 `/etc/cloudflared/dream.yml` 的 ingress 并用 `tunnel route dns` 建 CNAME；本仓库的固定域名采用上面的 token-file 方式，保持与博客一致。
 
 ## 运维
 
@@ -115,7 +114,7 @@ curl -s http://127.0.0.1:8787/api/v1/health
 
 ## 访问方式（当前）
 
-服务只绑定本机回环地址，公网通过 `dream-tunnel.service` 的 Cloudflare quick tunnel 暴露 HTTPS；所有 `/api/v1/*`（除 health/models）要求登录 Bearer Token。
+服务只绑定本机回环地址，公网通过 Cloudflare 命名隧道 `dream-named-tunnel.service` 暴露 HTTPS：`https://dream.pum.org.cn`。所有 `/api/v1/*`（除 health/models）要求登录 Bearer Token。
 
 ```bash
 # 本机调试
@@ -123,11 +122,11 @@ ssh -N -L 8787:127.0.0.1:8787 root@47.117.51.245
 curl http://127.0.0.1:8787/api/v1/health
 ```
 
-quick tunnel 的域名重启后会变化；固定域名需要 Cloudflare 命名隧道 + 子域名 DNS。若以后改挂 nginx，注意：`/api/v1/chat` 是 SSE，需要 `proxy_buffering off`、`proxy_read_timeout` 至少 300s，并保留 `X-Request-Id` 透传。
+早期试用的 trycloudflare quick tunnel 已停用（`dream-tunnel.service` 已移除）。若以后改挂 nginx，注意：`/api/v1/chat` 是 SSE，需要 `proxy_buffering off`、`proxy_read_timeout` 至少 300s，并保留 `X-Request-Id` 透传。
 
 ## 独立应用与账号（2026-11-19）
 
 - 服务端与 Web 合并为单一进程：`server.mjs` 同时提供 `/api/v1/*` 与 `web/` 静态文件，`DREAM_WEB_DIR=/srv/blog/dream/web`。
 - 账号：SQLite（`DREAM_DB_PATH=/srv/blog/dream/data/dream.db`），scrypt 密码哈希，`sessions` 表保存 token 哈希；`/api/v1/chat` 强制 Bearer 鉴权。
-- systemd：`dream-server.service` 增加 `ReadWritePaths=/srv/blog/dream/data`（`ProtectSystem=strict` 下允许写库）；新增 `dream-tunnel.service` 运行 `cloudflared tunnel --url http://127.0.0.1:8787`。
-- 当前公网入口（quick tunnel）：https://silicon-grip-contained-signal.trycloudflare.com 。重启后域名会变；固定域名需命名隧道 + 子域名 DNS。
+- systemd：`dream-server.service` 增加 `ReadWritePaths=/srv/blog/dream/data`（`ProtectSystem=strict` 下允许写库）；`dream-named-tunnel.service` 用 token-file 运行 `cloudflared tunnel run`。
+- 当前公网入口（固定域名）：https://dream.pum.org.cn 。quick tunnel 已停用。
