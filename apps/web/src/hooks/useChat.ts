@@ -282,6 +282,36 @@ export function useChat() {
       let settled = false;
       let refused = false;
 
+      // 隧道/代理常把 SSE 攒成一批送达；这里按时间把文本摊开显示。
+      let pending = "";
+      let timer: number | null = null;
+      let streamEnded = false;
+      let drainResolve: (() => void) | null = null;
+      const drainPromise = new Promise<void>((resolve) => {
+        drainResolve = resolve;
+      });
+      const tick = () => {
+        if (pending) {
+          const take = pending.length > 160 ? 8 : pending.length > 60 ? 6 : 4;
+          acc.content += pending.slice(0, take);
+          pending = pending.slice(take);
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === assistantMessage.id ? { ...message, content: acc.content } : message,
+            ),
+          );
+        }
+        if (!pending && streamEnded) {
+          if (timer !== null) window.clearInterval(timer);
+          timer = null;
+          drainResolve?.();
+          drainResolve = null;
+        }
+      };
+      const ensureTimer = () => {
+        if (timer === null) timer = window.setInterval(tick, 30);
+      };
+
       const finish = async (
         status: "done" | "refused" | "error",
         error?: string,
@@ -330,12 +360,8 @@ export function useChat() {
           thinking,
           signal: controller.signal,
           onDelta: (chunk) => {
-            acc.content += chunk;
-            setMessages((prev) =>
-              prev.map((message) =>
-                message.id === assistantMessage.id ? { ...message, content: acc.content } : message,
-              ),
-            );
+            pending += chunk;
+            ensureTimer();
           },
           onReasoning: (chunk) => {
             acc.reasoning += chunk;
@@ -355,8 +381,15 @@ export function useChat() {
             );
           },
         });
+        streamEnded = true;
+        ensureTimer();
+        if (pending) await drainPromise;
+        if (timer !== null) window.clearInterval(timer);
         await finish(refused ? "refused" : "done");
       } catch (error) {
+        if (timer !== null) window.clearInterval(timer);
+        timer = null;
+        pending = "";
         if (error instanceof Error && error.name === "AbortError") {
           await finish("done");
         } else {

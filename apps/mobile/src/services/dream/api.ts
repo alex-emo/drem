@@ -64,6 +64,8 @@ const readError = async (response: Response): Promise<ApiError> => {
   return new ApiError('http', message, response.status)
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 const clearStoredSession = () => {
   try {
     localStorage.removeItem('dream:token')
@@ -122,6 +124,7 @@ export async function* streamDreamMessage(
   let nextIndex = 0
   let thinkingOpen = false
   let textOpen = false
+  let pendingText = ""
 
   const startMessage = (id: string, model: string): MessageStreamEvent => ({
     type: 'message_start',
@@ -184,10 +187,18 @@ export async function* streamDreamMessage(
           content_block: { type: 'text', text: '' },
         }
       }
-      yield {
-        type: 'content_block_delta',
-        index: textIndex,
-        delta: { type: 'text_delta', text: delta },
+      // 隧道会把 SSE 攒成一批；这里按节拍把文本摊开，避免一次跳一大段。
+      pendingText += delta
+      while (pendingText) {
+        const take = pendingText.length > 160 ? 8 : pendingText.length > 60 ? 6 : 4
+        const piece = pendingText.slice(0, take)
+        pendingText = pendingText.slice(take)
+        yield {
+          type: 'content_block_delta',
+          index: textIndex,
+          delta: { type: 'text_delta', text: piece },
+        }
+        if (pendingText) await sleep(30)
       }
       continue
     }

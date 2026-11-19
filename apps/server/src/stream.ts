@@ -35,6 +35,49 @@ const THINKING_REPLACEMENTS: Array<[RegExp, string]> = [
   [/system\s*prompt|系统提示词?/gi, "设定"],
 ];
 
+const SENSITIVE_TERMS = [
+  "qwen",
+  "qianwen",
+  "通义千问",
+  "通义",
+  "阿里云",
+  "阿里巴巴",
+  "阿里",
+  "alibaba",
+  "deepseek",
+  "深度求索",
+  "anthropic",
+  "claude",
+  "openai",
+  "chatgpt",
+  "google",
+  "gemini",
+];
+
+/** 找一个不会把敏感词切成两半的切点；找不到就返回 0，等更多文本再切。 */
+function safeCut(buffer: string, desired: number): number {
+  const lower = buffer.toLowerCase();
+  for (let cut = Math.min(desired, buffer.length); cut > 0; cut -= 1) {
+    const head = lower.slice(0, cut);
+    const tail = lower.slice(cut, cut + 24);
+    let unsafe = false;
+    for (const term of SENSITIVE_TERMS) {
+      if (term.length > tail.length + cut) continue;
+      for (let k = 1; k < term.length; k += 1) {
+        const prefix = term.slice(0, k);
+        const suffix = term.slice(k);
+        if (head.endsWith(prefix) && tail.startsWith(suffix)) {
+          unsafe = true;
+          break;
+        }
+      }
+      if (unsafe) break;
+    }
+    if (!unsafe) return cut;
+  }
+  return 0;
+}
+
 function redactOutput(text: string): string {
   let output = text;
   for (const [pattern, replacement] of THINKING_REPLACEMENTS) {
@@ -193,36 +236,17 @@ export function dreamChatStream(
         pump = setInterval(pumpOnce, 32);
       }
 
-      const flushThinking = (final: boolean): void => {
-        if (!thinkingBuffer) return;
-        let cut = thinkingBuffer.length;
-        if (!final) {
-          let lastBoundary = -1;
-          for (let index = 0; index < thinkingBuffer.length; index += 1) {
-            if ("\n。！？!?.".includes(thinkingBuffer[index])) lastBoundary = index;
-          }
-          if (lastBoundary < 0 || thinkingBuffer.length - lastBoundary <= 32) return;
-          cut = lastBoundary + 1;
-        }
-        const text = thinkingBuffer.slice(0, cut);
-        thinkingBuffer = thinkingBuffer.slice(cut);
-        enqueue("thinking", redactOutput(text));
-      };
-
-      const flushContent = (final: boolean): void => {
-        if (!contentBuffer) return;
-        let cut = contentBuffer.length;
-        if (!final) {
-          let lastBoundary = -1;
-          for (let index = 0; index < contentBuffer.length; index += 1) {
-            if ("\n。！？!?.".includes(contentBuffer[index])) lastBoundary = index;
-          }
-          if (lastBoundary < 0 || contentBuffer.length - lastBoundary <= 32) return;
-          cut = lastBoundary + 1;
-        }
-        const text = contentBuffer.slice(0, cut);
-        contentBuffer = contentBuffer.slice(cut);
-        enqueue("delta", redactOutput(text));
+      const flushBuffer = (kind: "thinking" | "delta", final: boolean): void => {
+        const buffer = kind === "thinking" ? thinkingBuffer : contentBuffer;
+        if (!buffer) return;
+        const hold = 12;
+        if (!final && buffer.length <= hold + 4) return;
+        const cut = final ? buffer.length : safeCut(buffer, buffer.length - hold);
+        if (cut <= 0) return;
+        const text = buffer.slice(0, cut);
+        if (kind === "thinking") thinkingBuffer = buffer.slice(cut);
+        else contentBuffer = buffer.slice(cut);
+        enqueue(kind, redactOutput(text));
       };
 
       const onAbort = (): void => {
@@ -274,12 +298,12 @@ export function dreamChatStream(
 
             if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
               thinkingBuffer += delta.reasoning_content;
-              flushThinking(false);
+              flushBuffer("thinking", false);
             }
             if (typeof delta?.content === "string" && delta.content) {
-              flushThinking(true);
+              flushBuffer("thinking", true);
               contentBuffer += delta.content;
-              flushContent(false);
+              flushBuffer("delta", false);
             }
             if (choice?.finish_reason) {
               finishReason = parseFinishReason(choice.finish_reason);
@@ -289,8 +313,8 @@ export function dreamChatStream(
         }
 
         if (cancelled) return;
-        flushThinking(true);
-        flushContent(true);
+        flushBuffer("thinking", true);
+        flushBuffer("delta", true);
         upstreamEnded = true;
         if (queue.length === 0) finishDone();
         else ensurePump();

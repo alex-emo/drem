@@ -4,6 +4,7 @@ import type { Message } from "../lib/types";
 import BranchSwitcher from "./BranchSwitcher";
 import { CheckIcon, CopyIcon, EditIcon } from "./Icons";
 import Markdown from "./Markdown";
+import { SmoothText } from "./SmoothText";
 
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const [open, setOpen] = useState(streaming);
@@ -162,7 +163,7 @@ export default function MessageItem({
       {message.content ? (
         <div className="markdown">
           {message.status === "streaming" ? (
-            <div className="streaming-plain">{message.content}</div>
+            <SmoothText className="streaming-plain" text={message.content} />
           ) : (
             <Markdown content={message.content} />
           )}

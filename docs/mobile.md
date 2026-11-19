@@ -72,3 +72,7 @@ https://dream.pum.org.cn/download/dream-android.apk
 - Mermaid 图表暂不渲染（依赖体积大，移动端 v1 未打包）；普通 Markdown、代码高亮、KaTeX 正常。
 - 语音输入依赖 WebView 的 SpeechRecognition 支持，Android WebView 通常不可用（按钮会禁用）。
 - 暂无推送、深色/浅色跟随系统由 chat-demo 的设置实现。
+
+## 流式观感
+
+APK 内置客户端文本节拍器：即使 Cloudflare 隧道把 SSE 攒包，回复也会按约 30ms/小段连续出现。
