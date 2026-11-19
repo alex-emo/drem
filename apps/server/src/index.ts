@@ -32,7 +32,7 @@ import {
   errorBody,
   sseHeaders,
 } from "./protocol.js";
-import { dreamChatStream } from "./stream.js";
+import { dreamChatStream, refusalStream } from "./stream.js";
 import {
   getAdminStats,
   recordError,
@@ -226,23 +226,30 @@ app.post("/api/v1/chat", async (c) => {
   console.log(
     `[dream-server] ${requestId} chat by ${user.username}: ${effective.messages.length} messages, thinking=${parsed.thinking}`,
   );
-  const { stream: upstream, keyId, model: effectiveModel } = await openChatStream(
-    effective,
-    c.req.raw.signal,
-    {
-      onModeration: (report) =>
-        recordModeration({
-          userId: user.id,
-          username: user.username,
-          requestId,
-          provider: report.provider,
-          model: report.model,
-          stage: report.stage,
-          messageCount: effective.messages.length,
-          detail: report.detail,
-        }),
-    },
-  );
+  let opened;
+  try {
+    opened = await openChatStream(effective, c.req.raw.signal);
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "CONTENT_FILTERED") {
+      // 与 DeepSeek 客户端一致：内容安全拒绝不报错，返回固定拒绝答复。
+      recordModeration({
+        userId: user.id,
+        username: user.username,
+        requestId,
+        provider: config.provider,
+        model: config.provider === "qwen" ? config.model : parsed.thinking ? config.reasonerModel : config.model,
+        stage: "primary",
+        messageCount: effective.messages.length,
+        detail: error.message,
+      });
+      console.log(`[dream-server] ${requestId} content refused by ${config.providerLabel}`);
+      return new Response(refusalStream({ requestId, model: config.model, thinking: parsed.thinking }), {
+        headers: sseHeaders(requestId),
+      });
+    }
+    throw error;
+  }
+  const { stream: upstream, keyId, model: effectiveModel } = opened;
   const stream = dreamChatStream(
     upstream,
     {
@@ -358,10 +365,5 @@ serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => 
         config.provider === "deepseek" ? ` / ${config.reasonerModel}` : "（enable_thinking 切换）"
       }`,
     );
-    if (config.fallback) {
-      console.log(
-        `[dream-server] 内容安全回退：${config.fallback.label} ${config.fallback.model} / ${config.fallback.reasonerModel}（${config.fallback.keys.length} 个 Key）`,
-      );
-    }
   }
 });

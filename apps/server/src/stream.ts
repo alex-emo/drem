@@ -1,4 +1,4 @@
-import { sseEncode } from "./protocol.js";
+import { REFUSAL_MESSAGE, sseEncode } from "./protocol.js";
 import { normalizeUsage, type TokenUsage } from "./usage.js";
 
 export interface ChatStreamMeta {
@@ -209,6 +209,38 @@ export function dreamChatStream(
     cancel() {
       cancelled = true;
       void reader.cancel().catch(() => undefined);
+    },
+  });
+}
+
+/** 内容安全拒绝：不返回上游错误，按 DeepSeek 客户端的方式返回固定答复。 */
+export function refusalStream(meta: ChatStreamMeta): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const createdAt = new Date().toISOString();
+      controller.enqueue(
+        sseEncode("start", {
+          requestId: meta.requestId,
+          model: meta.model,
+          thinking: meta.thinking,
+          createdAt,
+        }),
+      );
+      controller.enqueue(
+        sseEncode("refusal", {
+          requestId: meta.requestId,
+          model: meta.model,
+          message: REFUSAL_MESSAGE,
+        }),
+      );
+      controller.enqueue(
+        sseEncode("done", {
+          requestId: meta.requestId,
+          finishReason: "content_filter",
+          createdAt,
+        }),
+      );
+      controller.close();
     },
   });
 }

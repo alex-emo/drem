@@ -51,7 +51,9 @@ function historyFor(messages: Message[]) {
     .filter(
       (message) =>
         message.role === "user" ||
-        (message.role === "assistant" && message.status === "done" && message.content.trim().length > 0),
+        (message.role === "assistant" &&
+          (message.status === "done" || message.status === "refused") &&
+          message.content.trim().length > 0),
     )
     .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
 }
@@ -278,9 +280,10 @@ export function useChat() {
       abortRef.current = controller;
       const acc = { content: "", reasoning: "" };
       let settled = false;
+      let refused = false;
 
       const finish = async (
-        status: "done" | "error",
+        status: "done" | "refused" | "error",
         error?: string,
         meta?: { code?: string; requestId?: string },
       ) => {
@@ -342,8 +345,17 @@ export function useChat() {
               ),
             );
           },
+          onRefusal: (text) => {
+            refused = true;
+            acc.content = text;
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessage.id ? { ...message, content: text } : message,
+              ),
+            );
+          },
         });
-        await finish("done");
+        await finish(refused ? "refused" : "done");
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           await finish("done");

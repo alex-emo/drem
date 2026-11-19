@@ -27,7 +27,7 @@ npm run build:server      # -> apps/server/dist/server.mjs
 ```bash
 scp apps/server/dist/server.mjs root@HOST:/root/dream-server.mjs
 scp deploy/dream-server.service root@HOST:/root/dream-server.service
-# .env 参考 .env.example，至少包含 DEEPSEEK_API_KEY、DREAM_HOST=127.0.0.1
+# .env 参考 .env.example，至少包含 QWEN_API_KEYS / QWEN_BASE_URL、DREAM_HOST=127.0.0.1
 scp .env root@HOST:/root/dream.env
 
 ssh root@HOST '

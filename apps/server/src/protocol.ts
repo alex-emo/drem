@@ -7,6 +7,9 @@ export const SERVER_VERSION = "0.2.0";
 export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 export const MAX_BODY_MIB = 8;
 
+/** 内容安全拒绝时返回给客户端的固定答复（与 DeepSeek 客户端一致）。 */
+export const REFUSAL_MESSAGE = "你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。";
+
 export type ApiErrorCode =
   | "INVALID_ARGUMENT"
   | "UNAUTHORIZED"

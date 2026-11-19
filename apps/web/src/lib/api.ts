@@ -26,6 +26,8 @@ export interface StreamChatOptions {
   onStart?: (start: ChatStart) => void;
   onDelta: (text: string) => void;
   onReasoning: (text: string) => void;
+  /** 内容安全拒绝：服务端返回固定答复，前端按正常回复展示。 */
+  onRefusal?: (text: string) => void;
   onDone?: (done: ChatDone) => void;
 }
 
@@ -140,7 +142,7 @@ export async function fetchSharedChat(url: string): Promise<SharedChatResponse> 
  * start → (thinking | delta)* → done | error
  */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { messages, thinking, signal, onStart, onDelta, onReasoning, onDone } = options;
+  const { messages, thinking, signal, onStart, onDelta, onReasoning, onRefusal, onDone } = options;
 
   const response = await fetch(CHAT_ENDPOINT, {
     method: "POST",
@@ -213,6 +215,11 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       case "thinking": {
         const delta = (data as { delta?: unknown }).delta;
         if (typeof delta === "string" && delta) onReasoning(delta);
+        return false;
+      }
+      case "refusal": {
+        const message = (data as { message?: unknown }).message;
+        if (typeof message === "string" && message) onRefusal?.(message);
         return false;
       }
       case "done": {

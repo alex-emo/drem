@@ -154,6 +154,12 @@ paths:
                   description: 正文增量
                   data:
                     delta: string
+                refusal:
+                  description: 内容安全拒绝；随后发送 done(finishReason=content_filter)，无 delta
+                  data:
+                    requestId: string
+                    model: string
+                    message: string
                 done:
                   description: 正常结束，发送一次
                   data:

@@ -81,7 +81,6 @@ export class KeyPool {
 
 export const keyPool = new KeyPool(config.apiKeys);
 /** DeepSeek 回退池；ID 从 101 开始，避免与主 Key 池统计混淆。 */
-export const fallbackKeyPool = config.fallback ? new KeyPool(config.fallback.keys, 100) : null;
 
 export function isRetryableStatus(status: number): boolean {
   return (

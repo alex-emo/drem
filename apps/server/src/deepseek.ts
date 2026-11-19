@@ -1,7 +1,6 @@
 import { config } from "./config.js";
 import {
   cooldownForStatus,
-  fallbackKeyPool,
   isRetryableStatus,
   keyPool,
   type KeyPool,
@@ -160,16 +159,6 @@ const primaryTarget: UpstreamTarget = {
   keyEnv: config.keyEnv,
 };
 
-const fallbackTarget: UpstreamTarget | null =
-  config.fallback && fallbackKeyPool
-    ? {
-        pool: fallbackKeyPool,
-        baseUrl: config.fallback.baseUrl,
-        label: config.fallback.label,
-        keyEnv: config.fallback.keyEnv,
-      }
-    : null;
-
 /**
  * 从 Key 池里轮询取 Key 发请求：连接失败/鉴权失败/限流/5xx 会自动换下一个 Key。
  * 所有 Key 都失败时才抛错；400/404 这类请求本身的错误不重试。
@@ -268,31 +257,9 @@ export async function requestUpstreamJson(
 }
 
 /** 请求上游 chat/completions（stream=true），返回 SSE 字节流与所用 Key。 */
-export interface ModerationReport {
-  provider: "deepseek" | "qwen";
-  model: string;
-  stage: "primary" | "fallback";
-  detail: string;
-}
-
-export interface ChatStreamHooks {
-  /** 上游内容安全拦截时通知调用方（会记录到后台）。 */
-  onModeration?: (report: ModerationReport) => void;
-}
-
-function reportModeration(hooks: ChatStreamHooks | undefined, report: ModerationReport): void {
-  try {
-    hooks?.onModeration?.(report);
-  } catch (error) {
-    console.warn(`[dream-server] moderation hook failed: ${(error as Error).message}`);
-  }
-}
-
-/** 请求上游 chat/completions（stream=true），返回 SSE 字节流与所用 Key。 */
 export async function openChatStream(
   parsed: ParsedChatRequest,
   clientSignal: AbortSignal,
-  hooks?: ChatStreamHooks,
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
   keyId: number;
@@ -315,68 +282,23 @@ export async function openChatStream(
           stream_options: { include_usage: true },
         };
 
-  let result: UpstreamResponse;
-  let servedModel =
+  const result = await fetchUpstream(primaryTarget, payload, clientSignal);
+  const servedModel =
     config.provider === "qwen"
       ? config.model
       : parsed.thinking
         ? config.reasonerModel
         : config.model;
-  let servedProvider = config.provider;
-
-  try {
-    result = await fetchUpstream(primaryTarget, payload, clientSignal);
-  } catch (error) {
-    if (!(error instanceof ApiError) || error.code !== "CONTENT_FILTERED") {
-      throw error;
-    }
-
-    reportModeration(hooks, {
-      provider: config.provider,
-      model: servedModel,
-      stage: "primary",
-      detail: error.message,
-    });
-
-    if (!config.fallback || !fallbackTarget) throw error;
-
-    const fallbackPayload = {
-      model: parsed.thinking ? config.fallback.reasonerModel : config.fallback.model,
-      messages: parsed.messages,
-      stream: true,
-      stream_options: { include_usage: true },
-    };
-    console.warn(
-      `[dream-server] ${config.providerLabel} 内容安全拦截，回退到 ${config.fallback.label}: ${error.message}`,
-    );
-    try {
-      result = await fetchUpstream(fallbackTarget, fallbackPayload, clientSignal);
-    } catch (fallbackError) {
-      if (fallbackError instanceof ApiError && fallbackError.code === "CONTENT_FILTERED") {
-        reportModeration(hooks, {
-          provider: "deepseek",
-          model: String(fallbackPayload.model),
-          stage: "fallback",
-          detail: fallbackError.message,
-        });
-      }
-      throw fallbackError;
-    }
-    servedModel = String(fallbackPayload.model);
-    servedProvider = "deepseek";
-  }
 
   const upstream = result.response;
   if (!upstream.body) {
-    throw new ApiError(502, "UPSTREAM_ERROR", `${servedProvider} API 未返回流式响应体`);
+    throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 未返回流式响应体`);
   }
-  console.log(
-    `[dream-server] upstream key #${result.key.id} served stream${servedProvider !== config.provider ? ` (fallback ${servedProvider})` : ""}`,
-  );
+  console.log(`[dream-server] upstream key #${result.key.id} served stream`);
   return {
     stream: upstream.body,
     keyId: result.key.id,
     model: servedModel,
-    provider: servedProvider,
+    provider: config.provider,
   };
 }

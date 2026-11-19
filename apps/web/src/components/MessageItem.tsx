@@ -184,7 +184,7 @@ export default function MessageItem({
         </div>
       ) : null}
 
-      {message.status === "done" && message.content ? (
+      {(message.status === "done" || message.status === "refused") && message.content ? (
         <div className="msg-actions">
           <button type="button" className="icon-btn small" onClick={() => void copy()} aria-label="复制回复" title="复制">
             {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}

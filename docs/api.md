@@ -65,17 +65,29 @@ Authorization: Bearer <access_token>
 | 405 | `METHOD_NOT_ALLOWED` | 方法不允许 |
 | 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 8 MiB |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` 不是 `application/json` |
-| 422 | `CONTENT_FILTERED` | 上游内容安全策略拒绝了这段对话（如 Qwen `DataInspectionFailed`） |
 | 429 | `RATE_LIMITED` | 触发限流（M1） |
 | 500 | `INTERNAL` | 服务端内部错误 |
 | 502 | `UPSTREAM_AUTH_FAILED` | DeepSeek 鉴权失败（服务端 Key 无效） |
 | 502 | `UPSTREAM_ERROR` | DeepSeek 返回非 2xx 或无法连接 |
-| 503 | `UPSTREAM_NOT_CONFIGURED` | 服务端未配置 `DEEPSEEK_API_KEY` |
+| 503 | `UPSTREAM_NOT_CONFIGURED` | 服务端未配置当前供应商的 API Key |
 | 504 | `UPSTREAM_TIMEOUT` | 上游超时（预留） |
 
 > 499 `REQUEST_ABORTED` 仅用于服务端日志：客户端已断开，通常收不到响应。
 
-内容安全回退：当主供应商（Qwen）返回 `DataInspectionFailed` 时，只要服务端配置了 `DEEPSEEK_API_KEYS`，会使用同一份上下文自动回退到 DeepSeek 重试一次；回退仍失败或未配置回退 Key 时，返回 `422 CONTENT_FILTERED`，前端会展示可读原因而不是笼统的 502。日志会记录 `fallback deepseek` 与回退 Key 序号（从 `#101` 起，避免与主池混淆）。
+内容安全拒绝：上游返回内容安全错误（如 Qwen `DataInspectionFailed`）时，不向客户端返回 422/502，而是按 DeepSeek 客户端的行为返回 200 + 固定拒绝答复：
+
+```text
+event: start
+data: {...}
+
+event: refusal
+data: {"requestId":"req_...","model":"qwen3.7-flash","message":"你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。"}
+
+event: done
+data: {"requestId":"req_...","finishReason":"content_filter","createdAt":"..."}
+```
+
+该轮计入 `moderation_events`（不记录聊天正文），不影响后续对话；客户端把 `message` 作为普通助手回复展示，`finishReason` 为 `content_filter`。
 
 ## 3. `POST /api/v1/chat`
 
@@ -143,6 +155,7 @@ data: {"requestId":"req_demo_001","finishReason":"stop","createdAt":"2026-11-18T
 | `start` | 1 | `requestId`, `model`, `thinking`, `createdAt` | 连接建立后立即发送；`model` 为服务端向当前上游请求的模型名（DeepSeek 账号侧可能映射到 `deepseek-flash`；Qwen 为 `qwen3.7-flash`） |
 | `thinking` | 0+ | `delta` | 思考增量；仅在 `thinking: true` 时出现 |
 | `delta` | 0+ | `delta` | 正文增量 |
+| `refusal` | 0–1 | `requestId`, `model`, `message` | 内容安全拒绝；出现时随后必有 `done`（`finishReason:"content_filter"`），无 `delta` |
 | `done` | 1 | `requestId`, `finishReason`, `createdAt` | 终止事件；`finishReason`: `stop` / `length` / `content_filter` / `unknown` |
 | `error` | 0–1 | `error: { code, message, requestId }` | 流建立后发生错误；出现即代表本次生成失败，且之后不再有 `done` |
 
@@ -294,7 +307,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 {
   "error": {
     "code": "UPSTREAM_NOT_CONFIGURED",
-    "message": "服务端未配置 DEEPSEEK_API_KEY：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。",
+    "message": "服务端未配置 QWEN_API_KEYS：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。",
     "requestId": "req_9f1c2a..."
   }
 }
@@ -343,7 +356,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 
 Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 `usage` 后写入 SQLite `usage_events`（按用户与 Key 归因）；没有 usage 的请求按 0 记录，仍计入请求数。
 
-内容拦截：主供应商返回内容安全错误时写入 `moderation_events`（每个调用阶段一条，`stage` 为 `primary` 或 `fallback`，不记录聊天正文）；用户表的 `moderationCount` 按 `request_id` 去重，表示触发轮次。`error_events` 记录 `status >= 500`、`CONTENT_FILTERED`、`RATE_LIMITED` 与所有 `UPSTREAM_*` 错误，并带上请求编号，方便按用户报障时间反查。后台入口为 `https://<域名>/admin`。
+内容拦截：主供应商返回内容安全错误时写入 `moderation_events`（每个调用阶段一条，当前仅 `primary`，不记录聊天正文）；用户表的 `moderationCount` 按 `request_id` 去重，表示触发轮次。`error_events` 记录 `status >= 500`、`RATE_LIMITED` 与所有 `UPSTREAM_*` 错误（内容拒绝走 `moderation_events`，不算错误），并带上请求编号，方便按用户报障时间反查。后台入口为 `https://<域名>/admin`。
 
 ## 9. 规划中的端点（M1）
 

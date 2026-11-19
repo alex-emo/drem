@@ -46,21 +46,6 @@ const apiKeys =
     ? splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS)
     : splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS);
 
-// Qwen 的内容安全策略较严；命中 DataInspectionFailed 时，可回退到 DeepSeek 同一份上下文。
-const fallbackKeys =
-  provider === "qwen" ? splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS) : [];
-const fallback =
-  provider === "qwen" && fallbackKeys.length > 0
-    ? {
-        label: "DeepSeek",
-        keyEnv: "DEEPSEEK_API_KEYS",
-        keys: fallbackKeys,
-        baseUrl: (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, ""),
-        model: process.env.DREAM_MODEL ?? "deepseek-chat",
-        reasonerModel: process.env.DREAM_REASONER_MODEL ?? "deepseek-reasoner",
-      }
-    : null;
-
 function splitList(...values: Array<string | undefined>): string[] {
   const out: string[] = [];
   for (const value of values) {
@@ -87,7 +72,6 @@ export const config = {
   keyEnv: provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS",
   apiKey: apiKeys[0] ?? "",
   apiKeys,
-  fallback,
   baseUrl:
     provider === "qwen"
       ? (process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1")
