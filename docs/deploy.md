@@ -57,6 +57,8 @@ ssh root@HOST 'install -o dream -g dream -m 640 /srv/blog/dream/server.mjs.new /
 
 ```bash
 DREAM_PROVIDER=qwen
+# 多个密钥用逗号分隔，服务端会轮询并在失败时自动切换
+QWEN_API_KEYS=key1,key2,key3
 QWEN_API_KEY=sk-...
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.7-flash

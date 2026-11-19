@@ -33,7 +33,7 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
       {health.kind === "ok" && !health.info.mock && !health.info.hasApiKey ? (
         <div className="banner">
           服务端已启动，但缺少{" "}
-          {health.info.provider === "qwen" ? "QWEN_API_KEY" : "DEEPSEEK_API_KEY"}
+          {health.info.provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS"}
           ，发送消息会失败。
         </div>
       ) : null}

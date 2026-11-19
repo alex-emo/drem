@@ -31,6 +31,10 @@ export interface HealthInfo {
   provider?: "deepseek" | "qwen";
   providerLabel?: string;
   hasApiKey: boolean;
+  keys?: {
+    total: number;
+    available: number;
+  };
   models: {
     default: string;
     reasoner: string;

@@ -26,10 +26,12 @@ function serverState(health: HealthState): string {
   if (health.kind === "loading") return "正在检查…";
   if (health.kind === "error") return "未连接本地服务端";
   if (health.info.mock) return "演示模式（本地模拟）";
-  const keyName = health.info.provider === "qwen" ? "QWEN_API_KEY" : "DEEPSEEK_API_KEY";
+  const keyName = health.info.provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS";
   if (!health.info.hasApiKey) return `服务端已启动，但未配置 ${keyName}`;
   const label = health.info.providerLabel ?? (health.info.provider === "qwen" ? "Qwen" : "DeepSeek");
-  return `已连接 ${label} API · ${health.info.models.default}`;
+  const keys = health.info.keys;
+  const keyText = keys && keys.total > 1 ? ` · ${keys.available}/${keys.total} 个密钥可用` : "";
+  return `已连接 ${label} API · ${health.info.models.default}${keyText}`;
 }
 
 export default function SettingsDialog({

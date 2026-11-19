@@ -5,6 +5,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { config } from "./config.js";
+import { keyPool } from "./keys.js";
 import {
   COMPRESS_CHAR_THRESHOLD,
   COMPRESS_MESSAGE_THRESHOLD,
@@ -84,9 +85,10 @@ async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
 }
 
 app.get("/api/v1/health", (c) => {
-  const hasApiKey = Boolean(config.apiKey);
+  const keys = keyPool.stats();
+  const hasApiKey = keys.total > 0;
   return c.json({
-    status: config.mock || !hasApiKey ? "degraded" : "ok",
+    status: config.mock || keys.available === 0 ? "degraded" : "ok",
     apiVersion: API_VERSION,
     serverVersion: SERVER_VERSION,
     serverTime: new Date().toISOString(),
@@ -94,6 +96,7 @@ app.get("/api/v1/health", (c) => {
     provider: config.provider,
     providerLabel: config.providerLabel,
     hasApiKey,
+    keys,
     models: {
       default: config.model,
       reasoner: config.reasonerModel,

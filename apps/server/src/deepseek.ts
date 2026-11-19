@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { cooldownForStatus, isRetryableStatus, keyPool, type PooledKey } from "./keys.js";
 import { ApiError } from "./protocol.js";
 
 export type ChatRole = "system" | "user" | "assistant";
@@ -96,15 +97,41 @@ function extractErrorDetail(raw: string): string {
   return raw.slice(0, 500) || "上游未返回错误详情";
 }
 
+/** 把上游 HTTP 状态映射为 Dream 的错误码。 */
+function mapUpstreamError(status: number, detail: string): ApiError {
+  if (status === 401 || status === 403) {
+    return new ApiError(
+      502,
+      "UPSTREAM_AUTH_FAILED",
+      `${config.providerLabel} API 鉴权失败（${status}）：${detail}`,
+    );
+  }
+  if (status === 402) {
+    return new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 余额不足（402）：${detail}`);
+  }
+  if (status === 429) {
+    return new ApiError(429, "RATE_LIMITED", `${config.providerLabel} API 限流（429）：${detail}`);
+  }
+  if (status === 504) {
+    return new ApiError(504, "UPSTREAM_TIMEOUT", `${config.providerLabel} API 超时（504）：${detail}`);
+  }
+  return new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 返回 ${status}：${detail}`);
+}
+
+interface UpstreamResponse {
+  response: Response;
+  key: PooledKey;
+}
+
 /**
- * 请求 DeepSeek chat/completions（stream=true），返回上游 SSE 字节流。
- * 客户端断开时通过 signal 中止上游请求。
+ * 从 Key 池里轮询取 Key 发请求：连接失败/鉴权失败/限流/5xx 会自动换下一个 Key。
+ * 所有 Key 都失败时才抛错；400/404 这类请求本身的错误不重试。
  */
-export async function openChatStream(
-  parsed: ParsedChatRequest,
-  clientSignal: AbortSignal,
-): Promise<ReadableStream<Uint8Array>> {
-  if (!config.apiKey) {
+async function fetchUpstream(
+  payload: Record<string, unknown>,
+  clientSignal?: AbortSignal,
+): Promise<UpstreamResponse> {
+  if (keyPool.size === 0) {
     throw new ApiError(
       503,
       "UPSTREAM_NOT_CONFIGURED",
@@ -112,54 +139,102 @@ export async function openChatStream(
     );
   }
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(
-        config.provider === "qwen"
-          ? {
-              model: config.model,
-              messages: parsed.messages,
-              stream: true,
-              enable_thinking: parsed.thinking,
-            }
-          : {
-              model: parsed.thinking ? config.reasonerModel : config.model,
-              messages: parsed.messages,
-              stream: true,
-            },
-      ),
-      signal: clientSignal,
-    });
-  } catch (err) {
-    if ((err as Error).name === "AbortError") {
-      throw new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接");
+  const attempted = new Set<number>();
+  let lastError: ApiError | null = null;
+
+  for (;;) {
+    const key = keyPool.acquire(attempted) ?? keyPool.acquireIgnoringCooldown(attempted);
+    if (!key) break;
+    attempted.add(key.id);
+
+    let response: Response;
+    try {
+      response = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${key.value}`,
+        },
+        body: JSON.stringify(payload),
+        signal: clientSignal,
+      });
+    } catch (err) {
+      const error = err as Error;
+      if (clientSignal?.aborted || error.name === "AbortError") {
+        throw new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接");
+      }
+      if (error.name === "TimeoutError") {
+        throw new ApiError(504, "UPSTREAM_TIMEOUT", `${config.providerLabel} API 请求超时`);
+      }
+      keyPool.markFailure(key, cooldownForStatus());
+      lastError = new ApiError(
+        502,
+        "UPSTREAM_ERROR",
+        `无法连接 ${config.providerLabel} API：${error.message}`,
+      );
+      console.warn(`[dream-server] upstream key #${key.id} network error: ${error.message}`);
+      continue;
     }
-    throw new ApiError(502, "UPSTREAM_ERROR", `无法连接 ${config.providerLabel} API：${(err as Error).message}`);
+
+    if (response.ok) {
+      keyPool.markSuccess(key);
+      return { response, key };
+    }
+
+    const detail = extractErrorDetail(await response.text().catch(() => ""));
+    const mapped = mapUpstreamError(response.status, detail);
+    if (!isRetryableStatus(response.status)) throw mapped;
+
+    keyPool.markFailure(key, cooldownForStatus(response.status));
+    lastError = mapped;
+    console.warn(
+      `[dream-server] upstream key #${key.id} failed (${response.status}), trying next key`,
+    );
   }
 
-  if (!upstream.ok) {
-    const detail = extractErrorDetail(await upstream.text().catch(() => ""));
-    if (upstream.status === 401) {
-      throw new ApiError(502, "UPSTREAM_AUTH_FAILED", `${config.providerLabel} API 鉴权失败（401）：${detail}`);
-    }
-    if (upstream.status === 429) {
-      throw new ApiError(429, "RATE_LIMITED", `${config.providerLabel} API 限流（429）：${detail}`);
-    }
-    if (upstream.status === 504) {
-      throw new ApiError(504, "UPSTREAM_TIMEOUT", `${config.providerLabel} API 超时（504）：${detail}`);
-    }
-    throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 返回 ${upstream.status}：${detail}`);
-  }
+  throw (
+    lastError ??
+    new ApiError(
+      503,
+      "UPSTREAM_NOT_CONFIGURED",
+      `服务端没有可用的 ${config.keyEnv}：请配置至少一个密钥后重启服务。`,
+    )
+  );
+}
 
+/** 非流式上游请求（摘要等），同样走 Key 池与重试。 */
+export async function requestUpstreamJson(
+  payload: Record<string, unknown>,
+  timeoutMs = 120_000,
+): Promise<unknown> {
+  const { response, key } = await fetchUpstream(payload, AbortSignal.timeout(timeoutMs));
+  console.log(`[dream-server] upstream key #${key.id} served non-stream request`);
+  return response.json();
+}
+
+/** 请求上游 chat/completions（stream=true），返回 SSE 字节流。 */
+export async function openChatStream(
+  parsed: ParsedChatRequest,
+  clientSignal: AbortSignal,
+): Promise<ReadableStream<Uint8Array>> {
+  const payload =
+    config.provider === "qwen"
+      ? {
+          model: config.model,
+          messages: parsed.messages,
+          stream: true,
+          enable_thinking: parsed.thinking,
+        }
+      : {
+          model: parsed.thinking ? config.reasonerModel : config.model,
+          messages: parsed.messages,
+          stream: true,
+        };
+
+  const { response: upstream, key } = await fetchUpstream(payload, clientSignal);
   if (!upstream.body) {
     throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 未返回流式响应体`);
   }
-
+  console.log(`[dream-server] upstream key #${key.id} served stream`);
   return upstream.body;
 }

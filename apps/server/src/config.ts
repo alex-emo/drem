@@ -30,8 +30,21 @@ export type Provider = "deepseek" | "qwen";
 
 const provider: Provider = process.env.DREAM_PROVIDER?.toLowerCase() === "qwen" ? "qwen" : "deepseek";
 
-const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
-const qwenApiKey = process.env.QWEN_API_KEY ?? "";
+function splitKeys(...values: Array<string | undefined>): string[] {
+  const keys: string[] = [];
+  for (const value of values) {
+    for (const part of (value ?? "").split(/[\s,]+/)) {
+      const key = part.trim();
+      if (key && !keys.includes(key)) keys.push(key);
+    }
+  }
+  return keys;
+}
+
+const apiKeys =
+  provider === "qwen"
+    ? splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS)
+    : splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS);
 
 const model =
   provider === "qwen"
@@ -43,8 +56,9 @@ export const config = {
   host: process.env.DREAM_HOST ?? "127.0.0.1",
   provider,
   providerLabel: provider === "qwen" ? "Qwen" : "DeepSeek",
-  keyEnv: provider === "qwen" ? "QWEN_API_KEY" : "DEEPSEEK_API_KEY",
-  apiKey: provider === "qwen" ? qwenApiKey : deepseekApiKey,
+  keyEnv: provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS",
+  apiKey: apiKeys[0] ?? "",
+  apiKeys,
   baseUrl:
     provider === "qwen"
       ? (process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1")

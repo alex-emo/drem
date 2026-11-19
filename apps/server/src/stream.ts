@@ -89,6 +89,8 @@ export function dreamChatStream(
   ) => {
     emit(controller, event, data);
     close(controller);
+    // 结束事件发出后立即释放上游连接，避免上游不主动断开导致客户端挂到超时。
+    void reader.cancel().catch(() => undefined);
   };
 
   const onAbort = () => {

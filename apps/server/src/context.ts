@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { getContextSummary, putContextSummary } from "./db.js";
 import type { ChatMessage } from "./deepseek.js";
 import { ApiError } from "./protocol.js";
+import { requestUpstreamJson } from "./deepseek.js";
 
 /** 超过任一阈值就压缩历史：1000 条或 300 万字符。 */
 export const COMPRESS_MESSAGE_THRESHOLD = 1000;
@@ -108,18 +109,11 @@ async function summarizeSegment(segment: ChatMessage[]): Promise<string> {
           max_tokens: 1200,
         };
 
-  let response: Response;
+  let data: ChatCompletionResponse;
   try {
-    response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(120_000),
-    });
+    data = (await requestUpstreamJson(payload, 120_000)) as ChatCompletionResponse;
   } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError(
       502,
       "UPSTREAM_ERROR",
@@ -127,16 +121,7 @@ async function summarizeSegment(segment: ChatMessage[]): Promise<string> {
     );
   }
 
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 300);
-    throw new ApiError(
-      502,
-      "UPSTREAM_ERROR",
-      `${config.providerLabel} 返回 ${response.status}${detail ? `（${detail}）` : ""}`,
-    );
-  }
 
-  const data = (await response.json()) as ChatCompletionResponse;
   const summary = data.choices?.[0]?.message?.content?.trim();
   if (!summary) {
     throw new ApiError(502, "UPSTREAM_ERROR", "上游没有返回摘要");
