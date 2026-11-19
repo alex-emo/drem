@@ -54,6 +54,18 @@ npx cap open ios
 
 在 Xcode 中选择签名 Team 后 Archive 即可。本 Linux 环境只能生成工程，无法签名构建。
 
+## 分发下载
+
+网页端登录页与侧边栏提供「下载 Android App」入口，指向：
+
+```text
+https://dream.pum.org.cn/download/dream-android.apk
+```
+
+服务端从 `DREAM_DOWNLOAD_DIR`（默认 `downloads/`，相对进程工作目录）读取该文件，
+以 `application/vnd.android.package-archive` + `Content-Disposition: attachment` 返回。
+部署时把 APK 放到 `/srv/blog/dream/downloads/dream-android.apk` 即可，Web 静态资源发布不会覆盖该目录。
+
 ## v1 限制
 
 - 联网搜索、文件上传按钮已隐藏（服务端尚未实现对应工具，避免点了报错）。

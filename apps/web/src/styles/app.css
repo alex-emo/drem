@@ -1839,3 +1839,37 @@ button:disabled {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+
+/* Android APK 下载入口 */
+.download-app {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-decoration: none;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.download-app:hover {
+  background: var(--elevated);
+  color: var(--text-primary);
+}
+
+.auth-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--brand);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.auth-download:hover {
+  text-decoration: underline;
+}

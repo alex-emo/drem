@@ -83,5 +83,6 @@ export const config = {
   mock: process.env.DREAM_MOCK === "1" || process.env.DREAM_MOCK === "true",
   dbPath: process.env.DREAM_DB_PATH ?? "data/dream.db",
   webDir: process.env.DREAM_WEB_DIR ?? "web",
+  downloadDir: process.env.DREAM_DOWNLOAD_DIR ?? "downloads",
   adminUsers: splitList(process.env.DREAM_ADMIN_USERS),
 } as const;

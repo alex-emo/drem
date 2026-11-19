@@ -1,5 +1,6 @@
 import type { AuthUser, Conversation, Theme } from "../lib/types";
 import {
+  DownloadIcon,
   LogoutIcon,
   MoonIcon,
   PlusIcon,
@@ -111,6 +112,15 @@ export default function Sidebar({
             <LogoutIcon size={16} />
           </button>
         </div>
+        <a
+          className="download-app"
+          href="/download/dream-android.apk"
+          download
+          aria-label="下载 Android App"
+        >
+          <DownloadIcon size={16} />
+          <span>下载 Android App</span>
+        </a>
         <div className="sidebar-foot-row">
           <div className="sidebar-foot-actions">
             <button

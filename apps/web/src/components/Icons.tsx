@@ -171,3 +171,13 @@ export function ChevronRightIcon(props: IconProps) {
     </Icon>
   );
 }
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4v10" />
+      <path d="m8 10 4 4 4-4" />
+      <path d="M5 19h14" />
+    </Icon>
+  );
+}

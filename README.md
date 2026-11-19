@@ -263,7 +263,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 见 [docs/mobile.md](docs/mobile.md)。
 
 - 源码：`apps/mobile`，UI 复用官方 chat-demo（MIT），认证与 `/api/v1/chat` 已接 Dream。
-- Android debug APK：`apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`（约 5.4 MB）。
+- Android debug APK：`apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`（约 5.4 MB）；网页端登录页与侧边栏均有「下载 Android App」入口，服务端从 `/download/dream-android.apk` 提供下载。
 - iOS 工程：`apps/mobile/ios/App/App.xcodeproj`（需 macOS/Xcode 签名构建）。
 - 暂不支持的入口已隐藏：联网搜索、文件上传、Mermaid。
 

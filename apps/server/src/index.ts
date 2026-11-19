@@ -1,3 +1,6 @@
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+import { Readable } from "node:stream";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
@@ -270,6 +273,37 @@ app.post("/api/v1/chat", async (c) => {
     },
   );
   return new Response(stream, { headers: sseHeaders(requestId) });
+});
+
+// 安装包下载（放在静态资源之前，避免被 SPA 回退吞掉）。
+const DOWNLOAD_FILES: Record<string, { file: string; type: string; name: string }> = {
+  "dream-android.apk": {
+    file: resolve(config.downloadDir, "dream-android.apk"),
+    type: "application/vnd.android.package-archive",
+    name: "Dream-Android.apk",
+  },
+};
+
+app.get("/download/:file", (c) => {
+  const entry = DOWNLOAD_FILES[c.req.param("file")];
+  if (!entry || !existsSync(entry.file)) {
+    return c.json(
+      {
+        error: {
+          code: "NOT_FOUND" as const,
+          message: "安装包不存在",
+          requestId: c.get("requestId") ?? "req_unknown",
+        },
+      },
+      404,
+    );
+  }
+  const stat = statSync(entry.file);
+  c.header("content-type", entry.type);
+  c.header("content-length", String(stat.size));
+  c.header("content-disposition", `attachment; filename="${entry.name}"`);
+  c.header("cache-control", "public, max-age=3600");
+  return c.body(Readable.toWeb(createReadStream(entry.file)) as unknown as ReadableStream);
 });
 
 // 同一进程托管 Web 静态文件（生产环境单端口 + 单隧道即可）。
