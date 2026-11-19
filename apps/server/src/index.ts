@@ -6,6 +6,12 @@ import { logger } from "hono/logger";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { config } from "./config.js";
 import {
+  COMPRESS_CHAR_THRESHOLD,
+  COMPRESS_MESSAGE_THRESHOLD,
+  compressContext,
+  needsCompression,
+} from "./context.js";
+import {
   loginUser,
   logoutUser,
   registerUser,
@@ -92,6 +98,10 @@ app.get("/api/v1/health", (c) => {
       default: config.model,
       reasoner: config.reasonerModel,
     },
+    context: {
+      compressAfterMessages: COMPRESS_MESSAGE_THRESHOLD,
+      compressAfterChars: COMPRESS_CHAR_THRESHOLD,
+    },
   });
 });
 
@@ -134,6 +144,19 @@ app.get("/api/v1/import/share", async (c) => {
   return c.json(await fetchSharedChat(url));
 });
 
+app.post("/api/v1/context/warm", async (c) => {
+  requireUser(c.req.header("authorization"));
+  const body = await readJsonBody(c);
+  const parsed = parseChatRequest(body, { requireLastUser: false });
+  const outcome = await compressContext(parsed.messages);
+  return c.json({
+    compressed: outcome.compressed,
+    segments: outcome.segments,
+    cached: outcome.cached,
+    originalMessages: outcome.originalMessages,
+  });
+});
+
 app.post("/api/v1/chat", async (c) => {
   const requestId = c.get("requestId");
   const { user } = requireUser(c.req.header("authorization"));
@@ -152,10 +175,20 @@ app.post("/api/v1/chat", async (c) => {
     return new Response(stream, { headers: sseHeaders(requestId) });
   }
 
+  let effective = parsed;
+  if (needsCompression(parsed.messages)) {
+    const startedAt = Date.now();
+    const compressed = await compressContext(parsed.messages);
+    effective = { ...parsed, messages: compressed.messages };
+    console.log(
+      `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ${compressed.segments} segments (${compressed.cached} cached) in ${Date.now() - startedAt}ms`,
+    );
+  }
+
   console.log(
-    `[dream-server] ${requestId} chat by ${user.username}: ${parsed.messages.length} messages, thinking=${parsed.thinking}`,
+    `[dream-server] ${requestId} chat by ${user.username}: ${effective.messages.length} messages, thinking=${parsed.thinking}`,
   );
-  const upstream = await openChatStream(parsed, c.req.raw.signal);
+  const upstream = await openChatStream(effective, c.req.raw.signal);
   const stream = dreamChatStream(
     upstream,
     {

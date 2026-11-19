@@ -17,7 +17,10 @@ const MAX_MESSAGES = 10_000;
 const MAX_CONTENT_LENGTH = 200_000;
 
 /** 校验客户端传来的纯文本消息，返回可转发给上游的结构。 */
-export function parseChatRequest(body: unknown): ParsedChatRequest {
+export function parseChatRequest(
+  body: unknown,
+  options: { requireLastUser?: boolean } = {},
+): ParsedChatRequest {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new ApiError(400, "INVALID_ARGUMENT", "请求体必须是 JSON 对象");
   }
@@ -72,7 +75,7 @@ export function parseChatRequest(body: unknown): ParsedChatRequest {
       { field: "messages", reason: "missing_user" },
     ]);
   }
-  if (messages[messages.length - 1]?.role !== "user") {
+  if (options.requireLastUser !== false && messages[messages.length - 1]?.role !== "user") {
     throw new ApiError(400, "INVALID_ARGUMENT", "最后一条消息必须是 user", [
       { field: "messages", reason: "last_must_be_user" },
     ]);

@@ -64,6 +64,10 @@ QWEN_MODEL=qwen3.7-flash
 
 然后 `systemctl restart dream-server`；前端无需重新构建，health 会返回新的 `provider` / `models`。
 
+## 长对话压缩缓存
+
+服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表，缓存分段摘要；该表随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
+
 ## 运维
 
 ```bash

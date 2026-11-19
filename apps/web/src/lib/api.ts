@@ -267,3 +267,18 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     throw err;
   }
 }
+
+/**
+ * 导入长对话后静默预热上下文压缩：服务端按分段生成摘要并缓存，
+ * 首次发消息时不必再等摘要生成。
+ */
+export async function warmContext(messages: ApiChatMessage[]): Promise<void> {
+  const response = await fetch("/api/v1/context/warm", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ messages }),
+  });
+  if (!response.ok) {
+    throw new ChatApiError("上下文预热失败", response.status, "WARM_FAILED");
+  }
+}

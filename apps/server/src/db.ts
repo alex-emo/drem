@@ -48,3 +48,27 @@ export interface SessionRow {
   created_at: string;
   last_seen_at: string;
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS context_summaries (
+    key        TEXT PRIMARY KEY,
+    summary    TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+`);
+
+/** 读取某段对话的压缩摘要缓存。 */
+export function getContextSummary(key: string): string | null {
+  const row = db.prepare("SELECT summary FROM context_summaries WHERE key = ?").get(key) as
+    | { summary?: string }
+    | undefined;
+  return row?.summary ?? null;
+}
+
+/** 写入压缩摘要缓存（同段内容只算一次）。 */
+export function putContextSummary(key: string, summary: string): void {
+  db.prepare(
+    `INSERT INTO context_summaries (key, summary, created_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET summary = excluded.summary`,
+  ).run(key, summary, Date.now());
+}

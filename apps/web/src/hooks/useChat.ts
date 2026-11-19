@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChatApiError, streamChat } from "../lib/api";
+import { ChatApiError, streamChat, warmContext } from "../lib/api";
 import {
   deleteConversationData,
   getMessages,
@@ -22,6 +22,22 @@ export interface ImportOutcome {
 }
 
 export type ChatController = ReturnType<typeof useChat>;
+
+const WARM_MESSAGE_THRESHOLD = 1000;
+const WARM_CHAR_THRESHOLD = 3_000_000;
+
+/** 导入后静默预热长对话的分段摘要，不阻塞导入结果。 */
+function warmLongConversations(conversations: Conversation[], messages: Message[]): void {
+  for (const conversation of conversations) {
+    const list = messages
+      .filter((message) => message.conversationId === conversation.id && message.content)
+      .map((message) => ({ role: message.role, content: message.content }));
+    const chars = list.reduce((total, message) => total + message.content.length, 0);
+    if (list.length > WARM_MESSAGE_THRESHOLD || chars > WARM_CHAR_THRESHOLD) {
+      void warmContext(list).catch(() => undefined);
+    }
+  }
+}
 
 export function useChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -136,6 +152,7 @@ export function useChat() {
         const items = await listConversations();
         conversationsRef.current = items;
         setConversations(items);
+        warmLongConversations(fresh, freshMessages);
         const newest = fresh.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
         await openConversation(newest.id);
       }
@@ -165,6 +182,7 @@ export function useChat() {
       }
 
       await importConversationData([archive.conversation], archive.messages);
+      warmLongConversations([archive.conversation], archive.messages);
       const items = await listConversations();
       conversationsRef.current = items;
       setConversations(items);

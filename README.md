@@ -126,6 +126,7 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 账号体系：注册 / 登录 / 退出；服务端 scrypt 存密码、token 哈希入库；除 health/models 外的 API 均要求 `Authorization: Bearer`
 - 设置弹窗：通用设置（外观、服务状态）与数据管理
 - 导入历史对话：解析 DeepSeek 客户端导出的 `deepseek_data-*.zip`（格式版本 3），按 `current_message_id` 还原当前分支，导入提问、回答与深度思考；重复会话自动跳过，图片/文件附件暂不导入
+- 长对话自动压缩：单次上下文超过 1000 条或 300 万字符时，服务端按分段生成摘要，只保留最近 200 条原文再发给模型；摘要按分段内容哈希缓存在 SQLite，追加新消息不会重复计算。导入长对话后会静默预热摘要，过程对用户不可见
 - 分享链接导入：粘贴 `chat.deepseek.com/share/...`，由服务端抓取分享数据、还原当前分支并写入本地
 - 独立部署：服务端同端口托管 Web 构建产物，可通过 systemd + Cloudflare Tunnel 暴露 HTTPS
 

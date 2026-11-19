@@ -197,8 +197,27 @@ curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
 | `hasApiKey` | 服务端是否配置了当前供应商的 Key（Key 永不下发） |
 | `models.default` | 普通对话模型 |
 | `models.reasoner` | 深度思考模型（Qwen 下与 `default` 相同） |
+| `context.compressAfterMessages` | 超过多少条消息开始压缩历史（当前 1000） |
+| `context.compressAfterChars` | 超过多少字符开始压缩历史（当前 3000000） |
 
 客户端 UI 规则：`status=degraded && mock` 显示「演示模式」；`status=degraded && !hasApiKey` 显示「缺少 API Key」。
+
+## 4.1 长对话自动压缩
+
+`POST /api/v1/chat` 在转发前检查消息总量：超过 **1000 条**或 **300 万字符**时，服务端会把较早的消息按最多 30 万字符一段切分，逐段调用当前模型生成中文摘要，并用一条 `system` 摘要消息替代这些历史；最近 200 条 / 40 万字符保留原文。客户端不会看到摘要消息，也无法感知压缩过程。
+
+- 摘要按“分段内容 SHA-256”缓存在服务端 SQLite `context_summaries` 表；追加新消息不会让旧分段重复计费。
+- 流式响应会等摘要完成后才开始，首次长对话请求会明显变慢；之后命中缓存基本无额外耗时。
+- 导入历史（ZIP / 分享链接）后，客户端若发现会话超过阈值，会静默调用 warm 接口预生成摘要。
+
+### `POST /api/v1/context/warm`
+
+需要 Bearer。请求体与 `chat` 相同（`messages`，不要求最后一条是 user）。仅生成/缓存摘要，不调用对话补全逻辑。
+
+```json
+// 响应
+{ "compressed": true, "segments": 7, "cached": 5, "originalMessages": 5123 }
+```
 
 ## 5. `GET /api/v1/models`
 
@@ -314,6 +333,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 | 2026-11-19 | v1.1 | 注册/登录/登出/me；chat 要求 Bearer |
 | 2026-11-19 | v1.2 | 新增 `GET /api/v1/import/share` 分享链接导入 |
 | 2026-11-19 | v1.3 | 新增 `DREAM_PROVIDER=qwen`（百炼 Qwen3.7-Flash）；health 增加 provider / providerLabel，models 增加 provider |
+| 2026-11-19 | v1.4 | 长对话自动分段摘要（>1000 条或 >300 万字符）；新增 `POST /api/v1/context/warm`；health 增加 context 阈值 |
 
 ## 认证（v0.3）
 
