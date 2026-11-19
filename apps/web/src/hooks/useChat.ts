@@ -124,6 +124,8 @@ export function useChat() {
     setMessages(items);
     messagesRef.current = items;
     remember(id);
+    const conversation = conversationsRef.current.find((item) => item.id === id);
+    if (conversation) warmLongConversations([conversation], items);
   }, []);
 
   const removeConversation = useCallback(async (id: string) => {
@@ -152,7 +154,6 @@ export function useChat() {
         const items = await listConversations();
         conversationsRef.current = items;
         setConversations(items);
-        warmLongConversations(fresh, freshMessages);
         const newest = fresh.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
         await openConversation(newest.id);
       }
@@ -182,7 +183,6 @@ export function useChat() {
       }
 
       await importConversationData([archive.conversation], archive.messages);
-      warmLongConversations([archive.conversation], archive.messages);
       const items = await listConversations();
       conversationsRef.current = items;
       setConversations(items);
