@@ -26,3 +26,19 @@ apps/server/data/
 # local runtime data (SQLite)
 data/
 apps/server/data/
+
+# Mobile
+.android-sdk/
+.gradle/
+apps/mobile/dist/
+apps/mobile/android/.gradle/
+apps/mobile/android/app/build/
+apps/mobile/android/build/
+apps/mobile/ios/App/Pods/
+apps/mobile/ios/App/App/public/
+
+apps/mobile/android/local.properties
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/app/src/main/assets/capacitor.config.json
+apps/mobile/ios/App/App/public/
+apps/mobile/ios/App/App/capacitor.config.json

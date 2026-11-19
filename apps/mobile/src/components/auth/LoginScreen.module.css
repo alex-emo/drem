@@ -1,0 +1,115 @@
+.page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  background: var(--dsw-alias-bg-base);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 30px 28px 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 20px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-alias-shadow-l2, 0 12px 40px rgba(0, 0, 0, 0.28));
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--dsw-alias-brand-primary);
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.name {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.subtitle {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.field input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  outline: none;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 16px;
+}
+
+.field input:focus {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(242, 90, 90, 0.12);
+  color: #f25a5a;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.submit {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.switch {
+  align-self: center;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-brand-text);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.note {
+  margin: 6px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}

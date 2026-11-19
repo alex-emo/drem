@@ -58,8 +58,8 @@
 | Web | React 18.3、TypeScript 5.9、Vite 7、`idb` 8、`fflate`（ZIP 解压） |
 | Markdown | `react-markdown` 10、`remark-gfm` 4、`rehype-highlight` 7 |
 | 服务端 | Node 22+（开发用 26）、Hono 4、`@hono/node-server`、tsx |
-| 存储 | 浏览器 IndexedDB（库名 `dream`）；服务端暂无数据库 |
-| 后续 Android | Capacitor 包同一套 Web 产物（未开始） |
+| 存储 | 浏览器 IndexedDB（库名 `dream`）；服务端 `node:sqlite`（用户/会话/用量/拦截记录） |
+| 移动端 | `apps/mobile`：官方 chat-demo（MIT）UI + Dream 登录/SSE + Capacitor 8（Android/iOS） |
 
 ## 快速开始
 
@@ -101,6 +101,8 @@ apps/
     src/deepseek.ts       # 请求校验 + 上游请求
     src/mock.ts           # 无 Key 时的本地模拟流
     src/config.ts         # .env 加载与配置
+  mobile/                 # Android/iOS App（chat-demo 基座 + Capacitor）
+    src/services/dream/   # Dream 登录与 SSE 适配
   web/                    # Web 客户端
     src/App.tsx           # 应用外壳、主题、侧边栏状态
     src/hooks/useChat.ts  # 会话/消息状态机、流式累积、持久化、历史导入
@@ -255,6 +257,15 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 > M0.5（已完成）：DeepSeek 导出 ZIP 导入、真实 API 联调、设置弹窗。
 >
 > M1（进行中）：账号体系已上线；分享链接导入已支持。
+
+## 移动端 App
+
+见 [docs/mobile.md](docs/mobile.md)。
+
+- 源码：`apps/mobile`，UI 复用官方 chat-demo（MIT），认证与 `/api/v1/chat` 已接 Dream。
+- Android debug APK：`apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`（约 5.4 MB）。
+- iOS 工程：`apps/mobile/ios/App/App.xcodeproj`（需 macOS/Xcode 签名构建）。
+- 暂不支持的入口已隐藏：联网搜索、文件上传、Mermaid。
 
 ## 已知限制
 
