@@ -28,6 +28,8 @@ export interface HealthInfo {
   serverVersion: string;
   serverTime: string;
   mock: boolean;
+  provider?: "deepseek" | "qwen";
+  providerLabel?: string;
   hasApiKey: boolean;
   models: {
     default: string;

@@ -43,10 +43,26 @@ ssh root@HOST '
 ## 更新
 
 ```bash
-npm run build:server
+npm run build          # Web 产物（apps/web/dist）
+npm run build:server   # 服务端 bundle
+tar -C apps/web/dist -cf - . | ssh root@HOST 'rm -rf /srv/blog/dream/web.new && mkdir -p /srv/blog/dream/web.new && tar -C /srv/blog/dream/web.new -xf -'
+ssh root@HOST 'rm -rf /srv/blog/dream/web.old && mv /srv/blog/dream/web /srv/blog/dream/web.old && mv /srv/blog/dream/web.new /srv/blog/dream/web && chown -R dream:dream /srv/blog/dream/web'
 scp apps/server/dist/server.mjs root@HOST:/srv/blog/dream/server.mjs.new
 ssh root@HOST 'install -o dream -g dream -m 640 /srv/blog/dream/server.mjs.new /srv/blog/dream/server.mjs && rm /srv/blog/dream/server.mjs.new && systemctl restart dream-server'
 ```
+
+## 切换模型供应商
+
+生产 `.env`（`/srv/blog/dream/.env`）默认 `DREAM_PROVIDER=deepseek`；切到 Qwen 时追加：
+
+```bash
+DREAM_PROVIDER=qwen
+QWEN_API_KEY=sk-...
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3.7-flash
+```
+
+然后 `systemctl restart dream-server`；前端无需重新构建，health 会返回新的 `provider` / `models`。
 
 ## 运维
 
@@ -58,20 +74,15 @@ curl -s http://127.0.0.1:8787/api/v1/health
 
 ## 访问方式（当前）
 
-服务只绑定本机回环地址，公网未开放。本机调试用 SSH 隧道：
+服务只绑定本机回环地址，公网通过 `dream-tunnel.service` 的 Cloudflare quick tunnel 暴露 HTTPS；所有 `/api/v1/*`（除 health/models）要求登录 Bearer Token。
 
 ```bash
+# 本机调试
 ssh -N -L 8787:127.0.0.1:8787 root@47.117.51.245
-# 另一个终端
 curl http://127.0.0.1:8787/api/v1/health
 ```
 
-**为什么不直接开放公网**：M1 登录/单设备鉴权尚未实现，直接暴露等于把 DeepSeek 配额交给任何扫到端口的人。上线公网前至少需要：
-
-1. 完成 M1 鉴权（Bearer Token + 单设备互踢），或
-2. 在 nginx 层加 Basic Auth / IP 白名单，并仅通过 HTTPS 暴露 `/api/`。
-
-若后续要挂到现有 nginx，注意：`/api/v1/chat` 是 SSE，需要 `proxy_buffering off`、`proxy_read_timeout` 至少 300s，并保留 `X-Request-Id` 透传。
+quick tunnel 的域名重启后会变化；固定域名需要 Cloudflare 命名隧道 + 子域名 DNS。若以后改挂 nginx，注意：`/api/v1/chat` 是 SSE，需要 `proxy_buffering off`、`proxy_read_timeout` 至少 300s，并保留 `X-Request-Id` 透传。
 
 ## 独立应用与账号（2026-11-19）
 

@@ -105,7 +105,7 @@ export async function openChatStream(
     throw new ApiError(
       503,
       "UPSTREAM_NOT_CONFIGURED",
-      "服务端未配置 DEEPSEEK_API_KEY：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。",
+      `服务端未配置 ${config.keyEnv}：请在项目根目录创建 .env（参考 .env.example）并重启服务；或设置 DREAM_MOCK=1 使用本地模拟。`,
     );
   }
 
@@ -117,36 +117,45 @@ export async function openChatStream(
         "content-type": "application/json",
         authorization: `Bearer ${config.apiKey}`,
       },
-      body: JSON.stringify({
-        model: parsed.thinking ? config.reasonerModel : config.model,
-        messages: parsed.messages,
-        stream: true,
-      }),
+      body: JSON.stringify(
+        config.provider === "qwen"
+          ? {
+              model: config.model,
+              messages: parsed.messages,
+              stream: true,
+              enable_thinking: parsed.thinking,
+            }
+          : {
+              model: parsed.thinking ? config.reasonerModel : config.model,
+              messages: parsed.messages,
+              stream: true,
+            },
+      ),
       signal: clientSignal,
     });
   } catch (err) {
     if ((err as Error).name === "AbortError") {
       throw new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接");
     }
-    throw new ApiError(502, "UPSTREAM_ERROR", `无法连接 DeepSeek API：${(err as Error).message}`);
+    throw new ApiError(502, "UPSTREAM_ERROR", `无法连接 ${config.providerLabel} API：${(err as Error).message}`);
   }
 
   if (!upstream.ok) {
     const detail = extractErrorDetail(await upstream.text().catch(() => ""));
     if (upstream.status === 401) {
-      throw new ApiError(502, "UPSTREAM_AUTH_FAILED", `DeepSeek API 鉴权失败（401）：${detail}`);
+      throw new ApiError(502, "UPSTREAM_AUTH_FAILED", `${config.providerLabel} API 鉴权失败（401）：${detail}`);
     }
     if (upstream.status === 429) {
-      throw new ApiError(429, "RATE_LIMITED", `DeepSeek API 限流（429）：${detail}`);
+      throw new ApiError(429, "RATE_LIMITED", `${config.providerLabel} API 限流（429）：${detail}`);
     }
     if (upstream.status === 504) {
-      throw new ApiError(504, "UPSTREAM_TIMEOUT", `DeepSeek API 超时（504）：${detail}`);
+      throw new ApiError(504, "UPSTREAM_TIMEOUT", `${config.providerLabel} API 超时（504）：${detail}`);
     }
-    throw new ApiError(502, "UPSTREAM_ERROR", `DeepSeek API 返回 ${upstream.status}：${detail}`);
+    throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 返回 ${upstream.status}：${detail}`);
   }
 
   if (!upstream.body) {
-    throw new ApiError(502, "UPSTREAM_ERROR", "DeepSeek API 未返回流式响应体");
+    throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 未返回流式响应体`);
   }
 
   return upstream.body;

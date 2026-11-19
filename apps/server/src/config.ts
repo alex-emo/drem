@@ -26,13 +26,33 @@ function loadDotenv(file: string): void {
 loadDotenv(resolve(process.cwd(), "../../.env"));
 loadDotenv(resolve(process.cwd(), ".env"));
 
+export type Provider = "deepseek" | "qwen";
+
+const provider: Provider = process.env.DREAM_PROVIDER?.toLowerCase() === "qwen" ? "qwen" : "deepseek";
+
+const deepseekApiKey = process.env.DEEPSEEK_API_KEY ?? "";
+const qwenApiKey = process.env.QWEN_API_KEY ?? "";
+
+const model =
+  provider === "qwen"
+    ? (process.env.QWEN_MODEL ?? "qwen3.7-flash")
+    : (process.env.DREAM_MODEL ?? "deepseek-chat");
+
 export const config = {
   port: Number(process.env.PORT ?? 8787),
   host: process.env.DREAM_HOST ?? "127.0.0.1",
-  apiKey: process.env.DEEPSEEK_API_KEY ?? "",
-  baseUrl: (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, ""),
-  model: process.env.DREAM_MODEL ?? "deepseek-chat",
-  reasonerModel: process.env.DREAM_REASONER_MODEL ?? "deepseek-reasoner",
+  provider,
+  providerLabel: provider === "qwen" ? "Qwen" : "DeepSeek",
+  keyEnv: provider === "qwen" ? "QWEN_API_KEY" : "DEEPSEEK_API_KEY",
+  apiKey: provider === "qwen" ? qwenApiKey : deepseekApiKey,
+  baseUrl:
+    provider === "qwen"
+      ? (process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1")
+      : (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, ""),
+  model,
+  // Qwen 用同一模型 ID + enable_thinking 切换；DeepSeek 用独立 reasoner 模型。
+  reasonerModel:
+    provider === "qwen" ? model : (process.env.DREAM_REASONER_MODEL ?? "deepseek-reasoner"),
   mock: process.env.DREAM_MOCK === "1" || process.env.DREAM_MOCK === "true",
   dbPath: process.env.DREAM_DB_PATH ?? "data/dream.db",
   webDir: process.env.DREAM_WEB_DIR ?? "web",

@@ -84,6 +84,8 @@ app.get("/api/v1/health", (c) => {
     serverVersion: SERVER_VERSION,
     serverTime: new Date().toISOString(),
     mock: config.mock,
+    provider: config.provider,
+    providerLabel: config.providerLabel,
     hasApiKey,
     models: {
       default: config.model,
@@ -94,10 +96,14 @@ app.get("/api/v1/health", (c) => {
 
 app.get("/api/v1/models", (c) =>
   c.json({
-    data: [
-      { id: config.model, thinking: false, default: true },
-      { id: config.reasonerModel, thinking: true, default: false },
-    ],
+    data:
+      config.provider === "qwen"
+        ? [{ id: config.model, thinking: "auto", default: true }]
+        : [
+            { id: config.model, thinking: false, default: true },
+            { id: config.reasonerModel, thinking: true, default: false },
+          ],
+    provider: config.provider,
   }),
 );
 
@@ -153,7 +159,8 @@ app.post("/api/v1/chat", async (c) => {
     upstream,
     {
       requestId,
-      model: parsed.thinking ? config.reasonerModel : config.model,
+      model:
+        config.provider === "qwen" || !parsed.thinking ? config.model : config.reasonerModel,
       thinking: parsed.thinking,
     },
     c.req.raw.signal,
@@ -210,12 +217,14 @@ app.onError((err, c) => {
 serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
   console.log(`[dream-server] listening on http://${config.host}:${info.port}`);
   if (config.mock) {
-    console.log("[dream-server] DREAM_MOCK=1，使用本地模拟流式响应（不会请求 DeepSeek）");
+    console.log("[dream-server] DREAM_MOCK=1，使用本地模拟流式响应（不会请求上游）");
   } else if (!config.apiKey) {
-    console.warn("[dream-server] 未配置 DEEPSEEK_API_KEY，/api/v1/chat 将返回 503");
+    console.warn(`[dream-server] 未配置 ${config.keyEnv}，/api/v1/chat 将返回 503`);
   } else {
     console.log(
-      `[dream-server] 转发到 ${config.baseUrl}，模型 ${config.model} / ${config.reasonerModel}`,
+      `[dream-server] 供应商 ${config.providerLabel}，转发到 ${config.baseUrl}，模型 ${config.model}${
+        config.provider === "deepseek" ? ` / ${config.reasonerModel}` : "（enable_thinking 切换）"
+      }`,
     );
   }
 });

@@ -137,7 +137,7 @@ data: {"requestId":"req_demo_001","finishReason":"stop","createdAt":"2026-11-18T
 
 | 事件 | 次数 | data 字段 | 说明 |
 | --- | --- | --- | --- |
-| `start` | 1 | `requestId`, `model`, `thinking`, `createdAt` | 连接建立后立即发送；`model` 为服务端向 DeepSeek 请求的模型名（账号侧可能映射到 `deepseek-flash`） |
+| `start` | 1 | `requestId`, `model`, `thinking`, `createdAt` | 连接建立后立即发送；`model` 为服务端向当前上游请求的模型名（DeepSeek 账号侧可能映射到 `deepseek-flash`；Qwen 为 `qwen3.7-flash`） |
 | `thinking` | 0+ | `delta` | 思考增量；仅在 `thinking: true` 时出现 |
 | `delta` | 0+ | `delta` | 正文增量 |
 | `done` | 1 | `requestId`, `finishReason`, `createdAt` | 终止事件；`finishReason`: `stop` / `length` / `content_filter` / `unknown` |
@@ -178,10 +178,12 @@ curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
   "serverVersion": "0.2.0",
   "serverTime": "2026-11-18T15:20:00.000Z",
   "mock": false,
+  "provider": "qwen",
+  "providerLabel": "Qwen",
   "hasApiKey": true,
   "models": {
-    "default": "deepseek-chat",
-    "reasoner": "deepseek-reasoner"
+    "default": "qwen3.7-flash",
+    "reasoner": "qwen3.7-flash"
   }
 }
 ```
@@ -190,22 +192,25 @@ curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
 | --- | --- |
 | `status` | `ok`：可正常调用上游；`degraded`：模拟模式或缺少 Key |
 | `mock` | `true` 时 `/chat` 返回本地模拟流，不消耗 Token |
-| `hasApiKey` | 服务端是否配置了 DeepSeek Key（Key 永不下发） |
+| `provider` | 当前上游供应商：`deepseek` / `qwen` |
+| `providerLabel` | 供应商展示名 |
+| `hasApiKey` | 服务端是否配置了当前供应商的 Key（Key 永不下发） |
 | `models.default` | 普通对话模型 |
-| `models.reasoner` | 深度思考模型 |
+| `models.reasoner` | 深度思考模型（Qwen 下与 `default` 相同） |
 
 客户端 UI 规则：`status=degraded && mock` 显示「演示模式」；`status=degraded && !hasApiKey` 显示「缺少 API Key」。
 
 ## 5. `GET /api/v1/models`
 
-返回服务端配置的模型，供设置页/调试展示。
+返回服务端配置的模型，供设置页/调试展示。Qwen 模式下返回单个 `{ id: "qwen3.7-flash", thinking: "auto", default: true }`。
 
 ```json
 {
   "data": [
     { "id": "deepseek-chat", "thinking": false, "default": true },
     { "id": "deepseek-reasoner", "thinking": true, "default": false }
-  ]
+  ],
+  "provider": "deepseek"
 }
 ```
 
@@ -308,6 +313,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 | 2026-11-18 | v1 | 初版：health / models / chat（归一化 SSE）、统一错误体、请求 ID、版本前缀 |
 | 2026-11-19 | v1.1 | 注册/登录/登出/me；chat 要求 Bearer |
 | 2026-11-19 | v1.2 | 新增 `GET /api/v1/import/share` 分享链接导入 |
+| 2026-11-19 | v1.3 | 新增 `DREAM_PROVIDER=qwen`（百炼 Qwen3.7-Flash）；health 增加 provider / providerLabel，models 增加 provider |
 
 ## 认证（v0.3）
 

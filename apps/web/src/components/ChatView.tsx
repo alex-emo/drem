@@ -28,10 +28,14 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
         </div>
       ) : null}
       {health.kind === "ok" && health.info.mock ? (
-        <div className="banner">演示模式：服务端未配置 DEEPSEEK_API_KEY，当前回复由本地模拟生成。</div>
+        <div className="banner">演示模式：当前回复由本地模拟生成，未调用上游模型。</div>
       ) : null}
       {health.kind === "ok" && !health.info.mock && !health.info.hasApiKey ? (
-        <div className="banner">服务端已启动，但缺少 DEEPSEEK_API_KEY，发送消息会失败。</div>
+        <div className="banner">
+          服务端已启动，但缺少{" "}
+          {health.info.provider === "qwen" ? "QWEN_API_KEY" : "DEEPSEEK_API_KEY"}
+          ，发送消息会失败。
+        </div>
       ) : null}
 
       {chat.messages.length === 0 ? (

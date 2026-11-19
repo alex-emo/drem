@@ -2,7 +2,7 @@
 
 一个尽可能贴近 **DeepSeek C 端体验**的聊天客户端：**Web 优先**，服务端负责持有 API Key 并转发流式回复，聊天记录只保存在浏览器本地。
 
-当前版本 **v0.3（M1 起步：账号体系 + 历史导入）**：可以完成「注册/登录 → 新建对话 → 输入文本 → 服务端转发 DeepSeek → SSE 流式渲染 → 本地持久化」，并支持导入 DeepSeek 客户端导出的聊天记录 ZIP 或**分享链接**。真实 API 已用 `deepseek-chat` / `deepseek-reasoner` 联调通过。
+当前版本 **v0.3（M1 起步：账号体系 + 历史导入 + 多供应商）**：可以完成「注册/登录 → 新建对话 → 输入文本 → 服务端转发上游模型 → SSE 流式渲染 → 本地持久化」，并支持导入 DeepSeek 客户端导出的聊天记录 ZIP 或**分享链接**。默认使用 DeepSeek，也支持通过 `DREAM_PROVIDER=qwen` 切到阿里云百炼 **Qwen3.7-Flash**；两套 API 均已联调通过。
 
 | 深色 · 空态 | 深色 · 对话 |
 | --- | --- |
@@ -24,9 +24,9 @@
 | --- |
 | ![share imported](docs/screenshots/share-import-dark.png) |
 
-| 真实 DeepSeek API 流式回复 |
-| --- |
-| ![real api](docs/screenshots/real-api-dark.png) |
+| 真实 DeepSeek API 流式回复 | 切换 Qwen3.7-Flash |
+| --- | --- |
+| ![real api](docs/screenshots/real-api-dark.png) | ![qwen](docs/screenshots/qwen-dark.png) |
 
 ## 架构
 
@@ -44,7 +44,7 @@
 
 - **API Key 只存在于服务端** `.env`，前端代码和浏览器存储里都没有 Key。
 - **聊天内容不落服务端**：服务端只做校验、转发和流式透传；会话与消息保存在浏览器 IndexedDB。
-- 浏览器 → 服务端 → DeepSeek 的文本请求与 SSE 响应都经过本地服务端，后续可在这一层加登录、单设备校验、限流与配额。
+- 浏览器 → 服务端 → 上游模型（DeepSeek / Qwen）的文本请求与 SSE 响应都经过服务端，后续可在这一层加单设备校验、限流与配额。
 
 ## 技术栈
 
@@ -62,7 +62,9 @@
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 DEEPSEEK_API_KEY=sk-...
+# 编辑 .env，二选一：
+#   DeepSeek：填入 DEEPSEEK_API_KEY=sk-...
+#   Qwen：DREAM_PROVIDER=qwen 并填入 QWEN_API_KEY=sk-...
 
 # 任选其一安装
 pnpm install
@@ -81,7 +83,7 @@ pnpm dev
 DREAM_MOCK=1 pnpm dev
 ```
 
-模拟回复由 `apps/server/src/mock.ts` 生成，不会请求 DeepSeek，也不会消耗 Token。
+模拟回复由 `apps/server/src/mock.ts` 生成，不会请求上游，也不会消耗 Token。
 
 ## 目录结构
 
@@ -115,7 +117,7 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 会话列表：新建、切换、删除，首条用户消息自动生成标题（超长截断）
 - 流式对话：SSE 逐块追加渲染；发送中显示「停止生成」，客户端中断会同步中止上游请求
 - 多轮上下文：回传历史用户消息与已完成助手消息（错误消息与空回复不进入上下文）
-- 深度思考：开关后请求 reasoner 模型，渲染 `reasoning_content` 为默认折叠的思考块
+- 深度思考：开关后切换到思考模型（DeepSeek 用 `deepseek-reasoner`，Qwen 用 `enable_thinking`），思考增量渲染为默认折叠的思考块
 - 消息渲染：Markdown、GFM 表格、代码块高亮、语言标签、一键复制、链接新窗口打开
 - 本地持久化：会话/消息存 IndexedDB；刷新后自动恢复上次打开的会话；主题偏好存 localStorage
 - 错误处理：未配置 Key、上游鉴权失败、网络失败会在消息内展示可读错误
@@ -167,14 +169,18 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
+| `DREAM_PROVIDER` | `deepseek` | 上游供应商：`deepseek` 或 `qwen` |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek 平台 Key，只在服务端读取 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 上游地址 |
 | `DREAM_MODEL` | `deepseek-chat` | 普通对话模型 |
-| `DREAM_REASONER_MODEL` | `deepseek-reasoner` | 深度思考模型 |
+| `DREAM_REASONER_MODEL` | `deepseek-reasoner` | DeepSeek 深度思考模型（Qwen 下忽略） |
+| `QWEN_API_KEY` | 空 | 阿里云百炼 API Key（`DREAM_PROVIDER=qwen` 时使用） |
+| `QWEN_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 百炼 OpenAI 兼容端点 |
+| `QWEN_MODEL` | `qwen3.7-flash` | Qwen 模型名 |
 | `DREAM_MOCK` | `0` | `1` 时启用本地模拟流 |
 | `PORT` | `8787` | 服务端端口 |
 
-> 如果账号侧模型名发生变化（例如只提供 `deepseek-flash`），修改 `DREAM_MODEL` / `DREAM_REASONER_MODEL` 即可，无需改代码。
+> 如果账号侧模型名发生变化（例如只提供 `deepseek-flash`），修改 `DREAM_MODEL` / `DREAM_REASONER_MODEL` 即可，无需改代码。切换供应商只需改 `DREAM_PROVIDER`，接口与前端不变。
 
 ## 导入历史对话
 
@@ -240,7 +246,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 ## 已知限制
 
-- 真实 API 已联调：`deepseek-chat` 与 `deepseek-reasoner` 当前都会落到账号可用的 `deepseek-flash`（后者自动带思考）。如果账号模型名变化，改 `DREAM_MODEL` / `DREAM_REASONER_MODEL` 即可。
+- 真实 API 已联调：DeepSeek 的 `deepseek-chat` / `deepseek-reasoner` 当前都会落到账号可用的 `deepseek-flash`（后者自动带思考）；Qwen 使用 `qwen3.7-flash`，`thinking` 通过 `enable_thinking` 控制。模型名可在 `.env` 覆盖。
 - 只支持纯文本请求；消息里的 Markdown 只做展示，不参与多模态。
 - 导入仅支持 DeepSeek 导出格式版本 3 的文本内容；附件、图片、工具调用细节不会保留。
 - 停止生成会保留已生成的部分内容，暂不支持「继续生成」。
