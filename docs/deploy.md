@@ -68,6 +68,43 @@ QWEN_MODEL=qwen3.7-flash
 
 服务端会在 SQLite（`DREAM_DB_PATH`）中创建 `context_summaries` 表，缓存分段摘要；该表随数据库一起备份即可。摘要调用会消耗上游 Token，分段内容不变时不会重复调用。
 
+## 固定域名（命名隧道，参考博客）
+
+博客的做法是「Cloudflare 控制台创建隧道 → 复制 token → `cloudflared service install <token>`」，隧道配置（hostname → service）在控制台维护。Dream 也可以用同样方式：
+
+1. Cloudflare Zero Trust → Networks → Tunnels → Create a tunnel（Cloudflared），命名 `dream`；
+2. 复制安装命令里的 token，服务器上执行 `cloudflared service install <token>`（token 会落到 `/etc/cloudflared/token`）；
+3. 在隧道的 Public Hostname 里添加 `dream.pum.org.cn → http://127.0.0.1:8787`，保存后 Cloudflare 自动建 CNAME；
+4. `systemctl enable --now cloudflared`（若与博客共用同一个 cloudflared 服务，则不用新起服务，直接在博客隧道的 Public Hostname 里加一条）。
+
+服务器上目前没有 Cloudflare API Token，因此也可以走 CLI 登录方式（需要账号所有者点一次授权链接）：
+
+```bash
+cloudflared tunnel login                 # 打开输出的 URL，选择 pum.org.cn 授权
+cloudflared tunnel create dream          # 记下 Tunnel ID
+mkdir -p /etc/cloudflared
+mv /root/.cloudflared/<TUNNEL_ID>.json /etc/cloudflared/
+chmod 600 /etc/cloudflared/<TUNNEL_ID>.json
+cloudflared tunnel route dns dream dream.pum.org.cn
+```
+
+`/etc/cloudflared/dream.yml`：
+
+```yaml
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+ingress:
+  - hostname: dream.pum.org.cn
+    service: http://127.0.0.1:8787
+  - service: http_status:404
+```
+
+安装 `deploy/dream-tunnel.service` 到 `/etc/systemd/system/`，`systemctl enable --now dream-tunnel`，再停掉临时的 quick tunnel（`dream-tunnel.service` 若指向 trycloudflare 的临时地址，直接 disable）。验证：
+
+```bash
+curl -s https://dream.pum.org.cn/api/v1/health
+```
+
 ## 运维
 
 ```bash
