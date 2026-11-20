@@ -66,6 +66,20 @@ const readError = async (response: Response): Promise<ApiError> => {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
+const COMPRESS_THRESHOLD = 256 * 1024
+
+/** 长会话请求体较大时 gzip，弱网上传更稳；小请求直接发送。 */
+async function encodeJsonBody(value: unknown): Promise<{ body: BodyInit; headers: Record<string, string> }> {
+  const text = JSON.stringify(value)
+  if (text.length < COMPRESS_THRESHOLD || typeof CompressionStream === 'undefined') {
+    return { body: text, headers: {} }
+  }
+  const compressed = await new Response(
+    new Blob([text]).stream().pipeThrough(new CompressionStream('gzip')),
+  ).arrayBuffer()
+  return { body: compressed, headers: { 'content-encoding': 'gzip' } }
+}
+
 const clearStoredSession = () => {
   try {
     localStorage.removeItem('dream:token')
@@ -94,14 +108,16 @@ export async function* streamDreamMessage(
   }
   let response: Response
   try {
+    const encoded = await encodeJsonBody({ messages, thinking: body.thinking.type === 'enabled' })
     response = await fetch(`${apiBase()}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
         Accept: 'text/event-stream',
+        ...encoded.headers,
       },
-      body: JSON.stringify({ messages, thinking: body.thinking.type === 'enabled' }),
+      body: encoded.body,
       signal,
     })
   } catch (error) {

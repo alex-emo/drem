@@ -55,6 +55,20 @@ interface ErrorBody {
 
 export const CHAT_ENDPOINT = "/api/v1/chat";
 
+const COMPRESS_THRESHOLD = 256 * 1024;
+
+/** 请求体较大时用 gzip，减少手机弱网下上传中断；小请求保持原样。 */
+async function encodeJsonBody(value: unknown): Promise<{ body: BodyInit; headers: Record<string, string> }> {
+  const text = JSON.stringify(value);
+  if (text.length < COMPRESS_THRESHOLD || typeof CompressionStream === "undefined") {
+    return { body: text, headers: {} };
+  }
+  const compressed = await new Response(
+    new Blob([text]).stream().pipeThrough(new CompressionStream("gzip")),
+  ).arrayBuffer();
+  return { body: compressed, headers: { "content-encoding": "gzip" } };
+}
+
 function authHeaders(): Record<string, string> {
   const token = getToken();
   return token ? { authorization: `Bearer ${token}` } : {};
@@ -144,14 +158,16 @@ export async function fetchSharedChat(url: string): Promise<SharedChatResponse> 
 export async function streamChat(options: StreamChatOptions): Promise<void> {
   const { messages, thinking, signal, onStart, onDelta, onReasoning, onRefusal, onDone } = options;
 
+  const encoded = await encodeJsonBody({ messages, thinking });
   const response = await fetch(CHAT_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       accept: "text/event-stream",
+      ...encoded.headers,
       ...authHeaders(),
     },
-    body: JSON.stringify({ messages, thinking }),
+    body: encoded.body,
     signal,
   });
 
@@ -280,10 +296,11 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
  * 首次发消息时不必再等摘要生成。
  */
 export async function warmContext(messages: ApiChatMessage[]): Promise<void> {
+  const encoded = await encodeJsonBody({ messages });
   const response = await fetch("/api/v1/context/warm", {
     method: "POST",
-    headers: { "content-type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ messages }),
+    headers: { "content-type": "application/json", ...encoded.headers, ...authHeaders() },
+    body: encoded.body,
   });
   if (!response.ok) {
     throw new ChatApiError("上下文预热失败", response.status, "WARM_FAILED");

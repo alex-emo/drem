@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -84,10 +85,31 @@ async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", `请求体超过 ${MAX_BODY_MIB} MiB 上限`);
   }
 
-  const text = await c.req.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+  const encoding = (c.req.header("content-encoding") ?? "").trim().toLowerCase();
+  if (encoding && encoding !== "gzip") {
+    throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "只支持 gzip 编码的请求体");
+  }
+
+  let bytes = Buffer.from(await c.req.arrayBuffer());
+  if (bytes.byteLength > MAX_BODY_BYTES) {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", `请求体超过 ${MAX_BODY_MIB} MiB 上限`);
   }
+  if (encoding === "gzip") {
+    const before = bytes.byteLength;
+    try {
+      bytes = gunzipSync(bytes, { maxOutputLength: MAX_BODY_BYTES });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE") {
+        throw new ApiError(413, "PAYLOAD_TOO_LARGE", `解压后超过 ${MAX_BODY_MIB} MiB 上限`);
+      }
+      throw new ApiError(400, "INVALID_ARGUMENT", "gzip 解压失败");
+    }
+    if (bytes.byteLength > MAX_BODY_BYTES) {
+      throw new ApiError(413, "PAYLOAD_TOO_LARGE", `解压后超过 ${MAX_BODY_MIB} MiB 上限`);
+    }
+    console.info(`[dream-server] gzip body ${before} -> ${bytes.byteLength} bytes`);
+  }
+  const text = bytes.toString("utf8");
 
   try {
     return JSON.parse(text) as unknown;
