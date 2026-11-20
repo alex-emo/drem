@@ -7,8 +7,8 @@ import { requestUpstreamJson } from "./deepseek.js";
 import type { TokenUsage } from "./usage.js";
 
 /** 超过任一阈值就压缩历史：1000 条或 300 万字符。 */
-export const COMPRESS_MESSAGE_THRESHOLD = 1000;
-export const COMPRESS_CHAR_THRESHOLD = 3_000_000;
+export const COMPRESS_MESSAGE_THRESHOLD = 300;
+export const COMPRESS_CHAR_THRESHOLD = 600_000;
 
 /** 每个摘要分段的最大体积与并发数（避免单次摘要超出上游上下文）。 */
 const SEGMENT_MAX_CHARS = 300_000;
@@ -16,8 +16,8 @@ const SEGMENT_MAX_MESSAGES = 500;
 const SUMMARY_CONCURRENCY = 3;
 
 /** 压缩时保留的最近消息数量与字符上限。 */
-const KEEP_RECENT_MESSAGES = 200;
-const KEEP_RECENT_MAX_CHARS = 400_000;
+const KEEP_RECENT_MESSAGES = 120;
+const KEEP_RECENT_MAX_CHARS = 240_000;
 
 const SUMMARY_PROMPT = `你是对话记录压缩器。请把下面这段对话压缩成不超过 1000 字的中文摘要。要求：
 1. 保留人物姓名/身份、关系、称呼与世界观设定；

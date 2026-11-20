@@ -30,8 +30,8 @@ export interface ImportOutcome {
 
 export type ChatController = ReturnType<typeof useChat>;
 
-const WARM_MESSAGE_THRESHOLD = 1000;
-const WARM_CHAR_THRESHOLD = 3_000_000;
+const WARM_MESSAGE_THRESHOLD = 300;
+const WARM_CHAR_THRESHOLD = 600_000;
 
 /** 导入后静默预热长对话的分段摘要，不阻塞导入结果。 */
 function warmLongConversations(conversations: Conversation[], messages: Message[]): void {
