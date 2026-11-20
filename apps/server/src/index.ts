@@ -333,6 +333,17 @@ app.notFound((c) => {
   );
 });
 
+function isClientAbort(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  return (
+    err.name === "AbortError" ||
+    err.message === "aborted" ||
+    code === "ECONNRESET" ||
+    code === "ERR_STREAM_PREMATURE_CLOSE"
+  );
+}
+
 function shouldRecordError(status: number, code: string): boolean {
   return (
     status >= 500 ||
@@ -347,6 +358,17 @@ app.onError((err, c) => {
   const username = c.get("requestUser") ?? null;
   const method = c.req.method;
   const path = c.req.path;
+
+  // 客户端在上传请求体/等待响应时断开（手机切网、用户点停止）不是服务端错误。
+  if (isClientAbort(err)) {
+    console.info(`[dream-server] ${requestId} client aborted ${method} ${path}`);
+    c.header("x-request-id", requestId);
+    c.header("x-api-version", API_VERSION);
+    return c.json(
+      errorBody(new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接"), requestId),
+      499 as ContentfulStatusCode,
+    );
+  }
 
   if (err instanceof ApiError) {
     if (err.status >= 500 || err.code === "CONTENT_FILTERED") {
