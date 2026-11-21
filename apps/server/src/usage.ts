@@ -17,8 +17,8 @@ function asNumber(value: unknown): number {
 export function normalizeUsage(raw: unknown): TokenUsage | null {
   if (!raw || typeof raw !== "object") return null;
   const data = raw as Record<string, unknown>;
-  const promptTokens = asNumber(data.prompt_tokens);
-  const completionTokens = asNumber(data.completion_tokens);
+  const promptTokens = asNumber(data.prompt_tokens) || asNumber(data.input_tokens);
+  const completionTokens = asNumber(data.completion_tokens) || asNumber(data.output_tokens);
   const totalTokens = asNumber(data.total_tokens) || promptTokens + completionTokens;
   if (promptTokens === 0 && completionTokens === 0 && totalTokens === 0) return null;
   return { promptTokens, completionTokens, totalTokens };

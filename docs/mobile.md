@@ -68,6 +68,9 @@ https://dream.pum.org.cn/download/dream-android.apk
 
 ## v1 限制
 
+- 已支持：联网搜索、纯文本文件上传（txt/md/csv/json/代码）；
+- 图片、PDF、Word 等附件暂不支持，上传会返回可读错误；
+
 - 联网搜索、文件上传按钮已隐藏（服务端尚未实现对应工具，避免点了报错）。
 - Mermaid 图表暂不渲染（依赖体积大，移动端 v1 未打包）；普通 Markdown、代码高亮、KaTeX 正常。
 - 语音输入依赖 WebView 的 SpeechRecognition 支持，Android WebView 通常不可用（按钮会禁用）。

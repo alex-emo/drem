@@ -56,8 +56,8 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
             streaming={chat.streaming}
             thinking={chat.thinking}
             onToggleThinking={() => chat.setThinking((value) => !value)}
-            onSend={(text) => {
-              void chat.sendMessage(text);
+            onSend={(text, files, webSearch) => {
+              void chat.sendMessage(text, { files, webSearch });
             }}
             onStop={chat.stop}
           />

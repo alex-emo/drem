@@ -185,6 +185,43 @@ curl -N -X POST http://127.0.0.1:8787/api/v1/chat \
 3. 收到 `done` 结束本次流并保存消息；收到 `error` 记为失败并展示 `message`。
 4. 用户点「停止」时 abort 请求；已收到的增量照常保存。
 
+### 3.0 文件与联网搜索
+
+请求体可额外携带：
+
+```json
+{
+  "files": ["file_xxx"],
+  "webSearch": true
+}
+```
+
+- `files`：先用 `POST /api/v1/files` 上传返回的文件 id，最多 8 个，文本合计 ≤ 200 万字符；
+- `webSearch`：仅当服务商为 Qwen 时可用，回答会先发 `sources` 事件，正文带 `[n]` 角标。
+
+新增 SSE 事件：
+
+```text
+event: sources
+data: {"sources":[{"index":1,"title":"来源标题","url":"https://...","siteName":"站点"}]}
+```
+
+### 文件接口
+
+```http
+POST /api/v1/files            multipart: file（txt/md/csv/json/代码等）
+GET  /api/v1/files
+DELETE /api/v1/files/:id
+```
+
+上传响应：
+
+```json
+{"id":"file_xxx","name":"note.md","bytes":1234,"chars":900,"createdAt":"2026-11-21T...","preview":"..."}
+```
+
+只接受纯文本；单文件 ≤ 10 MiB、文本 ≤ 200 万字符，二进制或无法识别编码返回 400。
+
 ### 3.1 模型身份
 
 服务端会在每次转发前注入固定的 system prompt，并移除客户端自带的冲突身份提示：

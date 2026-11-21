@@ -126,3 +126,52 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_error_created ON error_events(created_at);
   CREATE INDEX IF NOT EXISTS idx_error_code ON error_events(code);
 `);
+
+export interface FileRow {
+  id: string;
+  user_id: string;
+  name: string;
+  bytes: number;
+  chars: number;
+  content: string;
+  created_at: string;
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS files (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    bytes      INTEGER NOT NULL,
+    chars      INTEGER NOT NULL,
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_files_user ON files(user_id);
+`);
+
+export function putFile(row: FileRow): void {
+  db.prepare(
+    `INSERT INTO files (id, user_id, name, bytes, chars, content, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(row.id, row.user_id, row.name, row.bytes, row.chars, row.content, row.created_at);
+}
+
+export function listFiles(userId: string): FileRow[] {
+  return db
+    .prepare("SELECT * FROM files WHERE user_id = ? ORDER BY created_at DESC")
+    .all(userId) as unknown as FileRow[];
+}
+
+export function getFiles(userId: string, ids: string[]): FileRow[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  return db
+    .prepare(`SELECT * FROM files WHERE user_id = ? AND id IN (${placeholders})`)
+    .all(userId, ...ids) as unknown as FileRow[];
+}
+
+export function deleteFile(userId: string, id: string): boolean {
+  return db.prepare("DELETE FROM files WHERE id = ? AND user_id = ?").run(id, userId).changes > 0;
+}

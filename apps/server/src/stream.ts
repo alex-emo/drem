@@ -78,7 +78,7 @@ function safeCut(buffer: string, desired: number): number {
   return 0;
 }
 
-function redactOutput(text: string): string {
+export function redactOutput(text: string): string {
   let output = text;
   for (const [pattern, replacement] of THINKING_REPLACEMENTS) {
     output = output.replace(pattern, replacement);

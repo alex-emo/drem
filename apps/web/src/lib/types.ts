@@ -13,6 +13,23 @@ export interface Conversation {
   rootMessageId?: string | null;
 }
 
+export interface FileAttachment {
+  id: string;
+  name: string;
+  bytes: number;
+  chars: number;
+  createdAt: string;
+  preview?: string;
+}
+
+export interface SearchSource {
+  index: number;
+  title: string;
+  url: string;
+  siteName?: string;
+  icon?: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -24,6 +41,8 @@ export interface Message {
   /** 服务端错误码与请求编号，便于用户报障时定位日志。 */
   errorCode?: string;
   errorRequestId?: string;
+  files?: FileAttachment[];
+  sources?: SearchSource[];
   createdAt: number;
   /** 消息树结构：同一父节点下可以有多个版本。 */
   parentId?: string | null;

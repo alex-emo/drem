@@ -25,6 +25,8 @@ import {
   requireUser,
 } from "./auth.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
+import { createTextFile, deleteUserFile, expandFiles, listUserFiles, MAX_FILE_BYTES } from "./files.js";
+import { openSearchStream } from "./search.js";
 import { fetchSharedChat } from "./share.js";
 import { mockChatStream } from "./mock.js";
 import {
@@ -139,7 +141,68 @@ app.get("/api/v1/health", (c) => {
       compressAfterMessages: COMPRESS_MESSAGE_THRESHOLD,
       compressAfterChars: COMPRESS_CHAR_THRESHOLD,
     },
+    features: {
+      files: true,
+      webSearch: config.provider === "qwen",
+    },
   });
+});
+
+// 官方 chat-demo 的附件上传路径是 /anthropic/v1/files；移动 App 直接复用它的上传逻辑。
+app.post("/anthropic/v1/files", async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const declaredLength = Number(c.req.header("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_FILE_BYTES + 1024 * 1024) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
+  }
+  const body = await c.req.parseBody();
+  const entry = body["file"];
+  if (!entry || typeof entry === "string" || typeof entry.arrayBuffer !== "function") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "缺少 file 字段");
+  }
+  const created = createTextFile(user.id, entry.name || "未命名文本", new Uint8Array(await entry.arrayBuffer()));
+  return c.json({
+    id: created.id,
+    type: "file",
+    size_bytes: created.bytes,
+    created_at: created.createdAt,
+    filename: created.name,
+    mime_type: "text/plain",
+  }, 201);
+});
+
+app.delete("/anthropic/v1/files/:id", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  deleteUserFile(user.id, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.get("/api/v1/files", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  return c.json({ files: listUserFiles(user.id) });
+});
+
+app.post("/api/v1/files", async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const declared = Number(c.req.header("content-length") ?? "0");
+  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES + 1024 * 1024) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
+  }
+  const body = await c.req.parseBody();
+  const entry = body["file"];
+  if (!entry || typeof entry === "string" || typeof entry.arrayBuffer !== "function") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "缺少 file 字段");
+  }
+  const bytes = new Uint8Array(await entry.arrayBuffer());
+  return c.json(createTextFile(user.id, entry.name || "未命名文本", bytes), 201);
+});
+
+app.delete("/api/v1/files/:id", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  if (!deleteUserFile(user.id, c.req.param("id"))) {
+    throw new ApiError(404, "NOT_FOUND", "文件不存在");
+  }
+  return c.json({ ok: true });
 });
 
 app.get("/api/v1/version", (c) => {
@@ -227,6 +290,12 @@ app.post("/api/v1/chat", async (c) => {
   c.set("requestUser", user.username);
   const body = await readJsonBody(c);
   const parsed = parseChatRequest(body);
+  let expandedMessages = parsed.messages;
+  if (parsed.files.length > 0) {
+    const expanded = expandFiles(user.id, parsed.files, parsed.messages);
+    expandedMessages = expanded.messages as typeof parsed.messages;
+  }
+  let parsedWithFiles = { ...parsed, messages: expandedMessages };
 
   if (config.mock) {
     console.log(
@@ -240,10 +309,10 @@ app.post("/api/v1/chat", async (c) => {
     return new Response(stream, { headers: sseHeaders(requestId) });
   }
 
-  let effective = parsed;
-  if (needsCompression(parsed.messages)) {
+  let effective = parsedWithFiles;
+  if (needsCompression(parsedWithFiles.messages)) {
     const startedAt = Date.now();
-    const compressed = await compressContext(parsed.messages, {
+    const compressed = await compressContext(parsedWithFiles.messages, {
       onUsage: (usage: TokenUsage | null, keyId: number) =>
         recordUsage({
           userId: user.id,
@@ -254,7 +323,7 @@ app.post("/api/v1/chat", async (c) => {
           usage,
         }),
     });
-    effective = { ...parsed, messages: compressed.messages };
+    effective = { ...parsedWithFiles, messages: compressed.messages };
     console.log(
       `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ${compressed.segments} segments (${compressed.cached} cached) in ${Date.now() - startedAt}ms`,
     );
@@ -263,6 +332,29 @@ app.post("/api/v1/chat", async (c) => {
   console.log(
     `[dream-server] ${requestId} chat by ${user.username}: ${effective.messages.length} messages, thinking=${parsed.thinking}`,
   );
+  if (effective.webSearch) {
+    if (config.provider !== "qwen") {
+      throw new ApiError(400, "INVALID_ARGUMENT", "联网搜索仅支持当前 Qwen 供应商");
+    }
+    console.log(`[dream-server] ${requestId} web search by ${user.username}: ${effective.messages.length} messages`);
+    const searchStreamResult = await openSearchStream(
+      effective.messages,
+      { requestId, model: "dream-search", thinking: parsed.thinking },
+      c.req.raw.signal,
+      ({ usage, keyId }) => {
+        recordUsage({
+          userId: user.id,
+          username: user.username,
+          keyId,
+          model: config.model,
+          kind: "chat",
+          usage,
+        });
+      },
+    );
+    return new Response(searchStreamResult, { headers: sseHeaders(requestId) });
+  }
+
   let opened;
   try {
     opened = await openChatStream(effective, c.req.raw.signal);

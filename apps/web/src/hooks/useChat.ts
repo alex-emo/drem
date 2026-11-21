@@ -17,7 +17,7 @@ import {
 } from "../lib/db";
 import type { ImportedArchive } from "../lib/importArchive";
 import { buildShareImport } from "../lib/shareImport";
-import type { Conversation, Message } from "../lib/types";
+import type { Conversation, FileAttachment, Message, SearchSource } from "../lib/types";
 import { makeTitle, newId } from "../lib/utils";
 
 export interface ImportOutcome {
@@ -272,13 +272,14 @@ export function useChat() {
       conversation: Conversation,
       assistantMessage: Message,
       history: { role: "user" | "assistant"; content: string }[],
+      options: { files?: FileAttachment[]; webSearch?: boolean } = {},
     ) => {
       setStreaming(true);
       streamingRef.current = true;
 
       const controller = new AbortController();
       abortRef.current = controller;
-      const acc = { content: "", reasoning: "" };
+      const acc = { content: "", reasoning: "", sources: [] as SearchSource[] };
       let settled = false;
       let refused = false;
 
@@ -325,6 +326,8 @@ export function useChat() {
           ...assistantMessage,
           content: acc.content,
           reasoning: acc.reasoning || undefined,
+          files: options.files,
+          sources: acc.sources.length > 0 ? acc.sources : undefined,
           status,
           error,
           errorCode: meta?.code,
@@ -358,7 +361,17 @@ export function useChat() {
         await streamChat({
           messages: history,
           thinking,
+          files: options.files?.map((file) => file.id),
+          webSearch: options.webSearch,
           signal: controller.signal,
+          onSources: (sources) => {
+            acc.sources = sources;
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessage.id ? { ...message, sources } : message,
+              ),
+            );
+          },
           onDelta: (chunk) => {
             pending += chunk;
             ensureTimer();
@@ -412,7 +425,7 @@ export function useChat() {
   );
 
   const sendMessage = useCallback(
-    async (raw: string) => {
+    async (raw: string, options: { files?: FileAttachment[]; webSearch?: boolean } = {}) => {
       const text = raw.trim();
       if (!text || streamingRef.current) return;
 
@@ -447,6 +460,7 @@ export function useChat() {
         conversationId,
         role: "user",
         content: text,
+        files: options.files,
         status: "done",
         createdAt: now,
         parentId,
@@ -487,7 +501,7 @@ export function useChat() {
       }
 
       const history = [...historyFor(visible), { role: "user" as const, content: text }];
-      await runReply(conversation as Conversation, assistantMessage, history);
+      await runReply(conversation as Conversation, assistantMessage, history, options);
     },
     [runReply],
   );
@@ -554,7 +568,7 @@ export function useChat() {
       await putConversation({ ...conversation, rootMessageId: rootId, updatedAt: now });
 
       const history = [...historyFor(before), { role: "user" as const, content: text }];
-      await runReply(conversation, assistantMessage, history);
+      await runReply(conversation, assistantMessage, history, { files: previous.files });
       return true;
     },
     [runReply],

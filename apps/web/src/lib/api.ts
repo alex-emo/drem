@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import type { AuthResult, AuthUser } from "./types";
+import type { AuthResult, AuthUser, FileAttachment, SearchSource } from "./types";
 
 export interface ApiChatMessage {
   role: "system" | "user" | "assistant";
@@ -22,7 +22,10 @@ export interface ChatDone {
 export interface StreamChatOptions {
   messages: ApiChatMessage[];
   thinking: boolean;
+  files?: string[];
+  webSearch?: boolean;
   signal: AbortSignal;
+  onSources?: (sources: SearchSource[]) => void;
   onStart?: (start: ChatStart) => void;
   onDelta: (text: string) => void;
   onReasoning: (text: string) => void;
@@ -155,10 +158,37 @@ export async function fetchSharedChat(url: string): Promise<SharedChatResponse> 
  * 请求 Dream Server，解析归一化后的 SSE 事件：
  * start → (thinking | delta)* → done | error
  */
-export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { messages, thinking, signal, onStart, onDelta, onReasoning, onRefusal, onDone } = options;
+export async function uploadFile(file: File): Promise<FileAttachment> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const response = await fetch("/api/v1/files", {
+    method: "POST",
+    headers: { ...authHeaders() },
+    body: form,
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as ErrorBody | null;
+    throw new ChatApiError(
+      data?.error?.message ?? `上传失败（HTTP ${response.status}）`,
+      response.status,
+      data?.error?.code ?? "UPLOAD_FAILED",
+      data?.error?.requestId,
+    );
+  }
+  return (await response.json()) as FileAttachment;
+}
 
-  const encoded = await encodeJsonBody({ messages, thinking });
+export async function deleteFile(id: string): Promise<void> {
+  await fetch(`/api/v1/files/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  });
+}
+
+export async function streamChat(options: StreamChatOptions): Promise<void> {
+  const { messages, thinking, files, webSearch, signal, onStart, onSources, onDelta, onReasoning, onRefusal, onDone } = options;
+
+  const encoded = await encodeJsonBody({ messages, thinking, files, webSearch });
   const response = await fetch(CHAT_ENDPOINT, {
     method: "POST",
     headers: {
@@ -231,6 +261,11 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       case "thinking": {
         const delta = (data as { delta?: unknown }).delta;
         if (typeof delta === "string" && delta) onReasoning(delta);
+        return false;
+      }
+      case "sources": {
+        const sources = (data as { sources?: SearchSource[] }).sources;
+        if (Array.isArray(sources)) onSources?.(sources);
         return false;
       }
       case "refusal": {

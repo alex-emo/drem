@@ -2001,3 +2001,100 @@ body,
     max-width: 100%;
   }
 }
+
+/* 文件上传与联网搜索 */
+.composer-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.file-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-chip-remove {
+  display: inline-flex;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.composer-error {
+  padding: 8px 14px 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.composer-hint {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+.msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  justify-content: flex-end;
+}
+.msg-sources {
+  margin-top: 16px;
+  max-width: 680px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.msg-sources-title {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.source-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--border);
+}
+.source-item:hover .source-title { color: var(--brand); }
+.source-index {
+  flex: 0 0 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.source-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-site {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}

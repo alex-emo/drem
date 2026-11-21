@@ -18,6 +18,19 @@ const flattenContent = (content: MessageParam['content']): string => {
     .trim()
 }
 
+const collectFileIds = (body: CreateMessageRequest): string[] => {
+  const ids = new Set<string>()
+  for (const message of body.messages) {
+    if (typeof message.content === 'string') continue
+    for (const block of message.content) {
+      if (block.type === 'document' && block.source.type === 'file' && block.source.file_id) {
+        ids.add(block.source.file_id)
+      }
+    }
+  }
+  return [...ids]
+}
+
 const toDreamMessages = (body: CreateMessageRequest): { role: 'user' | 'assistant' | 'system'; content: string }[] => {
   const messages: { role: 'user' | 'assistant' | 'system'; content: string }[] = []
   const system = body.system?.trim()
@@ -108,7 +121,12 @@ export async function* streamDreamMessage(
   }
   let response: Response
   try {
-    const encoded = await encodeJsonBody({ messages, thinking: body.thinking.type === 'enabled' })
+    const encoded = await encodeJsonBody({
+      messages,
+      thinking: body.thinking.type === 'enabled',
+      files: collectFileIds(body),
+      webSearch: Boolean(body.tools?.some((tool) => tool.name === 'deepseek_web_search')),
+    })
     response = await fetch(`${apiBase()}/chat`, {
       method: 'POST',
       headers: {
@@ -141,6 +159,7 @@ export async function* streamDreamMessage(
   let thinkingOpen = false
   let textOpen = false
   let pendingText = ""
+  let sources: Array<{ index: number; title: string; url: string }> = []
 
   const startMessage = (id: string, model: string): MessageStreamEvent => ({
     type: 'message_start',
@@ -218,6 +237,15 @@ export async function* streamDreamMessage(
       }
       continue
     }
+    if (event === 'sources') {
+      const list = Array.isArray(payload.sources) ? payload.sources : []
+      sources = list.map((item) => ({
+        index: Number((item as { index?: number }).index ?? 0),
+        title: String((item as { title?: string }).title ?? ''),
+        url: String((item as { url?: string }).url ?? ''),
+      }))
+      continue
+    }
     if (event === 'refusal') {
       refused = true
       const message = typeof payload.message === 'string' ? payload.message : ''
@@ -245,6 +273,14 @@ export async function* streamDreamMessage(
       continue
     }
     if (event === 'done') {
+      if (sources.length > 0 && textIndex !== null) {
+        const lines = sources.map((source) => `${source.index}. [${source.title}](${source.url})`).join('\n')
+        yield {
+          type: 'content_block_delta',
+          index: textIndex,
+          delta: { type: 'text_delta', text: `\n\n---\n参考来源：\n${lines}` },
+        }
+      }
       if (thinkingOpen && thinkingIndex !== null) {
         thinkingOpen = false
         yield { type: 'content_block_stop', index: thinkingIndex }

@@ -54,14 +54,6 @@ body.change-theme *::after {
 }
 
 /* Dream 移动端 v1：服务端暂不支持联网搜索工具与文件上传，隐藏入口。 */
-button[aria-label='智能搜索'],
-button[aria-label='联网搜索'],
-button[aria-label='上传文件'],
-button[aria-label='Search'],
-button[aria-label='Upload file'],
-button[aria-label='Upload files'] {
-  display: none !important;
-}
 
 /* 移动端交互手感：去掉点击高亮、按压反馈、避免横向回弹、输入不聚焦缩放 */
 * {

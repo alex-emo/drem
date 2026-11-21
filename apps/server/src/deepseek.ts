@@ -20,6 +20,8 @@ export interface ChatMessage {
 export interface ParsedChatRequest {
   messages: ChatMessage[];
   thinking: boolean;
+  webSearch: boolean;
+  files: string[];
 }
 
 const MAX_MESSAGES = 10_000;
@@ -42,6 +44,26 @@ export function parseChatRequest(
     ]);
   }
   const thinking = data.thinking === true;
+  if (data.webSearch !== undefined && typeof data.webSearch !== "boolean") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "webSearch 必须是布尔值", [
+      { field: "webSearch", reason: "type" },
+    ]);
+  }
+  const webSearch = data.webSearch === true;
+  let files: string[] = [];
+  if (data.files !== undefined) {
+    if (!Array.isArray(data.files) || data.files.some((item) => typeof item !== "string" || !item.trim())) {
+      throw new ApiError(400, "INVALID_ARGUMENT", "files 必须是文件 id 数组", [
+        { field: "files", reason: "type" },
+      ]);
+    }
+    files = [...new Set(data.files as string[])];
+    if (files.length > 8) {
+      throw new ApiError(400, "INVALID_ARGUMENT", "一次最多引用 8 个文件", [
+        { field: "files", reason: "too_many" },
+      ]);
+    }
+  }
 
   if (!Array.isArray(data.messages) || data.messages.length === 0) {
     throw new ApiError(400, "INVALID_ARGUMENT", "messages 不能为空", [
@@ -90,7 +112,7 @@ export function parseChatRequest(
     ]);
   }
 
-  return { messages, thinking };
+  return { messages, thinking, webSearch, files };
 }
 
 function extractErrorDetail(raw: string): string {

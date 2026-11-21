@@ -135,6 +135,8 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 服务端：请求校验（条数/长度/角色）、SSE 头、AbortSignal 传播、错误信息透出
 - 账号体系：注册 / 登录 / 退出；服务端 scrypt 存密码、token 哈希入库；除 health/models 外的 API 均要求 `Authorization: Bearer`
 - 设置弹窗：通用设置（外观、服务状态）与数据管理
+- 文件上传：txt / md / csv / json / 代码等纯文本，服务端解码后作为文件资料注入对话；支持多文件、大小校验、附件 chip 与删除
+- 联网搜索：开启后调用 Qwen 联网搜索，回答带 `[n]` 角标与「参考来源」列表；Web 与 App 均支持
 - 导入历史对话：解析 DeepSeek 客户端导出的 `deepseek_data-*.zip`（格式版本 3），按 `current_message_id` 还原当前分支，导入提问、回答与深度思考；重复会话自动跳过，图片/文件附件暂不导入
 - 多 API Key 负载均衡：`QWEN_API_KEYS` 配置多个密钥后按请求轮询；遇到 401/402/403/429/5xx 或网络错误会冷却该 Key 并自动切换，客户端无感知
 - 长对话自动压缩：单次上下文超过 300 条或 60 万字符时，服务端按分段生成摘要，只保留最近 200 条原文再发给模型；摘要按分段内容哈希缓存在 SQLite，追加新消息不会重复计算。导入长对话后会静默预热摘要，过程对用户不可见
@@ -154,6 +156,9 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 | `GET` | `/api/v1/me` | 当前用户（含 `isAdmin`） |
 | `GET` | `/api/v1/admin/stats` | 管理后台聚合统计（管理员） |
 | `GET` | `/api/v1/import/share` | 通过分享链接抓取并归一化会话 |
+| `POST` | `/api/v1/files` | 上传纯文本文件（multipart，需 Bearer） |
+| `GET` | `/api/v1/files` | 当前用户的文件列表 |
+| `DELETE` | `/api/v1/files/:id` | 删除文件 |
 | `GET` | `/api/v1/health` | 存活、模式、是否配置 Key、模型名 |
 | `GET` | `/api/v1/models` | 服务端配置的模型 |
 | `POST` | `/api/v1/chat` | 流式对话（SSE，需 Bearer） |
@@ -236,7 +241,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 ## 尚未实现（下一步）
 
 - 单一设备会话（在线互踢）、邀请码/管理员审批、用户管理后台、限流（当前开放注册，请勿把 Key 共享给不可信用户）
-- 智能搜索 / 阅读链接 / 文件上传与解析 / 图片理解（DeepSeek 服务端工具）
+- PDF / Word / PPT / Excel / 图片解析（当前仅支持纯文本与联网搜索）
 - 重新生成、继续生成（编辑消息与消息分支已实现）
 - 语音输入 / 朗读、KaTeX、Mermaid
 - 导出聊天记录、导入图片与附件、更多数据管理操作
@@ -267,7 +272,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 - 源码：`apps/mobile`，UI 复用官方 chat-demo（MIT），认证与 `/api/v1/chat` 已接 Dream。
 - Android debug APK：`apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`（约 5.4 MB）；网页端登录页与侧边栏均有「下载 Android App」入口，服务端从 `/download/dream-android.apk` 提供下载。
 - iOS 工程：`apps/mobile/ios/App/App.xcodeproj`（需 macOS/Xcode 签名构建）。
-- 暂不支持的入口已隐藏：联网搜索、文件上传、Mermaid。
+- 已支持：联网搜索、纯文本文件上传；Mermaid 仍隐藏。
 
 ## 已知限制
 

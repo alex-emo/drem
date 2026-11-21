@@ -131,6 +131,15 @@ export default function MessageItem({
           </div>
         ) : (
           <>
+            {message.files && message.files.length > 0 ? (
+              <div className="msg-files">
+                {message.files.map((file) => (
+                  <span className="file-chip" key={file.id} title={`${file.chars} 字符`}>
+                    {file.name}
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <div className="bubble">{message.content}</div>
             <div className="msg-actions">
               <button
@@ -197,6 +206,25 @@ export default function MessageItem({
               错误编号：{message.errorRequestId}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {message.sources && message.sources.length > 0 ? (
+        <div className="msg-sources">
+          <div className="msg-sources-title">参考来源</div>
+          {message.sources.map((source) => (
+            <a
+              key={`${source.index}-${source.url}`}
+              className="source-item"
+              href={source.url}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              <span className="source-index">{source.index}</span>
+              <span className="source-title">{source.title}</span>
+              {source.siteName ? <span className="source-site">{source.siteName}</span> : null}
+            </a>
+          ))}
         </div>
       ) : null}
 
