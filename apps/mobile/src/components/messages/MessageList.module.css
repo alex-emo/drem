@@ -1,4 +1,5 @@
 .container {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -34,4 +35,31 @@
   max-width: calc(100% - 40px);
   margin: 0 auto;
   padding-bottom: 24px;
+}
+
+.toBottom {
+  position: absolute;
+  right: 16px;
+  bottom: 148px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-elevated);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 18px;
+  line-height: 1;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  animation: toBottomIn 160ms ease;
+}
+
+@keyframes toBottomIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.9);
+  }
 }

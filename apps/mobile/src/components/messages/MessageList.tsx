@@ -49,6 +49,7 @@ export const MessageList = ({
   const scrollTopRef = useRef(0)
   const restoreScrollRef = useRef<{ messageId: string; top: number } | null>(null)
   const messages = getVisibleMessages(session)
+  const [atBottom, setAtBottom] = useState(true)
   const [previousVersions, setPreviousVersions] = useState(() =>
     buildMessageVersions(session, new Map())
   )
@@ -65,6 +66,7 @@ export const MessageList = ({
     if (el && stickyRef.current) {
       el.scrollTop = el.scrollHeight
       scrollTopRef.current = el.scrollTop
+      setAtBottom(true)
     }
   }, [])
 
@@ -175,6 +177,20 @@ export const MessageList = ({
           </div>
         </div>
         {footer}
+        {isMobile && !atBottom ? (
+          <button
+            type="button"
+            className={styles.toBottom}
+            aria-label="回到底部"
+            onClick={() => {
+              stickyRef.current = true
+              const el = scrollRef.current
+              if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+            }}
+          >
+            ↓
+          </button>
+        ) : null}
       </div>
     </ScrollToBottomContext.Provider>
   )
