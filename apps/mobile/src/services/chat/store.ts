@@ -1093,3 +1093,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
     persist(sessionId)
   }
 }
+
+/** 追加一个完整会话（分享链接导入）：先入内存并选中，再落盘。 */
+export const appendSession = async (session: Session): Promise<void> => {
+  set((state) => ({
+    sessions: sortSessions([
+      ...state.sessions.filter((item) => item.id !== session.id),
+      toSessionSummary(session),
+    ]),
+    sessionCache: { ...state.sessionCache, [session.id]: session },
+    activeId: session.id,
+  }))
+  await db.saveSession(session)
+}

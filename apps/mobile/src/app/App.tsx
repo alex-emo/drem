@@ -19,9 +19,11 @@ import { clearSession, getToken } from '../services/dream/auth.js'
 import { setApiKey } from '../services/settings.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
+import { APP_VERSION, compareVersion, fetchServerVersion, type ServerVersion } from '../services/dream/update.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
+import { Modal } from '../components/base/Modal.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
 import { closeMobileSider } from '../components/sider/mobileSiderState.js'
@@ -52,6 +54,14 @@ export const App = () => {
   )
   const activeId = useChatStore((state) => state.activeId)
   const [authed, setAuthed] = useState(() => Boolean(getToken()))
+  const [update, setUpdate] = useState<ServerVersion | null>(null)
+
+  useEffect(() => {
+    if (!authed) return
+    void fetchServerVersion().then((info) => {
+      if (info && compareVersion(info.version, APP_VERSION) > 0) setUpdate(info)
+    })
+  }, [authed])
 
   usePreventPageScroll(isMobile)
 
@@ -151,6 +161,41 @@ export const App = () => {
       </div>
       <SettingsDialog />
       <Toast />
+      {update ? (
+        <Modal
+          title="发现新版本"
+          closable
+          onClose={() => setUpdate(null)}
+          footer={
+            <>
+              <Button variant="outlined" size="m" onClick={() => setUpdate(null)}>
+                以后再说
+              </Button>
+              <Button
+                variant="primary"
+                size="m"
+                onClick={() => {
+                  window.open(update.apkUrl, '_blank')
+                  setUpdate(null)
+                }}
+              >
+                立即更新
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, lineHeight: 1.6 }}>
+            <div>
+              Dream {update.version}
+              <span style={{ opacity: 0.6, marginLeft: 8 }}>当前 {APP_VERSION}</span>
+            </div>
+            <div style={{ opacity: 0.75 }}>{update.notes ?? '修复问题并提升稳定性。'}</div>
+            <div style={{ opacity: 0.6, fontSize: 12 }}>
+              下载完成后按系统提示安装；安装完成重新打开 App 即为新版本。
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </>
   )
 }

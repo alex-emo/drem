@@ -62,3 +62,41 @@ button[aria-label='Upload file'],
 button[aria-label='Upload files'] {
   display: none !important;
 }
+
+/* 移动端交互手感：去掉点击高亮、按压反馈、避免横向回弹、输入不聚焦缩放 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+button,
+a,
+[role='button'] {
+  touch-action: manipulation;
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease,
+    background-color 160ms ease;
+}
+button:active:not(:disabled),
+a:active,
+[role='button']:active:not([aria-disabled='true']) {
+  transform: scale(0.965);
+  opacity: 0.86;
+}
+input,
+textarea,
+[contenteditable='true'] {
+  font-size: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

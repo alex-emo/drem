@@ -15,7 +15,8 @@ import {
   exportHistory,
   importHistory,
 } from '../../services/chat/backup.js'
-import { useChatStore } from '../../services/chat/store.js'
+import { appendSession, useChatStore } from '../../services/chat/store.js'
+import { buildShareSession, fetchSharedChat, isDeepSeekShare } from '../../services/dream/share.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
   isChineseBrowser,
@@ -101,6 +102,7 @@ const SettingsContent = () => {
             <>
               <AccountSection />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
+              <ShareImportCell disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
                 label={t('deleteAllSessions')}
@@ -526,6 +528,69 @@ const AccountSection = () => {
       >
         退出登录
       </Button>
+    </div>
+  )
+}
+
+/** 粘贴 DeepSeek 分享链接，经 Dream Server 拉取后追加为一个新会话。 */
+const ShareImportCell = ({ disabled }: { disabled: boolean }) => {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  const run = async () => {
+    if (!isDeepSeekShare(url)) {
+      setFailed(true)
+      setMessage('请输入 chat.deepseek.com/share/... 链接')
+      return
+    }
+    setBusy(true)
+    setFailed(false)
+    setMessage(null)
+    try {
+      const chat = await fetchSharedChat(url)
+      await appendSession(buildShareSession(chat))
+      setMessage(`已导入 ${chat.messages.length} 条消息${chat.attachments ? `，${chat.attachments} 个附件暂不支持` : ''}`)
+      setUrl('')
+      closeSettings()
+    } catch (error) {
+      setFailed(true)
+      setMessage(error instanceof Error ? error.message : '导入失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className={clsx(styles.cell, styles.row)}>
+      <div className={styles.text}>
+        <div className={styles.label}>从分享链接导入</div>
+        <div className={clsx(styles.description, failed && styles.error)}>
+          {message ?? '粘贴 DeepSeek 分享链接，导入为一个新会话，不会覆盖现有聊天。'}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          value={url}
+          disabled={disabled || busy}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://chat.deepseek.com/share/..."
+          style={{
+            width: 220,
+            minWidth: 0,
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: '1px solid var(--ds-color-border, #e5e7eb)',
+            background: 'transparent',
+            color: 'inherit',
+            fontSize: 13,
+          }}
+        />
+        <Button variant="outlined" size="m" disabled={disabled || busy} onClick={() => void run()}>
+          {busy ? '导入中…' : '导入'}
+        </Button>
+      </div>
     </div>
   )
 }

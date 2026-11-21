@@ -142,6 +142,15 @@ app.get("/api/v1/health", (c) => {
   });
 });
 
+app.get("/api/v1/version", (c) => {
+  return c.json({
+    version: config.appVersion,
+    apkUrl: "/download/dream-android.apk",
+    notes: "聊天手感优化、分享链接导入、应用内更新提示。",
+    publishedAt: "2026-11-21",
+  });
+});
+
 app.get("/api/v1/models", (c) =>
   c.json({
     data:
