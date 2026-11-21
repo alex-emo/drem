@@ -1953,3 +1953,51 @@ a,
     opacity: 1;
   }
 }
+
+/* 移动端宽度约束：代码块/长链接只在自身内部横向滚动，绝不撑宽页面 */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.chat-scroll,
+.chat-inner,
+.msg,
+.msg .markdown,
+.code-block,
+.composer,
+.composer-wrap {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.msg.assistant .markdown {
+  width: 100%;
+}
+
+.markdown pre {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+
+.code-block {
+  width: 100%;
+}
+
+.msg.user .bubble {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 820px) {
+  .chat-inner {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .markdown table {
+    max-width: 100%;
+  }
+}

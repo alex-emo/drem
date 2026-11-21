@@ -4,7 +4,6 @@ import type { Message } from "../lib/types";
 import BranchSwitcher from "./BranchSwitcher";
 import { CheckIcon, CopyIcon, EditIcon } from "./Icons";
 import Markdown from "./Markdown";
-import { SmoothText } from "./SmoothText";
 
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const [open, setOpen] = useState(streaming);
@@ -44,6 +43,16 @@ export default function MessageItem({
   onEdit,
   onSelectVersion,
 }: MessageItemProps) {
+  const contentRef = useRef(message.content);
+  contentRef.current = message.content;
+  const [streamText, setStreamText] = useState(message.content);
+  useEffect(() => {
+    setStreamText(message.content);
+    if (message.status !== "streaming") return;
+    const timer = window.setInterval(() => setStreamText(contentRef.current), 120);
+    return () => window.clearInterval(timer);
+  }, [message.id, message.status]);
+
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -163,11 +172,13 @@ export default function MessageItem({
       {message.content ? (
         <div className="markdown">
           {message.status === "streaming" ? (
-            <SmoothText className="streaming-plain" text={message.content} />
+            <>
+              <Markdown content={streamText} />
+              <span className="cursor" aria-hidden="true" />
+            </>
           ) : (
             <Markdown content={message.content} />
           )}
-          {message.status === "streaming" ? <span className="cursor" aria-hidden="true" /> : null}
         </div>
       ) : message.status === "streaming" ? (
         <div className="typing" aria-label="正在生成">
