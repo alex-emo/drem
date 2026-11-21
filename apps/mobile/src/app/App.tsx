@@ -247,6 +247,9 @@ export const App = () => {
               Dream {update.version}
               <span style={{ opacity: 0.6, marginLeft: 8 }}>当前 {APP_VERSION}</span>
             </div>
+            <div style={{ fontSize: 13, opacity: 0.72 }}>
+              更新会覆盖安装，聊天记录不会丢失；请不要先卸载旧版本。卸载会清除本机聊天记录。
+            </div>
             <div style={{ opacity: 0.75 }}>{update.notes ?? '修复问题并提升稳定性。'}</div>
             <div style={{ opacity: 0.6, fontSize: 12 }}>
               下载完成后按系统提示安装；安装完成重新打开 App 即为新版本。
