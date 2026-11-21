@@ -220,7 +220,7 @@ app.get("/api/v1/version", (c) => {
     version: config.appVersion,
     apkUrl: `${proto}://${host}/download/dream-android.apk`,
     notes: "聊天手感优化、分享链接导入、应用内更新提示。",
-    publishedAt: "2026-11-21",
+    publishedAt: "2026-11-22",
   });
 });
 

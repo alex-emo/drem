@@ -222,7 +222,11 @@ export const App = () => {
                   const downloadUrl = /^https?:\/\//.test(update.apkUrl)
                     ? update.apkUrl
                     : new URL(update.apkUrl, __API_ORIGIN__).toString()
-                  window.open(downloadUrl, '_blank')
+                  void installApk(downloadUrl)
+                    .then((installed) => {
+                      if (!installed) window.open(downloadUrl, '_blank')
+                    })
+                    .catch(() => window.open(downloadUrl, '_blank'))
                   setUpdate(null)
                 }}
               >
