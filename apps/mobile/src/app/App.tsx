@@ -219,7 +219,10 @@ export const App = () => {
                 variant="primary"
                 size="m"
                 onClick={() => {
-                  window.open(update.apkUrl, '_blank')
+                  const downloadUrl = /^https?:\/\//.test(update.apkUrl)
+                    ? update.apkUrl
+                    : new URL(update.apkUrl, __API_ORIGIN__).toString()
+                  window.open(downloadUrl, '_blank')
                   setUpdate(null)
                 }}
               >

@@ -214,9 +214,11 @@ app.delete("/api/v1/files/:id", (c) => {
 });
 
 app.get("/api/v1/version", (c) => {
+  const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
+  const host = c.req.header("host") ?? new URL(c.req.url).host;
   return c.json({
     version: config.appVersion,
-    apkUrl: "/download/dream-android.apk",
+    apkUrl: `${proto}://${host}/download/dream-android.apk`,
     notes: "聊天手感优化、分享链接导入、应用内更新提示。",
     publishedAt: "2026-11-21",
   });
