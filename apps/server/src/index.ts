@@ -68,10 +68,17 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.use(
-  "/api/*",
+  "*",
   cors({
     origin: "*",
-    allowHeaders: ["Content-Type", "Accept", "X-Request-Id", "Authorization"],
+    allowHeaders: [
+      "Content-Type",
+      "Accept",
+      "X-Request-Id",
+      "Authorization",
+      "X-Api-Key",
+      "Anthropic-Beta",
+    ],
     exposeHeaders: ["X-Request-Id", "X-Api-Version"],
   }),
 );
@@ -150,7 +157,8 @@ app.get("/api/v1/health", (c) => {
 
 // 官方 chat-demo 的附件上传路径是 /anthropic/v1/files；移动 App 直接复用它的上传逻辑。
 app.post("/anthropic/v1/files", async (c) => {
-  const { user } = requireUser(c.req.header("authorization"));
+  const authorization = c.req.header("authorization") ?? `Bearer ${c.req.header("x-api-key") ?? ""}`;
+  const { user } = requireUser(authorization);
   const declaredLength = Number(c.req.header("content-length") ?? "0");
   if (Number.isFinite(declaredLength) && declaredLength > MAX_FILE_BYTES + 1024 * 1024) {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
