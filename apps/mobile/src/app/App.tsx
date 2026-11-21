@@ -74,7 +74,17 @@ export const App = () => {
     const onStart = (event: TouchEvent) => {
       if (useMobileSider.getState().open || event.touches.length !== 1) return
       const touch = event.touches[0]
-      tracking = touch.clientX <= 24
+      const target = event.target as Element | null
+      // 全屏右滑打开抽屉；代码块和输入区域的横向手势优先保留
+      if (
+        target?.closest(
+          "pre, code, textarea, input, select, [contenteditable='true'], .code-block",
+        )
+      ) {
+        tracking = false
+        return
+      }
+      tracking = true
       startX = touch.clientX
       startY = touch.clientY
     }

@@ -89,14 +89,17 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
     const onStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) return;
       const touch = event.touches[0];
-      const open = sidebarOpenRef.current;
-      if (!open && touch.clientX <= 24) {
-        tracking = "open";
-      } else if (open && touch.clientX < 300) {
-        tracking = "close";
-      } else {
+      const target = event.target as Element | null;
+      // 全屏右滑也能打开侧栏；但代码块、输入框、可编辑区域优先保留自己的手势
+      if (
+        target?.closest(
+          "pre, code, textarea, input, select, [contenteditable='true'], .code-block",
+        )
+      ) {
         tracking = null;
+        return;
       }
+      tracking = sidebarOpenRef.current ? "close" : "open";
       startX = touch.clientX;
       startY = touch.clientY;
     };
