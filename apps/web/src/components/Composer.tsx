@@ -39,6 +39,7 @@ export default function Composer({ streaming, thinking, onToggleThinking, onSend
         rows={1}
         placeholder="给 Dream 发送消息"
         aria-label="输入消息"
+        enterKeyHint="send"
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

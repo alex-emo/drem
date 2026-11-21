@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ChatView from "./components/ChatView";
 import LoginScreen from "./components/LoginScreen";
 import SettingsDialog from "./components/SettingsDialog";
@@ -77,7 +77,51 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 820);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const sidebarOpenRef = useRef(sidebarOpen);
+  sidebarOpenRef.current = sidebarOpen;
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
+
+  // 移动浏览器：左缘右滑打开、抽屉内左滑关闭，贴合原生 App 手势
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    let tracking: "open" | "close" | null = null;
+    const onStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const open = sidebarOpenRef.current;
+      if (!open && touch.clientX <= 24) {
+        tracking = "open";
+      } else if (open && touch.clientX < 300) {
+        tracking = "close";
+      } else {
+        tracking = null;
+      }
+      startX = touch.clientX;
+      startY = touch.clientY;
+    };
+    const onMove = (event: TouchEvent) => {
+      if (!tracking || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const dx = touch.clientX - startX;
+      const dy = Math.abs(touch.clientY - startY);
+      if (dy > 48) return;
+      if (tracking === "open" && dx > 56) {
+        tracking = null;
+        setSidebarOpen(true);
+      } else if (tracking === "close" && dx < -56) {
+        tracking = null;
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", () => (tracking = null), { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchmove", onMove);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
