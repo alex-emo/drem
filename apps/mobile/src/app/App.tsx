@@ -226,7 +226,14 @@ export const App = () => {
                     .then((installed) => {
                       if (!installed) window.open(downloadUrl, '_blank')
                     })
-                    .catch(() => window.open(downloadUrl, '_blank'))
+                    .catch((error: unknown) => {
+                      const message = error instanceof Error ? error.message : String(error)
+                      if (message.includes('允许')) {
+                        window.alert('请在系统设置中允许 Dream 安装应用，然后重新点击「立即更新」。')
+                      } else {
+                        window.open(downloadUrl, '_blank')
+                      }
+                    })
                   setUpdate(null)
                 }}
               >
