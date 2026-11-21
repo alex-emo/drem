@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.0",
-    "hono": "^4.9.0"
+    "hono": "^4.9.0",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

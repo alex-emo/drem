@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { unzipSync } from "fflate";
 import { ApiError } from "./protocol.js";
 import { deleteFile, getFiles, listFiles, putFile, type FileRow } from "./db.js";
 
@@ -23,6 +24,38 @@ export function extensionOf(name: string): string {
 
 export function isTextFileName(name: string): boolean {
   return TEXT_LIKE.has(extensionOf(name));
+}
+
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(Number(dec)));
+}
+
+/** 从 docx 的 word/document.xml 抽纯文本（保留段落与表格分隔）。 */
+export function decodeDocx(bytes: Uint8Array): string {
+  let archive: Record<string, Uint8Array>;
+  try {
+    archive = unzipSync(bytes);
+  } catch {
+    throw new ApiError(400, "INVALID_ARGUMENT", "无法解析这个 Word 文档，请另存为 .docx 后重试");
+  }
+  const document = archive["word/document.xml"];
+  if (!document) throw new ApiError(400, "INVALID_ARGUMENT", "这个文件里没有 Word 正文");
+  const xml = new TextDecoder("utf-8").decode(document);
+  const text = xml
+    .replace(/<w:tab[^>]*\/>/g, "\t")
+    .replace(/<w:br[^>]*\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<\/w:tc>/g, "\t")
+    .replace(/<\/w:tr>/g, "\n")
+    .replace(/<[^>]+>/g, "");
+  return decodeXmlEntities(text).replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** 尝试按 UTF-8、GBK、UTF-16LE 解码；二进制内容拒绝。 */
@@ -74,11 +107,31 @@ export function createTextFile(userId: string, name: string, bytes: Uint8Array):
   if (bytes.byteLength > MAX_FILE_BYTES) {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
   }
+  const extension = extensionOf(name);
+  if (extension === "docx") {
+    const content = decodeDocx(bytes);
+    if (!content.trim()) throw new ApiError(400, "INVALID_ARGUMENT", "Word 文档没有可读取的文本");
+    if (content.length > MAX_FILE_CHARS) {
+      throw new ApiError(413, "PAYLOAD_TOO_LARGE", `文件文本超过 ${MAX_FILE_CHARS} 字符上限`);
+    }
+    return saveTextFile(userId, name, bytes, content);
+  }
+  if (extension === "doc" || extension === "pdf" || extension === "ppt" || extension === "pptx" || extension === "xlsx") {
+    throw new ApiError(
+      400,
+      "INVALID_ARGUMENT",
+      `暂不支持 .${extension}，请转为 .docx 或纯文本后上传`,
+    );
+  }
   const content = decodeText(bytes);
   if (!content.trim()) throw new ApiError(400, "INVALID_ARGUMENT", "文件没有可读取的文本");
   if (content.length > MAX_FILE_CHARS) {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", `文件文本超过 ${MAX_FILE_CHARS} 字符上限`);
   }
+  return saveTextFile(userId, name, bytes, content);
+}
+
+function saveTextFile(userId: string, name: string, bytes: Uint8Array, content: string): PublicFile {
   const row: FileRow = {
     id: `file_${randomUUID().replaceAll("-", "").slice(0, 20)}`,
     user_id: userId,

@@ -3,7 +3,7 @@ import { uploadFile } from "../lib/api";
 import type { FileAttachment } from "../lib/types";
 import { CloseIcon, FileIcon, GlobeIcon, PaperclipIcon, SendIcon, SparkleIcon, StopIcon } from "./Icons";
 
-const ACCEPT = ".txt,.md,.markdown,.csv,.json,.jsonl,.log,.yaml,.yml,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.h,.cpp,.hpp,.cs,.rb,.php,.swift,.kt,.sh,.sql,.toml,.ini,.conf,.tex,.srt";
+const ACCEPT = ".txt,.md,.markdown,.csv,.json,.jsonl,.log,.yaml,.yml,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.java,.go,.rs,.c,.h,.cpp,.hpp,.cs,.rb,.php,.swift,.kt,.sh,.sql,.toml,.ini,.conf,.tex,.srt,.docx";
 const MAX_FILES = 5;
 
 interface ComposerProps {
