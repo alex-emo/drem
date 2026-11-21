@@ -159,6 +159,12 @@ export async function* streamDreamMessage(
   let thinkingOpen = false
   let textOpen = false
   let pendingText = ""
+  const sourceUrls = new Map<number, string>()
+  const linkCitations = (value: string) =>
+    value.replace(/\[(\d+)\]/g, (match, index: string) => {
+      const url = sourceUrls.get(Number(index))
+      return url ? `[[${index}]](${url})` : match
+    })
   let sources: Array<{ index: number; title: string; url: string }> = []
 
   const startMessage = (id: string, model: string): MessageStreamEvent => ({
@@ -206,7 +212,7 @@ export async function* streamDreamMessage(
       continue
     }
     if (event === 'delta') {
-      const delta = typeof payload.delta === 'string' ? payload.delta : ''
+      const delta = linkCitations(typeof payload.delta === 'string' ? payload.delta : '')
       if (!delta) continue
       if (thinkingOpen && thinkingIndex !== null) {
         thinkingOpen = false
@@ -244,6 +250,9 @@ export async function* streamDreamMessage(
         title: String((item as { title?: string }).title ?? ''),
         url: String((item as { url?: string }).url ?? ''),
       }))
+      for (const source of sources) {
+        if (source.url) sourceUrls.set(source.index, source.url)
+      }
       continue
     }
     if (event === 'refusal') {

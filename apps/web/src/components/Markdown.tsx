@@ -46,7 +46,13 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   );
 }
 
-export default function Markdown({ content }: { content: string }) {
+export default function Markdown({
+  content,
+  onCitationClick,
+}: {
+  content: string;
+  onCitationClick?: (index: number) => void;
+}) {
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -54,11 +60,28 @@ export default function Markdown({ content }: { content: string }) {
         rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         components={{
           pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-          a: (props) => (
-            <a href={props.href} target="_blank" rel="noreferrer noopener">
-              {props.children}
-            </a>
-          ),
+          a: (props) => {
+            const match = /^#source-(\d+)$/.exec(props.href ?? "");
+            if (match) {
+              return (
+                <a
+                  href={props.href}
+                  className="citation"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onCitationClick?.(Number(match[1]));
+                  }}
+                >
+                  {props.children}
+                </a>
+              );
+            }
+            return (
+              <a href={props.href} target="_blank" rel="noreferrer noopener">
+                {props.children}
+              </a>
+            );
+          },
         }}
       >
         {content}

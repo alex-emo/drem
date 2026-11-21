@@ -5,6 +5,17 @@ import BranchSwitcher from "./BranchSwitcher";
 import { CheckIcon, CopyIcon, EditIcon } from "./Icons";
 import Markdown from "./Markdown";
 
+/** 把服务端返回的 [n] 引用编号转成可点击的站内链接，代码块内不转换。 */
+function linkCitations(text: string): string {
+  const segments = text.split(/(```[\s\S]*?```|`[^`]*`)/g);
+  return segments
+    .map((segment, index) => {
+      if (index % 2 === 1) return segment;
+      return segment.replace(/\[(\d+)\]/g, (_match, n: string) => `[[${n}]](#source-${n})`);
+    })
+    .join("");
+}
+
 function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
   const [open, setOpen] = useState(streaming);
 
@@ -43,11 +54,25 @@ export default function MessageItem({
   onEdit,
   onSelectVersion,
 }: MessageItemProps) {
-  const contentRef = useRef(message.content);
-  contentRef.current = message.content;
-  const [streamText, setStreamText] = useState(message.content);
+  const displayContent = linkCitations(message.content);
+  const contentRef = useRef(displayContent);
+  contentRef.current = displayContent;
+  const [streamText, setStreamText] = useState(displayContent);
+  const sourcesRef = useRef<HTMLDetailsElement>(null);
+
+  const jumpToSource = (index: number) => {
+    const details = sourcesRef.current;
+    if (!details) return;
+    details.open = true;
+    window.setTimeout(() => {
+      const target = document.getElementById(`source-${index}`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+      target?.classList.add("source-flash");
+      window.setTimeout(() => target?.classList.remove("source-flash"), 1200);
+    }, 30);
+  };
   useEffect(() => {
-    setStreamText(message.content);
+    setStreamText(displayContent);
     if (message.status !== "streaming") return;
     const timer = window.setInterval(() => setStreamText(contentRef.current), 120);
     return () => window.clearInterval(timer);
@@ -182,11 +207,11 @@ export default function MessageItem({
         <div className="markdown">
           {message.status === "streaming" ? (
             <>
-              <Markdown content={streamText} />
+              <Markdown content={streamText} onCitationClick={jumpToSource} />
               <span className="cursor" aria-hidden="true" />
             </>
           ) : (
-            <Markdown content={message.content} />
+            <Markdown content={displayContent} onCitationClick={jumpToSource} />
           )}
         </div>
       ) : message.status === "streaming" ? (
@@ -210,11 +235,13 @@ export default function MessageItem({
       ) : null}
 
       {message.sources && message.sources.length > 0 ? (
-        <div className="msg-sources">
-          <div className="msg-sources-title">参考来源</div>
+        <details className="msg-sources" ref={sourcesRef}>
+          <summary className="msg-sources-title">参考来源 · {message.sources.length}</summary>
+          <div className="msg-sources-list">
           {message.sources.map((source) => (
             <a
               key={`${source.index}-${source.url}`}
+              id={`source-${source.index}`}
               className="source-item"
               href={source.url}
               target="_blank"
@@ -225,7 +252,8 @@ export default function MessageItem({
               {source.siteName ? <span className="source-site">{source.siteName}</span> : null}
             </a>
           ))}
-        </div>
+          </div>
+        </details>
       ) : null}
 
       {(message.status === "done" || message.status === "refused") && message.content ? (

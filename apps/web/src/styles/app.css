@@ -2098,3 +2098,36 @@ body,
   color: var(--text-tertiary);
   font-size: 11px;
 }
+
+.msg-sources summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  user-select: none;
+}
+.msg-sources summary::-webkit-details-marker { display: none; }
+.msg-sources summary::after {
+  content: "展开";
+  margin-left: 2px;
+  color: var(--text-tertiary);
+}
+.msg-sources[open] summary::after { content: "收起"; }
+.msg-sources-list { margin-top: 6px; }
+
+.citation {
+  color: var(--brand);
+  text-decoration: none;
+  font-size: 0.82em;
+  vertical-align: super;
+  line-height: 0;
+  margin-left: 1px;
+}
+.citation:hover { text-decoration: underline; }
+.source-item.source-flash {
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  border-radius: 6px;
+}
