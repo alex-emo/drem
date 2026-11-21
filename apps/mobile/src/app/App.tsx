@@ -26,7 +26,7 @@ import { Button } from '../components/base/Button.js'
 import { Modal } from '../components/base/Modal.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
-import { closeMobileSider } from '../components/sider/mobileSiderState.js'
+import { closeMobileSider, openMobileSider, useMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
 import styles from './App.module.css'
 
@@ -64,6 +64,40 @@ export const App = () => {
   }, [authed])
 
   usePreventPageScroll(isMobile)
+
+  // 从屏幕左缘右滑打开抽屉，抽屉内左滑关闭（DS App 的手势习惯）
+  useEffect(() => {
+    if (!isMobile) return
+    let startX = 0
+    let startY = 0
+    let tracking = false
+    const onStart = (event: TouchEvent) => {
+      if (useMobileSider.getState().open || event.touches.length !== 1) return
+      const touch = event.touches[0]
+      tracking = touch.clientX <= 24
+      startX = touch.clientX
+      startY = touch.clientY
+    }
+    const onMove = (event: TouchEvent) => {
+      if (!tracking || event.touches.length !== 1) return
+      const touch = event.touches[0]
+      if (touch.clientX - startX > 56 && Math.abs(touch.clientY - startY) < 48) {
+        tracking = false
+        openMobileSider()
+      }
+    }
+    const onEnd = () => {
+      tracking = false
+    }
+    window.addEventListener('touchstart', onStart, { passive: true })
+    window.addEventListener('touchmove', onMove, { passive: true })
+    window.addEventListener('touchend', onEnd, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', onStart)
+      window.removeEventListener('touchmove', onMove)
+      window.removeEventListener('touchend', onEnd)
+    }
+  }, [isMobile])
 
   useEffect(() => {
     document.documentElement.lang = locale

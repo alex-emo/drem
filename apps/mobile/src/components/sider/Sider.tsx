@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
@@ -143,13 +143,34 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
 /** 移动端抽屉：浮在页面上方，点空白区域关闭。 */
 export const MobileSider = () => {
   const open = useMobileSider((state) => state.open)
+  const start = useRef<{ x: number; y: number } | null>(null)
   if (!open) {
     return null
   }
   return (
     <>
       <div className={styles.drawerMask} onClick={closeMobileSider} />
-      <div className={styles.drawer}>
+      <div
+        className={styles.drawer}
+        onTouchStart={(event) => {
+          const touch = event.touches[0]
+          start.current = { x: touch.clientX, y: touch.clientY }
+        }}
+        onTouchMove={(event) => {
+          if (!start.current) return
+          const touch = event.touches[0]
+          if (
+            start.current.x - touch.clientX > 60 &&
+            Math.abs(touch.clientY - start.current.y) < 48
+          ) {
+            start.current = null
+            closeMobileSider()
+          }
+        }}
+        onTouchEnd={() => {
+          start.current = null
+        }}
+      >
         <Sider mobile />
       </div>
     </>
