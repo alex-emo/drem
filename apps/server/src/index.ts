@@ -30,7 +30,14 @@ import {
   getBackupKey,
   clearBackupLegacy,
 } from "./auth.js";
-import { db } from "./db.js";
+import {
+  createAnnouncement,
+  db,
+  deleteAnnouncement,
+  latestAnnouncement,
+  listAnnouncements,
+  updateAnnouncement,
+} from "./db.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
 import { createTextFile, deleteUserFile, expandFiles, listUserFiles, MAX_FILE_BYTES } from "./files.js";
 import { openSearchStream } from "./search.js";
@@ -55,6 +62,7 @@ import {
   type TokenUsage,
 } from "./usage.js";
 import { listLogs, pushLog } from "./logs.js";
+import { getRelease } from "./release.js";
 
 type AppEnv = { Variables: { requestId: string; requestUser?: string } };
 
@@ -238,15 +246,24 @@ app.delete("/api/v1/files/:id", (c) => {
   return c.json({ ok: true });
 });
 
-app.get("/api/v1/version", (c) => {
+const releaseInfo = async (c: Context<AppEnv>) => {
   const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
   const host = c.req.header("host") ?? new URL(c.req.url).host;
+  const release = await getRelease(`${proto}://${host}`);
   c.header("cache-control", "no-store, no-cache, must-revalidate");
+  return c.json(release ?? { error: { code: "NOT_FOUND", message: "安装包尚未上传" } });
+};
+
+app.get("/api/v1/version", (c) => releaseInfo(c));
+app.get("/api/v1/release", (c) => releaseInfo(c));
+
+app.get("/api/v1/announcement", (c) => {
+  c.header("cache-control", "no-store, no-cache, must-revalidate");
+  const row = latestAnnouncement();
   return c.json({
-    version: config.appVersion,
-    apkUrl: `${proto}://${host}/download/dream-android.apk?v=${config.appVersion}&t=${Date.now()}`,
-    notes: "导出链接流式导入、回复重新生成、后台 2.0。",
-    publishedAt: "2026-11-22",
+    announcement: row
+      ? { id: row.id, title: row.title, body: row.body, updatedAt: row.updated_at }
+      : null,
   });
 });
 
@@ -332,6 +349,41 @@ app.get("/api/v1/admin/logs", (c) => {
       limit: Number.isFinite(limit) ? limit : 200,
     }),
   );
+});
+
+app.get("/api/v1/admin/announcements", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  return c.json({ announcements: listAnnouncements() });
+});
+
+app.post("/api/v1/admin/announcements", async (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const body = (await readJsonBody(c)) as { title?: unknown; body?: unknown; active?: unknown };
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
+  const text = typeof body.body === "string" ? body.body.trim().slice(0, 4000) : "";
+  if (!text) throw new ApiError(400, "INVALID_ARGUMENT", "公告内容不能为空");
+  return c.json({ announcement: createAnnouncement(title, text, body.active !== false) }, 201);
+});
+
+app.patch("/api/v1/admin/announcements/:id", async (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) throw new ApiError(400, "INVALID_ARGUMENT", "无效的公告编号");
+  const body = (await readJsonBody(c)) as { title?: unknown; body?: unknown; active?: unknown };
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
+  const text = typeof body.body === "string" ? body.body.trim().slice(0, 4000) : "";
+  if (!text) throw new ApiError(400, "INVALID_ARGUMENT", "公告内容不能为空");
+  const updated = updateAnnouncement(id, title, text, body.active !== false);
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "公告不存在");
+  return c.json({ announcement: updated });
+});
+
+app.delete("/api/v1/admin/announcements/:id", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) throw new ApiError(400, "INVALID_ARGUMENT", "无效的公告编号");
+  if (!deleteAnnouncement(id)) throw new ApiError(404, "NOT_FOUND", "公告不存在");
+  return c.json({ ok: true });
 });
 
 app.patch("/api/v1/admin/users/:id", async (c) => {

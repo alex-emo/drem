@@ -166,6 +166,19 @@ export interface FileRow {
 }
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS client_errors (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    TEXT,
+    username   TEXT,
+    kind       TEXT,
+    message    TEXT,
+    detail     TEXT,
+    user_agent TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_client_errors_created ON client_errors(created_at);
+
   CREATE TABLE IF NOT EXISTS files (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -202,4 +215,80 @@ export function getFiles(userId: string, ids: string[]): FileRow[] {
 
 export function deleteFile(userId: string, id: string): boolean {
   return db.prepare("DELETE FROM files WHERE id = ? AND user_id = ?").run(id, userId).changes > 0;
+}
+
+
+export interface ClientErrorInput {
+  userId?: string | null;
+  username?: string | null;
+  kind: string;
+  message: string;
+  detail?: string | null;
+  userAgent?: string | null;
+}
+
+export function putClientError(input: ClientErrorInput): void {
+  db.prepare(
+    `INSERT INTO client_errors (user_id, username, kind, message, detail, user_agent, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    input.userId ?? null,
+    input.username ?? null,
+    input.kind.slice(0, 40),
+    input.message.slice(0, 1000),
+    input.detail ? input.detail.slice(0, 4000) : null,
+    input.userAgent ? input.userAgent.slice(0, 500) : null,
+    new Date().toISOString(),
+  );
+}
+
+export interface AnnouncementRow {
+  id: number;
+  title: string;
+  body: string;
+  active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS announcements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+`);
+
+export function listAnnouncements(): AnnouncementRow[] {
+  return db.prepare("SELECT * FROM announcements ORDER BY id DESC").all() as unknown as AnnouncementRow[];
+}
+
+export function latestAnnouncement(): AnnouncementRow | null {
+  const row = db
+    .prepare("SELECT * FROM announcements WHERE active = 1 ORDER BY updated_at DESC, id DESC LIMIT 1")
+    .get() as unknown as AnnouncementRow | undefined;
+  return row ?? null;
+}
+
+export function createAnnouncement(title: string, body: string, active: boolean): AnnouncementRow {
+  const now = new Date().toISOString();
+  const result = db
+    .prepare("INSERT INTO announcements (title, body, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+    .run(title, body, active ? 1 : 0, now, now);
+  return db.prepare("SELECT * FROM announcements WHERE id = ?").get(Number(result.lastInsertRowid)) as unknown as AnnouncementRow;
+}
+
+export function updateAnnouncement(id: number, title: string, body: string, active: boolean): AnnouncementRow | null {
+  const result = db
+    .prepare("UPDATE announcements SET title = ?, body = ?, active = ?, updated_at = ? WHERE id = ?")
+    .run(title, body, active ? 1 : 0, new Date().toISOString(), id);
+  if (result.changes === 0) return null;
+  return db.prepare("SELECT * FROM announcements WHERE id = ?").get(id) as unknown as AnnouncementRow;
+}
+
+export function deleteAnnouncement(id: number): boolean {
+  return db.prepare("DELETE FROM announcements WHERE id = ?").run(id).changes > 0;
 }

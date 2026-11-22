@@ -2266,3 +2266,17 @@ body,
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
   cursor: pointer;
 }
+
+.admin-announcement-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-announcement-form .admin-btn { align-self: flex-end; }
+.admin-announcement-body {
+  max-width: 520px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

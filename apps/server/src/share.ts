@@ -124,7 +124,7 @@ function segmentedBranch(messages: RawMessage[]): RawMessage[] {
     let cursor: RawMessage | undefined = latest;
     while (cursor && typeof cursor.message_id === "number") {
       path.push(cursor);
-      const parentId = cursor.parent_id;
+      const parentId = cursor.parent_id as number | null | undefined;
       cursor = typeof parentId === "number" ? byId.get(parentId) : undefined;
     }
     for (const message of path.reverse()) {

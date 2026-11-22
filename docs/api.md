@@ -477,6 +477,38 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 请求体上限由 8MiB 提升到 16MiB（含加密备份）。密钥为 256 bit（AES-GCM）。旧 10 hex 仅作为迁移兼容，迁移完成后不再返回。
 
+## 9. 发布通道与公告
+
+### GET /api/v1/release
+
+公开、无缓存。返回当前 APK 的版本、versionCode、SHA-256、大小与下载地址：
+
+```json
+{
+  "version": "1.7.0",
+  "versionCode": 23,
+  "sha256": "0bd88ce7...",
+  "size": 5380820,
+  "apkUrl": "https://.../download/dream-android.apk?v=1.7.0&h=0bd88ce79ac4&t=...",
+  "notes": "发布通道：版本、版本号与安装包 SHA-256 校验。",
+  "publishedAt": "2026-11-22T13:49:38.526Z"
+}
+```
+
+App 端下载完成后会用原生插件计算文件 SHA-256，与 `sha256` 不一致时删除文件并提示“安装包校验失败，请重新下载”。`/api/v1/version` 保留为同义端点。
+
+### GET /api/v1/announcement
+
+公开、无缓存。返回最新启用中的公告，没有则返回 `{"announcement": null}`：
+
+```json
+{ "announcement": { "id": 1, "title": "公告标题", "body": "正文", "updatedAt": "..." } }
+```
+
+App 在登录并解锁后拉取；按 `id:updatedAt` 记录已读，同一条公告只弹窗一次。
+
+管理员端点：`GET/POST /api/v1/admin/announcements`、`PATCH/DELETE /api/v1/admin/announcements/:id`。
+
 ## 9. 规划中的端点（M1）
 
 | 方法 | 路径 | 说明 |

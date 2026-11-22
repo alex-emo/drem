@@ -2,6 +2,9 @@ import { apiBase } from './auth.js'
 
 export interface ServerVersion {
   version: string
+  versionCode?: number
+  sha256?: string
+  size?: number
   apkUrl: string
   notes?: string
   publishedAt?: string
@@ -28,7 +31,7 @@ export const compareVersion = (a: string, b: string): number => {
 
 export async function fetchServerVersion(): Promise<ServerVersion | null> {
   try {
-    const response = await fetch(`${apiBase()}/version`, { cache: 'no-store' })
+    const response = await fetch(`${apiBase()}/release`, { cache: 'no-store' })
     if (!response.ok) return null
     return (await response.json()) as ServerVersion
   } catch {

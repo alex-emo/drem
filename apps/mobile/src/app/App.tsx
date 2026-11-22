@@ -21,6 +21,12 @@ import { setApiKey } from '../services/settings.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
 import { installApk } from '../services/dream/installer.js'
+import {
+  fetchLatestAnnouncement,
+  isAnnouncementSeen,
+  markAnnouncementSeen,
+  type AppAnnouncement,
+} from '../services/dream/announcement.js'
 import { Capacitor } from '@capacitor/core'
 import { APP_VERSION, compareVersion, fetchServerVersion, type ServerVersion } from '../services/dream/update.js'
 import { showToast } from '../components/base/toastState.js'
@@ -62,6 +68,7 @@ export const App = () => {
   const [cloudState, setCloudState] = useState<AppCloudState | null>(null)
   const [cloudError, setCloudError] = useState('')
   const [askUpload, setAskUpload] = useState(false)
+  const [announcement, setAnnouncement] = useState<AppAnnouncement | null>(null)
 
   const checkForUpdate = useCallback(() => {
     if (Capacitor.getPlatform() === 'ios') return
@@ -76,6 +83,13 @@ export const App = () => {
     if (!authed) return
     checkForUpdate()
   }, [authed, checkForUpdate])
+
+  useEffect(() => {
+    if (!authed || cloudPhase !== 'ready') return
+    void fetchLatestAnnouncement().then((latest) => {
+      if (latest && !isAnnouncementSeen(latest)) setAnnouncement(latest)
+    })
+  }, [authed, cloudPhase])
 
   useEffect(() => {
     const onManual = (event: Event) => {
@@ -348,6 +362,29 @@ export const App = () => {
       ) : null}
       <SettingsDialog />
       <Toast />
+      {announcement ? (
+        <Modal
+          title={announcement.title || '公告'}
+          onClose={() => {
+            markAnnouncementSeen(announcement)
+            setAnnouncement(null)
+          }}
+          footer={
+            <Button
+              variant="primary"
+              size="m"
+              onClick={() => {
+                markAnnouncementSeen(announcement)
+                setAnnouncement(null)
+              }}
+            >
+              知道了
+            </Button>
+          }
+        >
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{announcement.body}</div>
+        </Modal>
+      ) : null}
       {update ? (
         <Modal
           title="发现新版本"
@@ -365,7 +402,7 @@ export const App = () => {
                   const downloadUrl = /^https?:\/\//.test(update.apkUrl)
                     ? update.apkUrl
                     : new URL(update.apkUrl, __API_ORIGIN__).toString()
-                  void installApk(downloadUrl)
+                  void installApk(downloadUrl, update.sha256)
                     .then((installed) => {
                       if (!installed) window.open(downloadUrl, '_blank')
                     })

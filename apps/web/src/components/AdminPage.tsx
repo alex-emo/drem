@@ -94,6 +94,7 @@ interface LogEntry {
 }
 
 type Page = "overview" | "users" | "keys" | "moderation" | "errors" | "logs";
+type Announcement = { id: number; title: string; body: string; active: number; created_at: string; updated_at: string };
 type SortDirection = "asc" | "desc";
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -222,6 +223,10 @@ export default function AdminPage() {
   const [pageSize, setPageSize] = useState(20);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [annTitle, setAnnTitle] = useState("");
+  const [annBody, setAnnBody] = useState("");
+  const [annBusy, setAnnBusy] = useState(false);
 
   const token = getToken();
   const currentUserId = useMemo(() => {
@@ -257,6 +262,10 @@ export default function AdminPage() {
       if (logsResponse.ok) {
         const payload = (await logsResponse.json()) as { items: LogEntry[] };
         setLogs(payload.items);
+      }
+      const annResponse = await fetch("/api/v1/admin/announcements", { headers: { authorization: `Bearer ${token}` } });
+      if (annResponse.ok) {
+        setAnnouncements(((await annResponse.json()) as { announcements: Announcement[] }).announcements);
       }
       setError(null);
     } catch (err) {
@@ -388,6 +397,62 @@ export default function AdminPage() {
     setLevel("all");
     setSort(nextPage === "users" ? "tokens" : nextPage === "keys" ? "tokens" : "time");
     setDirection("desc");
+  };
+
+  const publishAnnouncement = async () => {
+    if (!token || !annBody.trim() || annBusy) return;
+    setAnnBusy(true);
+    try {
+      const response = await fetch("/api/v1/admin/announcements", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ title: annTitle, body: annBody, active: true }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setAnnTitle("");
+      setAnnBody("");
+      setNotice("公告已发布，用户打开 App 会看到弹窗");
+      await load();
+    } catch (error) {
+      setNotice(`发布失败：${(error as Error).message}`);
+    } finally {
+      setAnnBusy(false);
+    }
+  };
+
+  const updateAnnouncementState = async (item: Announcement, active: boolean) => {
+    if (!token || annBusy) return;
+    setAnnBusy(true);
+    try {
+      const response = await fetch(`/api/v1/admin/announcements/${item.id}`, {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ title: item.title, body: item.body, active }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await load();
+    } catch (error) {
+      setNotice(`操作失败：${(error as Error).message}`);
+    } finally {
+      setAnnBusy(false);
+    }
+  };
+
+  const removeAnnouncement = async (item: Announcement) => {
+    if (!token || annBusy) return;
+    setAnnBusy(true);
+    try {
+      const response = await fetch(`/api/v1/admin/announcements/${item.id}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await load();
+    } catch (error) {
+      setNotice(`删除失败：${(error as Error).message}`);
+    } finally {
+      setAnnBusy(false);
+    }
   };
 
   if (error) {
@@ -819,6 +884,34 @@ export default function AdminPage() {
                         </tr>
                       ))}
                       {logs.length === 0 ? <tr><td colSpan={6} className="admin-muted">暂无请求日志</td></tr> : null}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+              <section className="admin-panel">
+                <div className="admin-panel-head"><h2>公告推送</h2><span className="admin-muted">用户打开 App 时自动弹窗</span></div>
+                <div className="admin-announcement-form">
+                  <input className="admin-input" placeholder="标题（可选）" value={annTitle} maxLength={120} onChange={(event) => setAnnTitle(event.target.value)} />
+                  <textarea className="admin-input admin-textarea" placeholder="公告内容，用户打开 App 后会看到这个弹窗" value={annBody} maxLength={4000} onChange={(event) => setAnnBody(event.target.value)} />
+                  <button type="button" className="admin-btn primary" disabled={annBusy || !annBody.trim()} onClick={() => void publishAnnouncement()}>{annBusy ? "发布中…" : "发布公告"}</button>
+                </div>
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead><tr><th>标题</th><th>内容</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+                    <tbody>
+                      {announcements.map((item) => (
+                        <tr key={item.id}>
+                          <td>{item.title || "—"}</td>
+                          <td className="admin-announcement-body">{item.body}</td>
+                          <td><span className={`admin-tag ${item.active ? "ok" : ""}`}>{item.active ? "生效中" : "已停用"}</span></td>
+                          <td>{formatTime(item.updated_at)}</td>
+                          <td className="admin-actions">
+                            <button type="button" className="admin-btn tiny" disabled={annBusy} onClick={() => void updateAnnouncementState(item, !item.active)}>{item.active ? "停用" : "启用"}</button>
+                            <button type="button" className="admin-btn tiny danger" disabled={annBusy} onClick={() => void removeAnnouncement(item)}>删除</button>
+                          </td>
+                        </tr>
+                      ))}
+                      {announcements.length === 0 ? <tr><td colSpan={5} className="admin-muted">还没有公告</td></tr> : null}
                     </tbody>
                   </table>
                 </div>

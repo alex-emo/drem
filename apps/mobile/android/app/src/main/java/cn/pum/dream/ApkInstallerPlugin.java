@@ -19,6 +19,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.security.MessageDigest;
 
 @CapacitorPlugin(name = "ApkInstaller")
 public class ApkInstallerPlugin extends Plugin {
@@ -61,6 +63,21 @@ public class ApkInstallerPlugin extends Plugin {
                     call.reject("安装包下载失败");
                     return;
                 }
+                String expected = call.getString("sha256");
+                if (expected != null && !expected.isEmpty()) {
+                    try {
+                        String actual = sha256(apk);
+                        if (!expected.equalsIgnoreCase(actual)) {
+                            // 校验不通过时删除残缺/被篡改的包，避免误装与重复使用。
+                            apk.delete();
+                            call.reject("安装包校验失败，请重新下载");
+                            return;
+                        }
+                    } catch (Exception exception) {
+                        call.reject("安装包校验失败，请重新下载");
+                        return;
+                    }
+                }
                 Uri uri = FileProvider.getUriForFile(ctx, ctx.getPackageName() + ".fileprovider", apk);
                 Intent install = new Intent(Intent.ACTION_VIEW);
                 install.setDataAndType(uri, "application/vnd.android.package-archive");
@@ -76,5 +93,21 @@ public class ApkInstallerPlugin extends Plugin {
         } else {
             context.registerReceiver(receiver, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
         }
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+        }
+        StringBuilder out = new StringBuilder();
+        for (byte value : digest.digest()) {
+            out.append(String.format("%02x", value));
+        }
+        return out.toString();
     }
 }
