@@ -45,6 +45,7 @@ export type BackupData = {
   conversations?: WebConversation[]
   messages?: WebMessage[]
   sessions?: Session[]
+  tombstones?: Array<{ id: string; deletedAt: number }>
 }
 
 export interface AppCloudState {
@@ -244,6 +245,7 @@ export async function unlockAppCloud(): Promise<AppCloudState> {
 
 export async function pushAppCloud(): Promise<void> {
   if (!hasSessionKey()) return
+  let tombstones: Array<{ id: string; deletedAt: number }> = []
   try {
     const info = await api<CloudInfo>('/backup')
     // 超大备份在低端 WebView 上加密/压缩会触发内存峰值，改为只拉取、不自动上传。
@@ -254,13 +256,16 @@ export async function pushAppCloud(): Promise<void> {
     if (info.backup && !info.legacyKey) {
       const { iv, data } = decodePayload(info.backup.payload)
       const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+      tombstones = remote.tombstones ?? []
       await mergeSessions(fromWeb(remote))
     }
   } catch {
     // 拉取失败不阻断本次上传。
   }
   const sessions = await loadAllSessions()
-  const payload = await gzip(JSON.stringify(toWeb(sessions)))
+  const payload = await gzip(
+    JSON.stringify({ ...toWeb(sessions), version: 2, tombstones }),
+  )
   const { iv, data } = await encryptBytes(payload)
   await api('/backup', {
     method: 'PUT',

@@ -66,8 +66,8 @@ const model =
 
 export const config = {
   port: Number(process.env.PORT ?? 8787),
-  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.2",
-  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 25),
+  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.3",
+  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 26),
   host: process.env.DREAM_HOST ?? "127.0.0.1",
   provider,
   providerLabel: provider === "qwen" ? "Qwen" : "DeepSeek",
@@ -87,4 +87,12 @@ export const config = {
   webDir: process.env.DREAM_WEB_DIR ?? "web",
   downloadDir: process.env.DREAM_DOWNLOAD_DIR ?? "downloads",
   adminUsers: splitList(process.env.DREAM_ADMIN_USERS),
+  // 恶意高频/IP 注册限制。阈值刻意放宽，避免正常用户/共享 NAT 被误伤。
+  rateLimit: {
+    register: Number(process.env.DREAM_RL_REGISTER ?? 12), // 每 IP 每小时注册数
+    login: Number(process.env.DREAM_RL_LOGIN ?? 60), // 每 IP 每 15 分钟登录尝试
+    chat: Number(process.env.DREAM_RL_CHAT ?? 120), // 每 IP 每分钟聊天请求
+    global: Number(process.env.DREAM_RL_GLOBAL ?? 1200), // 每 IP 每分钟全部 /api 请求
+    archive: Number(process.env.DREAM_RL_ARCHIVE ?? 12), // 每 IP 每小时导入
+  },
 } as const;

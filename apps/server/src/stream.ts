@@ -26,64 +26,22 @@ interface UpstreamChunk {
 
 const KNOWN_FINISH_REASONS = new Set(["stop", "length", "content_filter"]);
 
-/** 思考/正文都可能泄露底层模型名，统一替换成 Dream。 */
-const THINKING_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/通义千问|通义|qwen|qianwen/gi, "Dream"],
-  [/阿里云|阿里巴巴|阿里|alibaba(?:\s*cloud)?/gi, "Dream"],
-  [/深度求索|deepseek/gi, "Dream"],
-  [/anthropic|claude|openai|chatgpt|gpt-?4|google|gemini/gi, "Dream"],
-  [/system\s*prompt|系统提示词?/gi, "设定"],
-];
-
-const SENSITIVE_TERMS = [
-  "qwen",
-  "qianwen",
-  "通义千问",
-  "通义",
-  "阿里云",
-  "阿里巴巴",
-  "阿里",
-  "alibaba",
-  "deepseek",
-  "深度求索",
-  "anthropic",
-  "claude",
-  "openai",
-  "chatgpt",
-  "google",
-  "gemini",
-];
-
-/** 找一个不会把敏感词切成两半的切点；找不到就返回 0，等更多文本再切。 */
-function safeCut(buffer: string, desired: number): number {
-  const lower = buffer.toLowerCase();
-  for (let cut = Math.min(desired, buffer.length); cut > 0; cut -= 1) {
-    const head = lower.slice(0, cut);
-    const tail = lower.slice(cut, cut + 24);
-    let unsafe = false;
-    for (const term of SENSITIVE_TERMS) {
-      if (term.length > tail.length + cut) continue;
-      for (let k = 1; k < term.length; k += 1) {
-        const prefix = term.slice(0, k);
-        const suffix = term.slice(k);
-        if (head.endsWith(prefix) && tail.startsWith(suffix)) {
-          unsafe = true;
-          break;
-        }
-      }
-      if (unsafe) break;
-    }
-    if (!unsafe) return cut;
-  }
-  return 0;
+/**
+ * 不再对模型输出做自动厂商名替换：全局替换会破坏代码、产品名与事实。
+ * 保留函数仅为调用方兼容，实际原样返回。
+ */
+export function redactOutput(text: string): string {
+  return text;
 }
 
-export function redactOutput(text: string): string {
-  let output = text;
-  for (const [pattern, replacement] of THINKING_REPLACEMENTS) {
-    output = output.replace(pattern, replacement);
+/** 流式切点只保证不切断代理对，不再按敏感词绕行。 */
+function safeCut(buffer: string, desired: number): number {
+  let cut = Math.min(Math.max(0, desired), buffer.length);
+  if (cut > 0 && cut < buffer.length) {
+    const code = buffer.charCodeAt(cut - 1);
+    if (code >= 0xd800 && code <= 0xdbff) cut -= 1;
   }
-  return output.replace(/Dream\s*\/\s*Dream/g, "Dream").replace(/Dream(?:\s+Dream)+/g, "Dream");
+  return cut;
 }
 
 function parseFinishReason(raw: string | null | undefined): FinishReason {

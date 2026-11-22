@@ -46,6 +46,17 @@ function warmLongConversations(conversations: Conversation[], messages: Message[
   }
 }
 
+/** 把当前分支里出现过的附件合并给后续轮次，避免下一轮追问丢失文件上下文。 */
+function inheritedFiles(messages: Message[]): FileAttachment[] {
+  const seen = new Map<string, FileAttachment>();
+  for (const message of messages) {
+    for (const file of message.files ?? []) {
+      seen.set(file.id, file);
+    }
+  }
+  return Array.from(seen.values()).slice(-8);
+}
+
 function historyFor(messages: Message[]) {
   return messages
     .filter(
@@ -77,6 +88,7 @@ export function useChat() {
   const allMessagesRef = useRef<Message[]>([]);
   const rootRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
+  const deletedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -122,7 +134,13 @@ export function useChat() {
   const loadConversation = useCallback(
     async (id: string) => {
       const raw = await getMessages(id);
-      const normalized = normalizeMessages(raw);
+      // 上次刷新/断网时残留的 streaming 状态不能永久卡住 UI。
+      const repaired = raw.map((message) =>
+        message.status === "streaming"
+          ? { ...message, status: "stopped" as const, content: message.content }
+          : message,
+      );
+      const normalized = normalizeMessages(repaired);
       const conversation = conversationsRef.current.find((item) => item.id === id);
       const preferred =
         conversation?.rootMessageId &&
@@ -137,7 +155,9 @@ export function useChat() {
       setActiveId(id);
       showVisible(normalized.messages, preferred);
 
-      if (normalized.changed) await putMessages(normalized.messages);
+      if (normalized.changed || repaired.some((message, index) => message !== raw[index])) {
+        await putMessages(normalized.messages);
+      }
       if (conversation && conversation.rootMessageId !== preferred) {
         await updateConversation({ ...conversation, rootMessageId: preferred });
       }
@@ -174,12 +194,16 @@ export function useChat() {
   }, [loadConversation]);
 
   const stop = useCallback(() => {
-    abortRef.current?.abort();
     settleRef.current?.("stop");
+    abortRef.current?.abort();
   }, []);
 
   const newChat = useCallback(() => {
     abortRef.current?.abort();
+    abortRef.current = null;
+    settleRef.current = null;
+    setStreaming(false);
+    streamingRef.current = false;
     setActiveId(null);
     activeRef.current = null;
     setMessages([]);
@@ -193,6 +217,10 @@ export function useChat() {
   const openConversation = useCallback(
     async (id: string) => {
       abortRef.current?.abort();
+      abortRef.current = null;
+      settleRef.current = null;
+      setStreaming(false);
+      streamingRef.current = false;
       await loadConversation(id);
       remember(id);
     },
@@ -200,10 +228,18 @@ export function useChat() {
   );
 
   const removeConversation = useCallback(async (id: string) => {
+    deletedIdsRef.current.add(id);
+    if (activeRef.current === id) {
+      settleRef.current?.("stop");
+      abortRef.current?.abort();
+      abortRef.current = null;
+      settleRef.current = null;
+      setStreaming(false);
+      streamingRef.current = false;
+    }
     await deleteConversationData(id);
     setConversations((prev) => prev.filter((conversation) => conversation.id !== id));
     if (activeRef.current === id) {
-      abortRef.current?.abort();
       setActiveId(null);
       activeRef.current = null;
       setMessages([]);
@@ -373,7 +409,7 @@ export function useChat() {
         if (reason === "timeout") {
           void finish("error", "生成超时，请稍后重试。");
         } else {
-          void finish("done");
+          void finish("stopped");
         }
       };
       settleRef.current = settleNow;
@@ -385,13 +421,18 @@ export function useChat() {
       }, 10_000);
 
       const finish = async (
-        status: "done" | "refused" | "error",
+        status: "done" | "refused" | "stopped" | "error",
         error?: string,
         meta?: { code?: string; requestId?: string },
       ) => {
         if (settled) return;
         settled = true;
         settleRef.current = null;
+        window.clearInterval(watchdog);
+        if (deletedIdsRef.current.has(conversation.id)) {
+          abortRef.current = null;
+          return;
+        }
         window.clearInterval(watchdog);
         if (timer !== null) {
           window.clearInterval(timer);
@@ -411,25 +452,31 @@ export function useChat() {
           errorCode: meta?.code,
           errorRequestId: meta?.requestId,
         };
-        allMessagesRef.current = allMessagesRef.current.map((message) =>
-          message.id === assistantMessage.id ? final : message,
-        );
-        setAllMessages(allMessagesRef.current);
-        messagesRef.current = messagesRef.current.map((message) =>
-          message.id === assistantMessage.id ? final : message,
-        );
-        setMessages(messagesRef.current);
-        setStreaming(false);
-        streamingRef.current = false;
+        const isActive = activeRef.current === conversation.id;
+        if (isActive) {
+          allMessagesRef.current = allMessagesRef.current.map((message) =>
+            message.id === assistantMessage.id ? final : message,
+          );
+          setAllMessages(allMessagesRef.current);
+          messagesRef.current = messagesRef.current.map((message) =>
+            message.id === assistantMessage.id ? final : message,
+          );
+          setMessages(messagesRef.current);
+          setStreaming(false);
+          streamingRef.current = false;
+        }
 
         try {
           await putMessage(final);
-          const base = conversationsRef.current.find((item) => item.id === conversation.id) ?? conversation;
-          await updateConversation({
-            ...base,
-            rootMessageId: rootRef.current,
-            updatedAt: Date.now(),
-          });
+          if (isActive) {
+            const base =
+              conversationsRef.current.find((item) => item.id === conversation.id) ?? conversation;
+            await updateConversation({
+              ...base,
+              rootMessageId: rootRef.current,
+              updatedAt: Date.now(),
+            });
+          }
         } catch (error) {
           console.error("写入本地聊天记录失败", error);
           setStorageError("本地存储写入失败，可能是空间不足或无痕模式，聊天记录可能无法保留。");
@@ -485,7 +532,7 @@ export function useChat() {
         if (timer !== null) window.clearInterval(timer);
         timer = null;
         if (error instanceof Error && error.name === "AbortError") {
-          await finish("done");
+          await finish("stopped");
         } else {
           if (error instanceof ChatApiError && error.status === 401) {
             window.dispatchEvent(new CustomEvent("dream:unauthorized"));
@@ -582,7 +629,12 @@ export function useChat() {
       }
 
       const history = [...historyFor(visible), { role: "user" as const, content: text }];
-      await runReply(conversation as Conversation, assistantMessage, history, options);
+      const requestFiles =
+        options.files && options.files.length > 0 ? options.files : inheritedFiles(visible);
+      await runReply(conversation as Conversation, assistantMessage, history, {
+        ...options,
+        files: requestFiles,
+      });
     },
     [runReply],
   );

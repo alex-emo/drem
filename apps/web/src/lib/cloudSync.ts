@@ -1,6 +1,16 @@
 import { getToken } from "./auth";
 import { getSessionKey, setSessionKey, decryptBytes, encryptBytes, hasSessionKey } from "./crypto";
-import { clearLocalChats, getAllConversations, getAllMessages, importConversationData, migrateLocalEncryption } from "./db";
+import {
+  clearLocalChats,
+  deleteConversationData,
+  getAllConversations,
+  getAllMessages,
+  getAllTombstones,
+  importConversationData,
+  migrateLocalEncryption,
+  putTombstone,
+  type Tombstone,
+} from "./db";
 import type { Conversation, Message } from "./types";
 
 interface BackupPayload {
@@ -17,10 +27,11 @@ export interface CloudBackupInfo {
 
 interface BackupData {
   format: "dream-backup";
-  version: 1;
+  version: 2;
   exportedAt: string;
   conversations: Conversation[];
   messages: Message[];
+  tombstones?: Tombstone[];
 }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -77,16 +88,45 @@ async function gunzip(bytes: Uint8Array): Promise<string> {
 }
 
 export async function mergeBackup(data: BackupData): Promise<{ conversations: number; messages: number }> {
-  const localConversations = new Map((await getAllConversations()).map((item) => [item.id, item]));
-  const localMessages = new Map((await getAllMessages()).map((item) => [item.id, item]));
+  const [localConversations, localMessages, localTombstones] = await Promise.all([
+    getAllConversations(),
+    getAllMessages(),
+    getAllTombstones(),
+  ]);
+  const localConversationMap = new Map(localConversations.map((item) => [item.id, item]));
+  const localMessageMap = new Map(localMessages.map((item) => [item.id, item]));
+  const tombstones = new Map(localTombstones.map((item) => [item.id, item]));
+
+  // 合并墓碑：保留较新的删除时间；删除时间晚于本地会话更新时间的才生效。
+  for (const incoming of data.tombstones ?? []) {
+    const current = tombstones.get(incoming.id);
+    if (!current || incoming.deletedAt > current.deletedAt) {
+      tombstones.set(incoming.id, incoming);
+      await putTombstone(incoming);
+    }
+  }
+
+  const deletedUntil = new Map<string, number>();
+  for (const tombstone of tombstones.values()) {
+    const local = localConversationMap.get(tombstone.id);
+    if (!local || local.updatedAt <= tombstone.deletedAt) {
+      deletedUntil.set(tombstone.id, tombstone.deletedAt);
+      if (local) await deleteConversationData(tombstone.id);
+    }
+  }
+
+  const conversationIds = new Set((data.conversations ?? []).map((item) => item.id));
   const conversations: Conversation[] = [];
   const messages: Message[] = [];
   for (const incoming of data.conversations ?? []) {
-    const local = localConversations.get(incoming.id);
+    if ((deletedUntil.get(incoming.id) ?? 0) >= incoming.updatedAt) continue;
+    const local = localConversationMap.get(incoming.id);
     if (!local || incoming.updatedAt > local.updatedAt) conversations.push(incoming);
   }
   for (const incoming of data.messages ?? []) {
-    const local = localMessages.get(incoming.id);
+    if (!conversationIds.has(incoming.conversationId)) continue;
+    if ((deletedUntil.get(incoming.conversationId) ?? 0) >= incoming.createdAt) continue;
+    const local = localMessageMap.get(incoming.id);
     if (!local) messages.push(incoming);
     else if (incoming.createdAt >= local.createdAt && incoming.content !== local.content) messages.push(incoming);
   }
@@ -114,21 +154,35 @@ async function existingCloudSessions(): Promise<unknown[] | undefined> {
   }
 }
 
-export async function pushCloudBackup(): Promise<{ size: number; updatedAt: string }> {
-  const conversations = await getAllConversations();
-  const messages = await getAllMessages();
-  const sessions = await existingCloudSessions();
+export async function pushCloudBackup(rawLimitBytes = 8_000_000): Promise<{ size: number; updatedAt: string }> {
+  const [conversations, messages, tombstones, sessions] = await Promise.all([
+    getAllConversations(),
+    getAllMessages(),
+    getAllTombstones(),
+    existingCloudSessions(),
+  ]);
   const payload: BackupData & { sessions?: unknown[] } = {
     format: "dream-backup",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     conversations,
     messages,
+    tombstones,
     ...(sessions?.length ? { sessions } : {}),
   };
-  const compressed = await gzip(JSON.stringify(payload));
+  const json = JSON.stringify(payload);
+  const rawBytes = new TextEncoder().encode(json).byteLength;
+  if (rawBytes > rawLimitBytes) {
+    throw new Error(
+      `云端备份内容约 ${(rawBytes / 1024 / 1024).toFixed(1)} MB，超过自动上传上限 ${(rawLimitBytes / 1024 / 1024).toFixed(1)} MB；请手动导出备份，或清理较早会话。`,
+    );
+  }
+  const compressed = await gzip(json);
   const encrypted = await encryptBytes(compressed);
   const body = JSON.stringify({ payload: encodePayload(encrypted.iv, encrypted.data) });
+  if (new TextEncoder().encode(body).byteLength > 11_800_000) {
+    throw new Error("云端备份编码后超过服务端 12 MB 上限；请手动导出并清理较早会话。");
+  }
   return api<{ size: number; updatedAt: string }>("/api/v1/backup", { method: "PUT", body });
 }
 
@@ -192,15 +246,16 @@ export async function unlockAccount(userId: string): Promise<UnlockResult> {
       localConversations = (await getAllConversations()).length;
       merged = await pullCloudBackup(info);
     } catch (error) {
-      // 密钥已轮换（或本地被别处重新加密）时无法解开旧本地记录：清空后只用云端新备份。
-      await clearLocalChats();
-      localConversations = 0;
+      // 密钥不匹配时不要立刻毁掉本地记录：先尝试拉云端；本地不可解密记录会在展示层跳过。
+      pullError =
+        error instanceof Error
+          ? `本地聊天记录无法解密（${error.message}），已尝试从云端恢复。`
+          : "本地聊天记录无法解密，已尝试从云端恢复。";
       try {
         merged = await pullCloudBackup(info);
       } catch (retryError) {
         pullError = retryError instanceof Error ? retryError.message : "云端备份无法解密。";
       }
-      if (!pullError && !(error instanceof Error)) pullError = "本地聊天记录无法解密，已从云端恢复。";
     }
     localStorage.setItem("dream-encryption-key", info.key);
   }
@@ -224,9 +279,21 @@ export async function maybePushCloudBackup(): Promise<void> {
   if (!rev || rev <= last) return;
   if (Date.now() - last < 5 * 60 * 1000) return;
   try {
-    await pushCloudBackup();
+    await pushCloudBackup(6_000_000);
     localStorage.setItem("dream-cloud-last-push", String(Date.now()));
-  } catch {
-    // 网络差时下次再试
+  } catch (error) {
+    // 即使失败也要让设置页/控制台可见，而不是静默丢备份。
+    console.warn("云端自动备份失败", error);
+    try {
+      localStorage.setItem(
+        "dream-cloud-last-error",
+        JSON.stringify({ at: Date.now(), message: (error as Error).message }),
+      );
+      window.dispatchEvent(
+        new CustomEvent("dream:cloud-sync-error", { detail: { message: (error as Error).message } }),
+      );
+    } catch {
+      // 忽略存储/事件失败
+    }
   }
 }

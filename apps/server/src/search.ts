@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { isContextLengthError } from "./deepseek.js";
 import { withDreamIdentity } from "./identity.js";
 import { cooldownForStatus, isRetryableStatus, keyPool, type PooledKey } from "./keys.js";
 import { ApiError, sseEncode } from "./protocol.js";
@@ -74,6 +75,9 @@ async function fetchSearch(
         return { response, key };
       }
       const detail = (await response.text()).slice(0, 600);
+      if (response.status === 400 && isContextLengthError(detail)) {
+        throw new ApiError(413, "PAYLOAD_TOO_LARGE", `联网搜索上下文超出上限，请缩短对话后重试：${detail}`);
+      }
       if (isRetryableStatus(response.status)) {
         keyPool.markFailure(key, cooldownForStatus(response.status));
         lastError = new ApiError(502, "UPSTREAM_ERROR", `联网搜索上游返回 ${response.status}：${detail}`);

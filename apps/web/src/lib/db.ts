@@ -2,6 +2,11 @@ import { openDB, type DBSchema } from "idb";
 import { decryptText, encryptText, hasSessionKey } from "./crypto";
 import type { Conversation, Message } from "./types";
 
+export interface Tombstone {
+  id: string;
+  deletedAt: number;
+}
+
 interface DreamDB extends DBSchema {
   conversations: {
     key: string;
@@ -12,6 +17,10 @@ interface DreamDB extends DBSchema {
     key: string;
     value: Message;
     indexes: { "by-conversation": string; "by-created": number };
+  };
+  tombstones: {
+    key: string;
+    value: Tombstone;
   };
 }
 
@@ -24,13 +33,20 @@ function markBackupDirty(): void {
   }
 }
 
-const dbPromise = openDB<DreamDB>("dream", 1, {
+const dbPromise = openDB<DreamDB>("dream", 2, {
   upgrade(db) {
-    const conversations = db.createObjectStore("conversations", { keyPath: "id" });
-    conversations.createIndex("by-updated", "updatedAt");
-    const messages = db.createObjectStore("messages", { keyPath: "id" });
-    messages.createIndex("by-conversation", "conversationId");
-    messages.createIndex("by-created", "createdAt");
+    if (!db.objectStoreNames.contains("conversations")) {
+      const conversations = db.createObjectStore("conversations", { keyPath: "id" });
+      conversations.createIndex("by-updated", "updatedAt");
+    }
+    if (!db.objectStoreNames.contains("messages")) {
+      const messages = db.createObjectStore("messages", { keyPath: "id" });
+      messages.createIndex("by-conversation", "conversationId");
+      messages.createIndex("by-created", "createdAt");
+    }
+    if (!db.objectStoreNames.contains("tombstones")) {
+      db.createObjectStore("tombstones", { keyPath: "id" });
+    }
   },
 });
 
@@ -70,8 +86,14 @@ async function encryptMessage(record: Message): Promise<Message> {
 export async function listConversations(): Promise<Conversation[]> {
   const db = await dbPromise;
   const items = await db.getAll("conversations");
-  const decrypted = await Promise.all(items.map(decryptConversation));
-  return decrypted.sort((a, b) => b.updatedAt - a.updatedAt);
+  // 单条记录密钥不匹配时跳过展示，但不能删除原始数据；云端恢复后仍可用。
+  const decrypted = await Promise.allSettled(items.map(decryptConversation));
+  const usable: Conversation[] = [];
+  for (const result of decrypted) {
+    if (result.status === "fulfilled") usable.push(result.value);
+    else console.warn("跳过无法解密的本地会话", result.reason);
+  }
+  return usable.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function putConversation(conversation: Conversation): Promise<void> {
@@ -83,8 +105,13 @@ export async function putConversation(conversation: Conversation): Promise<void>
 export async function getMessages(conversationId: string): Promise<Message[]> {
   const db = await dbPromise;
   const items = await db.getAllFromIndex("messages", "by-conversation", conversationId);
-  const decrypted = await Promise.all(items.map(decryptMessage));
-  return decrypted.sort((a, b) => a.createdAt - b.createdAt);
+  const decrypted = await Promise.allSettled(items.map(decryptMessage));
+  const usable: Message[] = [];
+  for (const result of decrypted) {
+    if (result.status === "fulfilled") usable.push(result.value);
+    else console.warn("跳过无法解密的本地消息", result.reason);
+  }
+  return usable.sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function putMessage(message: Message): Promise<void> {
@@ -127,16 +154,29 @@ export async function importConversationData(
 
 export async function deleteConversationData(conversationId: string): Promise<void> {
   const db = await dbPromise;
-  const tx = db.transaction(["conversations", "messages"], "readwrite");
+  const tx = db.transaction(["conversations", "messages", "tombstones"], "readwrite");
   await tx.objectStore("conversations").delete(conversationId);
   const keys = await tx.objectStore("messages").index("by-conversation").getAllKeys(conversationId);
   await Promise.all(keys.map((key) => tx.objectStore("messages").delete(key)));
+  await tx.objectStore("tombstones").put({ id: conversationId, deletedAt: Date.now() });
   await tx.done;
+  markBackupDirty();
+}
+
+export async function getAllTombstones(): Promise<Tombstone[]> {
+  const db = await dbPromise;
+  return db.getAll("tombstones");
+}
+
+export async function putTombstone(tombstone: Tombstone): Promise<void> {
+  const db = await dbPromise;
+  await db.put("tombstones", tombstone);
   markBackupDirty();
 }
 
 export async function clearLocalChats(): Promise<void> {
   const db = await dbPromise;
+  await db.clear("tombstones");
   const tx = db.transaction(["conversations", "messages"], "readwrite");
   await tx.objectStore("conversations").clear();
   await tx.objectStore("messages").clear();

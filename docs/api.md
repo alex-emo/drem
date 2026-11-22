@@ -260,14 +260,16 @@ DELETE /api/v1/files/:id
 | `hasApiKey` | 服务端是否配置了当前供应商的 Key（Key 永不下发） |
 | `models.default` | 普通对话模型 |
 | `models.reasoner` | 深度思考模型（Qwen 下与 `default` 相同） |
-| `context.compressAfterMessages` | 超过多少条消息开始压缩历史（当前 1000） |
-| `context.compressAfterChars` | 超过多少字符开始压缩历史（当前 3000000） |
+| `context.compressAfterMessages` | 超过多少条消息开始压缩历史（当前 400） |
+| `context.compressAfterTokens` | 估算 token 超过多少开始压缩历史（当前 60000） |
 
 客户端 UI 规则：`status=degraded && mock` 显示「演示模式」；`status=degraded && !hasApiKey` 显示「缺少 API Key」。
 
 ## 4.1 长对话自动压缩
 
-`POST /api/v1/chat` 在转发前检查消息总量：超过 **300 条**或 **60 万字符**时，服务端会把较早的消息按最多 30 万字符一段切分，逐段调用当前模型生成中文摘要，并用一条 `system` 摘要消息替代这些历史；最近 120 条 / 24 万字符保留原文。客户端不会看到摘要消息，也无法感知压缩过程。
+`POST /api/v1/chat` 在转发前用中文/英文加权的 token 估算检查消息总量：超过 **400 条**或估算 **6 万 token** 时，服务端会把较早的消息按最多 **1.2 万 token / 120 条**一段切分，逐段调用当前模型生成摘要（单段上限 800 字），并用一条 `system` 摘要消息替代这些历史；最近约 **2 万 token / 120 条**保留原文。
+
+摘要请求失败会先二分递归，仍失败则对该段做抽取式兜底（保留末尾消息开头），不会因为摘要失败让整轮对话 502。摘要按内容哈希缓存；上游返回 400 context length 时统一映射为 **413 PAYLOAD_TOO_LARGE**，客户端据此裁剪最近 24 条 / 8 万字符后重试一次。
 
 - 摘要按“分段内容 SHA-256”缓存在服务端 SQLite `context_summaries` 表；追加新消息不会让旧分段重复计费。
 - 流式响应会等摘要完成后才开始，首次长对话请求会明显变慢；之后命中缓存基本无额外耗时。

@@ -11,8 +11,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { config } from "./config.js";
 import { keyPool } from "./keys.js";
 import {
-  COMPRESS_CHAR_THRESHOLD,
   COMPRESS_MESSAGE_THRESHOLD,
+  COMPRESS_TOKEN_THRESHOLD,
   compressContext,
   needsCompression,
 } from "./context.js";
@@ -63,6 +63,7 @@ import {
 } from "./usage.js";
 import { listLogs, pushLog } from "./logs.js";
 import { getRelease } from "./release.js";
+import { enforceRateLimit, type LimitRule } from "./rateLimit.js";
 
 type AppEnv = { Variables: { requestId: string; requestUser?: string } };
 
@@ -115,6 +116,72 @@ app.use(
     exposeHeaders: ["X-Request-Id", "X-Api-Version"],
   }),
 );
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+
+/** 全局 + 关键入口的 IP 限流；阈值刻意放宽，优先挡脚本化恶意请求。 */
+app.use("/api/*", async (c, next) => {
+  if (c.req.path === "/api/v1/health") return next();
+
+  const globalRule: LimitRule = {
+    name: "global",
+    limit: config.rateLimit.global,
+    windowMs: MINUTE,
+    blockMs: 5 * MINUTE,
+  };
+  const limited = enforceRateLimit(c, globalRule);
+  if (limited) return limited;
+  await next();
+});
+
+app.use("/api/v1/auth/register", async (c, next) => {
+  const rule: LimitRule = {
+    name: "register",
+    limit: config.rateLimit.register,
+    windowMs: HOUR,
+    blockMs: HOUR,
+  };
+  const limited = enforceRateLimit(c, rule);
+  if (limited) return limited;
+  await next();
+});
+
+app.use("/api/v1/auth/login", async (c, next) => {
+  const rule: LimitRule = {
+    name: "login",
+    limit: config.rateLimit.login,
+    windowMs: 15 * MINUTE,
+    blockMs: 15 * MINUTE,
+  };
+  const limited = enforceRateLimit(c, rule);
+  if (limited) return limited;
+  await next();
+});
+
+app.use("/api/v1/chat", async (c, next) => {
+  const rule: LimitRule = {
+    name: "chat",
+    limit: config.rateLimit.chat,
+    windowMs: MINUTE,
+    blockMs: 10 * MINUTE,
+  };
+  const limited = enforceRateLimit(c, rule);
+  if (limited) return limited;
+  await next();
+});
+
+app.use("/api/v1/import/archive", async (c, next) => {
+  const rule: LimitRule = {
+    name: "archive",
+    limit: config.rateLimit.archive,
+    windowMs: HOUR,
+    blockMs: HOUR,
+  };
+  const limited = enforceRateLimit(c, rule);
+  if (limited) return limited;
+  await next();
+});
 
 async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
   const contentType = c.req.header("content-type") ?? "";
@@ -179,7 +246,7 @@ app.get("/api/v1/health", (c) => {
     },
     context: {
       compressAfterMessages: COMPRESS_MESSAGE_THRESHOLD,
-      compressAfterChars: COMPRESS_CHAR_THRESHOLD,
+      compressAfterTokens: COMPRESS_TOKEN_THRESHOLD,
     },
     features: {
       files: true,
@@ -526,7 +593,7 @@ app.post("/api/v1/chat", async (c) => {
     });
     effective = { ...parsedWithFiles, messages: compressed.messages };
     console.log(
-      `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ${compressed.segments} segments (${compressed.cached} cached) in ${Date.now() - startedAt}ms`,
+      `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ~${compressed.estimatedTokens} tokens, ${compressed.segments} segments (${compressed.cached} cached) in ${Date.now() - startedAt}ms`,
     );
   }
 

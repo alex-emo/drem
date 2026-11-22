@@ -2,7 +2,7 @@ export type Theme = "dark" | "light";
 
 export type ChatRole = "user" | "assistant";
 
-export type MessageStatus = "streaming" | "done" | "refused" | "error";
+export type MessageStatus = "streaming" | "done" | "refused" | "stopped" | "error";
 
 export interface EncryptedTitle {
   iv: string;

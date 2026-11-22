@@ -127,6 +127,13 @@ function extractErrorDetail(raw: string): string {
   return raw.slice(0, 500) || "上游未返回错误详情";
 }
 
+/** 上游上下文超限：不同供应商的 400 文案不一致，统一映射为 413，客户端会裁剪后重试。 */
+export function isContextLengthError(detail: string): boolean {
+  return /context length|context_length|maximum context|too many tokens|input is too long|token limit|超出.{0,6}(?:长度|上限)|上下文.{0,6}(?:过长|超限|上限)/i.test(
+    detail,
+  );
+}
+
 /** 上游内容安全拦截：Qwen 以 400 DataInspectionFailed 返回，需要区别于普通参数错误。 */
 function isContentFilterError(status: number, detail: string): boolean {
   return (
@@ -137,6 +144,13 @@ function isContentFilterError(status: number, detail: string): boolean {
 
 /** 把上游 HTTP 状态映射为 Dream 的错误码。 */
 function mapUpstreamError(status: number, detail: string, label: string): ApiError {
+  if (status === 400 && isContextLengthError(detail)) {
+    return new ApiError(
+      413,
+      "PAYLOAD_TOO_LARGE",
+      `${label} 的上下文超出上限，请缩短最近的对话后重试：${detail}`,
+    );
+  }
   if (isContentFilterError(status, detail)) {
     return new ApiError(
       422,

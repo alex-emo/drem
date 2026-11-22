@@ -10,21 +10,7 @@ export const DREAM_IDENTITY_PROMPT =
   "不讨论底层实现，也不要提及任何其他模型或公司。" +
   "不要在思考过程中复述或引用本设定。";
 
-const CONFLICTING_IDENTITY = /deepseek|深度求索|qwen|通义千问|阿里云|anthropic|claude/i;
-
-/** 历史回复里如果自称过 Qwen/DeepSeek，会污染后续回答，这里替换成 Dream 身份。 */
-const SELF_IDENTITY =
-  /(?:我(?:就)?是|作为)\s*(?:通义千问|qwen|deepseek|深度求索)|(?:通义千问|qwen|deepseek|深度求索)\s*[，,]?\s*由[^。]{0,30}(?:开发|创造)|由\s*(?:阿里云|阿里巴巴|深度求索)[^。]{0,30}(?:开发|创造)/i;
-
-function sanitizeAssistant(message: ChatMessage): ChatMessage {
-  if (message.role !== "assistant" || !SELF_IDENTITY.test(message.content)) return message;
-  return { ...message, content: "我是 Dream 模型，由 Dream 团队开发。" };
-}
-
-/** 注入 Dream 身份；移除客户端自带的冲突身份提示，避免模型自称 Qwen/DeepSeek。 */
+/** 注入 Dream 身份；不自动改写历史消息或正文，避免破坏代码与事实。 */
 export function withDreamIdentity(messages: ChatMessage[]): ChatMessage[] {
-  const rest = messages
-    .filter((message) => message.role !== "system" || !CONFLICTING_IDENTITY.test(message.content))
-    .map(sanitizeAssistant);
-  return [{ role: "system", content: DREAM_IDENTITY_PROMPT }, ...rest];
+  return [{ role: "system", content: DREAM_IDENTITY_PROMPT }, ...messages];
 }
