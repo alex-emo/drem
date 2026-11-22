@@ -190,11 +190,12 @@ const mergeSessions = async (incoming: Session[]): Promise<number> => {
 
 export async function unlockAppCloud(): Promise<AppCloudState> {
   const info = await api<CloudInfo>('/backup')
-  const localSessions = (await loadSessionSummaries()).length
+  let localSessions = 0
   let merged = 0
   if (info.legacyKey) {
-    // 旧账号仍是 10 hex；先用旧密钥解开云端并迁移到 App，再切到 32 字节新密钥。
+    // 旧密钥账号先用旧密钥解锁本地标题，否则读取摘要会抛出“尚未解锁”。
     setSessionKey(info.legacyKey)
+    localSessions = (await loadSessionSummaries()).length
     await migrateAppEncryption()
     if (info.backup) {
       try {
@@ -215,6 +216,7 @@ export async function unlockAppCloud(): Promise<AppCloudState> {
     }
   } else {
     setSessionKey(info.key)
+    localSessions = (await loadSessionSummaries()).length
     await migrateAppEncryption()
     if (info.backup) {
       try {
