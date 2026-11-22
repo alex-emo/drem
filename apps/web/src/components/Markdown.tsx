@@ -4,6 +4,15 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { CheckIcon, CopyIcon } from "./Icons";
 
+function supportsLookbehind(): boolean {
+  try {
+    new RegExp("(?<!a)b");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function textOf(node: ReactNode): string {
   if (node === null || node === undefined || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -56,7 +65,7 @@ export default function Markdown({
   return (
     <div className="markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={supportsLookbehind() ? [remarkGfm] : []}
         rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         components={{
           pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,

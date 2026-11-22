@@ -25,6 +25,15 @@ declare module 'mdast' {
 
 const text = (value: string): Text => ({ type: 'text', value })
 
+const supportsLookbehind = (() => {
+  try {
+    new RegExp('(?<!a)b')
+    return true
+  } catch {
+    return false
+  }
+})()
+
 /**
  * 解析正文，并把渲染器不单独处理的节点提前换掉，渲染时无需再读原文：
  * - 传入 sources 时，[citation:N] 换成角标节点，找不到来源的直接去掉
@@ -37,11 +46,16 @@ export function toMdAst(
 ): Root {
   const ast = fromMarkdown(input, {
     extensions: [
-      // codeIndented 语法导致有前导空格的列表无法正常渲染
-      { ...gfm(), disable: { null: ['codeIndented'] } },
+      // 老 WebView 不支持 lookbehind，gfm autolink 会导致整页报错，降级为普通 Markdown
+      ...(supportsLookbehind
+        ? [{ ...gfm(), disable: { null: ['codeIndented'] } }]
+        : []),
       math({ singleDollarTextMath: true }),
     ],
-    mdastExtensions: [gfmFromMarkdown(), mathFromMarkdown()],
+    mdastExtensions: [
+      ...(supportsLookbehind ? [gfmFromMarkdown()] : []),
+      mathFromMarkdown(),
+    ],
   } as unknown as Parameters<typeof fromMarkdown>[1])
   if (sources) {
     const sourcesByIndex = new Map(sources.map((source) => [source.index, source]))
