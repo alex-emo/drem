@@ -38,7 +38,7 @@ type WebConversation = {
   updatedAt: number
 }
 
-type BackupData = {
+export type BackupData = {
   format: string
   version: number
   exportedAt?: string
@@ -102,7 +102,7 @@ const assistantThinking = (message: Extract<AppMessage, { role: 'assistant' }>):
     .map((block) => block.thinking)
     .join('')
 
-const toWeb = (sessions: Session[]): BackupData => {
+export const toWeb = (sessions: Session[]): BackupData => {
   const conversations: WebConversation[] = []
   const messages: WebMessage[] = []
   for (const session of sessions) {
@@ -128,7 +128,7 @@ const toWeb = (sessions: Session[]): BackupData => {
   return { format: 'dream-backup', version: 1, exportedAt: new Date().toISOString(), conversations, messages, sessions }
 }
 
-const fromWeb = (data: BackupData): Session[] => {
+export const fromWeb = (data: BackupData): Session[] => {
   const byConversation = new Map<string, WebMessage[]>()
   for (const message of data.messages ?? []) {
     const list = byConversation.get(message.conversationId) ?? []

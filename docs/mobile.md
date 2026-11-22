@@ -88,3 +88,10 @@ APK 内置客户端文本节拍器：即使 Cloudflare 隧道把 SSE 攒包，�
 - 云端备份为 gzip + AES-GCM；App 上传同时包含 `sessions`（保留分支）与 `conversations/messages`（供 Web 读取）。
 - 首次登录、云端无备份且本机有会话时弹窗询问是否上传；拒绝后不再自动上传。
 - 旧 10 位密钥账号自动迁移：旧密钥解密云端 → 转 App 会话 → 新 32 字节密钥重加密并上传，服务端清除旧密钥。
+
+
+## Dream 自有加密导出（1.6.2+）
+
+- 「设置 → 数据管理 → 导出所有历史对话」现在下载 `dream-export-*.dream`：gzip + AES-GCM，使用当前账号密钥加密，不再只导出 DeepSeek ZIP。
+- 导入时自动识别 `.dream`：加密文件用账号密钥解密后合并；旧 `dream-backup` JSON / 未加密 `dream-export` 直接导入；旧 DeepSeek ZIP 仍走原导入流程。
+- `.dream` 同时包含 `sessions` 与 `conversations/messages`，可在 Web 与 App 之间互相恢复。

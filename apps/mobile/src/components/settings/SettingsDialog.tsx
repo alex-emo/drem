@@ -12,11 +12,11 @@ import {
 import {
   BackupError,
   clearHistory,
-  exportHistory,
   importHistory,
 } from '../../services/chat/backup.js'
 import { appendSession, useChatStore } from '../../services/chat/store.js'
 import { importArchiveFromUrl } from '../../services/dream/archive.js'
+import { exportDreamBackup, importDreamBackup } from '../../services/dream/backup.js'
 import { buildShareSession, fetchSharedChat, isDeepSeekShare } from '../../services/dream/share.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
@@ -451,7 +451,9 @@ const useHistoryImport = () => {
     setBusy(true)
     setStatus(null)
     try {
-      const count = await importHistory(file)
+      const count = file.name.endsWith('.dream')
+        ? await importDreamBackup(file)
+        : await importHistory(file)
       setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
     } catch {
       setStatus({ key: 'historyImportFailed', error: true })
@@ -495,7 +497,7 @@ const ImportHistory = ({
           <input
             ref={inputRef}
             type="file"
-            accept=".zip,application/zip,application/x-zip-compressed"
+            accept=".dream,.zip,application/zip,application/x-zip-compressed,application/json"
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0]
@@ -663,7 +665,7 @@ const ShareImportCell = ({ disabled }: { disabled: boolean }) => {
   )
 }
 
-/** 将全部会话及图片导出为 ZIP 文件并下载 */
+/** 将全部会话加密导出为 Dream 自有 .dream 文件。 */
 const ExportHistory = ({ disabled }: { disabled: boolean }) => {
   const t = useTranslate()
   const empty = useChatStore((state) => state.sessions.length === 0)
@@ -674,7 +676,7 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
     setBusy(true)
     setStatus(null)
     try {
-      const { name, blob } = await exportHistory()
+      const { name, blob } = await exportDreamBackup()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url

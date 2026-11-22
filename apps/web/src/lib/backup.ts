@@ -48,7 +48,8 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
 export async function createBackup(): Promise<Blob> {
   if (!hasSessionKey()) throw new Error("请先登录并解锁聊天记录，再导出备份。");
   const backup = await collectBackup();
-  const compressed = await gzip(new TextEncoder().encode(JSON.stringify(backup)));
+  const canCompress = typeof CompressionStream !== "undefined";
+  const compressed = canCompress ? await gzip(new TextEncoder().encode(JSON.stringify(backup))) : new TextEncoder().encode(JSON.stringify(backup));
   const encrypted = await encryptBytes(compressed);
   const envelope: DreamExportEnvelope = {
     format: "dream-export",
@@ -56,7 +57,7 @@ export async function createBackup(): Promise<Blob> {
     exportedAt: backup.exportedAt,
     encrypted: true,
     algorithm: "AES-GCM",
-    compression: "gzip",
+    ...(canCompress ? { compression: "gzip" as const } : {}),
     iv: encrypted.iv,
     data: encrypted.data,
   };
