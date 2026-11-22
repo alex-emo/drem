@@ -21,6 +21,9 @@ import {
   logoutUser,
   isAdminUsername,
   registerUser,
+  adminResetPassword,
+  adminRevokeSessions,
+  adminSetUserDisabled,
   requireAdmin,
   requireUser,
 } from "./auth.js";
@@ -46,6 +49,7 @@ import {
   recordUsage,
   type TokenUsage,
 } from "./usage.js";
+import { listLogs, pushLog } from "./logs.js";
 
 type AppEnv = { Variables: { requestId: string; requestUser?: string } };
 
@@ -65,6 +69,22 @@ app.use("/api/*", async (c, next) => {
   c.header("x-request-id", requestId);
   c.header("x-api-version", API_VERSION);
   await next();
+});
+
+app.use("/api/*", async (c, next) => {
+  const started = performance.now();
+  await next();
+  if (c.req.path === "/api/v1/health") return;
+  const status = c.res.status;
+  pushLog({
+    level: status >= 500 ? "error" : status >= 400 ? "warn" : "info",
+    requestId: c.get("requestId") ?? "",
+    method: c.req.method,
+    path: c.req.path,
+    status,
+    durationMs: Math.round(performance.now() - started),
+    username: c.get("requestUser"),
+  });
 });
 
 app.use(
@@ -260,6 +280,49 @@ app.get("/api/v1/me", (c) => {
 app.get("/api/v1/admin/stats", (c) => {
   requireAdmin(c.req.header("authorization"));
   return c.json(getAdminStats(isAdminUsername));
+});
+
+app.get("/api/v1/admin/logs", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const limit = Number(c.req.query("limit") ?? "200");
+  return c.json(
+    listLogs({
+      level: c.req.query("level"),
+      search: c.req.query("search"),
+      sort: (c.req.query("sort") ?? "time") as "time" | "status" | "duration" | "path",
+      order: c.req.query("order") === "asc" ? "asc" : "desc",
+      limit: Number.isFinite(limit) ? limit : 200,
+    }),
+  );
+});
+
+app.patch("/api/v1/admin/users/:id", async (c) => {
+  const admin = requireAdmin(c.req.header("authorization"));
+  const id = c.req.param("id");
+  const body = (await readJsonBody(c)) as { disabled?: unknown };
+  if (typeof body.disabled !== "boolean") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "disabled 必须是布尔值");
+  }
+  if (body.disabled && id === admin.id) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "不能禁用当前登录的管理员账号");
+  }
+  return c.json(adminSetUserDisabled(id, body.disabled));
+});
+
+app.post("/api/v1/admin/users/:id/password", async (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const body = (await readJsonBody(c)) as { password?: unknown };
+  if (typeof body.password !== "string") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "password 必须是字符串");
+  }
+  adminResetPassword(c.req.param("id"), body.password);
+  return c.json({ ok: true });
+});
+
+app.post("/api/v1/admin/users/:id/revoke", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  adminRevokeSessions(c.req.param("id"));
+  return c.json({ ok: true });
 });
 
 app.get("/api/v1/import/share", async (c) => {
@@ -507,6 +570,16 @@ app.onError((err, c) => {
     if (err.status >= 500 || err.code === "CONTENT_FILTERED") {
       console.warn(`[dream-server] ${requestId} ${err.status} ${err.code}: ${err.message}`);
     }
+    pushLog({
+      level: err.status >= 500 ? "error" : "warn",
+      requestId,
+      method,
+      path,
+      status: err.status,
+      durationMs: 0,
+      username: username ?? undefined,
+      message: `${err.code}: ${err.message}`,
+    });
     if (shouldRecordError(err.status, err.code)) {
       recordError({
         requestId,
@@ -524,6 +597,16 @@ app.onError((err, c) => {
   }
 
   console.error(`[dream-server] ${requestId}`, err);
+  pushLog({
+    level: "error",
+    requestId,
+    method,
+    path,
+    status: 500,
+    durationMs: 0,
+    username: username ?? undefined,
+    message: err instanceof Error ? err.message : String(err),
+  });
   recordError({
     requestId,
     method,

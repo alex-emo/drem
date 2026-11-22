@@ -38,6 +38,13 @@ export interface UserRow {
   display_name: string | null;
   password_hash: string;
   created_at: string;
+  disabled?: number;
+}
+
+// 兼容旧库：增加禁用标记。
+const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+if (!userColumns.some((column) => column.name === "disabled")) {
+  db.exec("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");
 }
 
 export interface SessionRow {

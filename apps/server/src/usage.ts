@@ -134,8 +134,11 @@ interface TotalsRow {
 interface UserStatRow {
   id: string;
   username: string;
+  display_name: string | null;
+  disabled: number;
   created_at: string;
   last_seen_at: string | null;
+  sessions: number;
   requests: number;
   prompt_tokens: number;
   completion_tokens: number;
@@ -189,9 +192,12 @@ export interface AdminStats {
   users: Array<{
     id: string;
     username: string;
+    displayName: string | null;
+    disabled: boolean;
     createdAt: string;
     lastSeenAt: string | null;
     isAdmin: boolean;
+    sessions: number;
     requests: number;
     promptTokens: number;
     completionTokens: number;
@@ -264,8 +270,9 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
   const users = (
     db
       .prepare(
-        `SELECT u.id, u.username, u.created_at,
+        `SELECT u.id, u.username, u.display_name, u.disabled, u.created_at,
                 (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
+                (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS sessions,
                 COUNT(e.id) AS requests,
                 COALESCE(SUM(e.prompt_tokens), 0) AS prompt_tokens,
                 COALESCE(SUM(e.completion_tokens), 0) AS completion_tokens,
@@ -281,9 +288,12 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
   ).map((row) => ({
     id: row.id,
     username: row.username,
+    displayName: row.display_name,
+    disabled: Boolean(row.disabled),
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
     isAdmin: isAdmin(row.username),
+    sessions: row.sessions,
     requests: row.requests,
     promptTokens: row.prompt_tokens,
     completionTokens: row.completion_tokens,

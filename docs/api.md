@@ -405,6 +405,31 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 内容拦截：主供应商返回内容安全错误时写入 `moderation_events`（每个调用阶段一条，当前仅 `primary`，不记录聊天正文）；用户表的 `moderationCount` 按 `request_id` 去重，表示触发轮次。`error_events` 记录 `status >= 500`、`RATE_LIMITED` 与所有 `UPSTREAM_*` 错误（内容拒绝走 `moderation_events`，不算错误），并带上请求编号，方便按用户报障时间反查。后台入口为 `https://<域名>/admin`。
 
+## 8.1 管理员日志
+
+`GET /api/v1/admin/logs?limit=200&level=warn&search=chat&sort=time&order=desc`（管理员）
+
+返回最近最多 1000 条内存日志（重启后清空）：
+
+```json
+{
+  "total": 12,
+  "items": [
+    {"id": 12, "time": "...", "level": "warn", "requestId": "req_...", "method": "POST", "path": "/api/v1/chat", "status": 502, "durationMs": 1003, "username": "Alex", "message": "UPSTREAM_ERROR: ..."}
+  ]
+}
+```
+
+## 8.2 用户管理（管理员）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `PATCH` | `/api/v1/admin/users/:id` | `{"disabled":true}` 禁用（同时清理会话）或启用 |
+| `POST` | `/api/v1/admin/users/:id/password` | `{"password":"..."}` 重置密码并清理会话 |
+| `POST` | `/api/v1/admin/users/:id/revoke` | 撤销该用户全部登录会话 |
+
+禁用用户后登录返回 403 `ACCOUNT_DISABLED`，已登录会话也会失效。
+
 ## 9. 规划中的端点（M1）
 
 | 方法 | 路径 | 说明 |
@@ -423,6 +448,7 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 | 2026-11-19 | v1.4 | 长对话自动分段摘要（>1000 条或 >300 万字符）；新增 `POST /api/v1/context/warm`；health 增加 context 阈值 |
 | 2026-11-19 | v1.5 | 新增管理员看板 `GET /api/v1/admin/stats`（按用户/Key 统计 Token）；`DREAM_ADMIN_USERS` 控制权限 |
 | 2026-11-19 | v1.6 | 内容拦截与错误事件落库（`moderation_events` / `error_events`），后台展示用户拦截次数、拦截记录与最近错误；错误响应附带 `requestId` 与可读错误码 |
+| 2026-11-22 | v1.7 | 后台 2.0：子页面布局、`GET /api/v1/admin/logs`、用户禁用/重置密码/撤销会话；stats 用户增加 `disabled`、`sessions` |
 
 ## 认证（v0.3）
 

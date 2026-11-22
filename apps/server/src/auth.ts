@@ -125,6 +125,9 @@ export function loginUser(input: unknown): AuthResult {
   if (!row || !verifyPassword(password, row.password_hash)) {
     throw new ApiError(401, "INVALID_CREDENTIALS", "用户名或密码不正确");
   }
+  if (row.disabled) {
+    throw new ApiError(403, "ACCOUNT_DISABLED", "账号已被管理员禁用");
+  }
 
   return { token: createSession(row.id, deviceId), user: toPublic(row) };
 }
@@ -153,6 +156,9 @@ export function requireUser(authorization: string | undefined): {
   if (!row) {
     throw new ApiError(401, "UNAUTHORIZED", "登录已失效，请重新登录");
   }
+  if (row.disabled) {
+    throw new ApiError(403, "ACCOUNT_DISABLED", "账号已被管理员禁用");
+  }
 
   db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(
     new Date().toISOString(),
@@ -177,4 +183,27 @@ export function logoutUser(authorization: string | undefined): void {
   const token = header.slice(7).trim();
   if (!token) return;
   db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
+}
+
+
+export function adminSetUserDisabled(id: string, disabled: boolean): PublicUser {
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
+  if (!row) throw new ApiError(404, "NOT_FOUND", "用户不存在");
+  db.prepare("UPDATE users SET disabled = ? WHERE id = ?").run(disabled ? 1 : 0, id);
+  if (disabled) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  return toPublic({ ...row, disabled: disabled ? 1 : 0 });
+}
+
+export function adminResetPassword(id: string, password: string): void {
+  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
+    throw new ApiError(400, "INVALID_ARGUMENT", `密码长度需为 ${PASSWORD_MIN}–${PASSWORD_MAX} 位`);
+  }
+  const row = db.prepare("SELECT id FROM users WHERE id = ?").get(id) as { id: string } | undefined;
+  if (!row) throw new ApiError(404, "NOT_FOUND", "用户不存在");
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), id);
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+}
+
+export function adminRevokeSessions(id: string): void {
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
 }
