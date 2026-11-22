@@ -22,6 +22,14 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
         <h1 className="header-title">{activeTitle}</h1>
       </header>
 
+      {chat.storageError ? (
+        <div className="banner danger">
+          {chat.storageError}
+          <button type="button" className="btn ghost small" onClick={() => window.location.reload()}>
+            刷新重试
+          </button>
+        </div>
+      ) : null}
       {health.kind === "error" ? (
         <div className="banner">
           无法连接本地服务端，请确认已运行 <code>pnpm dev:server</code>。

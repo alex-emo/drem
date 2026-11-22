@@ -78,15 +78,23 @@ function authHeaders(): Record<string, string> {
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      ...authHeaders(),
-      ...(init.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 15_000);
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      signal: init.signal ?? controller.signal,
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        ...authHeaders(),
+        ...(init.headers ?? {}),
+      },
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as ErrorBody | null;

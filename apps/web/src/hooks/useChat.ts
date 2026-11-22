@@ -67,6 +67,7 @@ export function useChat() {
   const [allMessages, setAllMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const activeRef = useRef<string | null>(null);
@@ -160,7 +161,11 @@ export function useChat() {
       if (saved && items.some((item) => item.id === saved)) {
         await loadConversation(saved);
       }
-    })().catch(() => undefined);
+    })().catch((error: unknown) => {
+      if (!alive) return;
+      console.error("读取本地聊天记录失败", error);
+      setStorageError("无法读取本地聊天记录。请确认浏览器允许本站使用存储（非无痕模式），刷新后重试。");
+    });
     return () => {
       alive = false;
       abortRef.current?.abort();
@@ -394,8 +399,9 @@ export function useChat() {
             rootMessageId: rootRef.current,
             updatedAt: Date.now(),
           });
-        } catch {
-          // 本地存储失败不影响界面展示
+        } catch (error) {
+          console.error("写入本地聊天记录失败", error);
+          setStorageError("本地存储写入失败，可能是空间不足或无痕模式，聊天记录可能无法保留。");
         }
       };
 
@@ -699,6 +705,7 @@ export function useChat() {
     versions,
     streaming,
     thinking,
+    storageError,
     setThinking,
     sendMessage,
     editMessage,

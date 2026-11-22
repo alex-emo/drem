@@ -4,8 +4,8 @@ import LoginScreen from "./components/LoginScreen";
 import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
-import { fetchMe, logoutAccount } from "./lib/api";
-import { clearSession, getToken } from "./lib/auth";
+import { ChatApiError, fetchMe, logoutAccount } from "./lib/api";
+import { clearSession, getStoredUser, getToken } from "./lib/auth";
 import type { AuthUser, HealthInfo, HealthState, Theme } from "./lib/types";
 
 type AuthState =
@@ -14,9 +14,12 @@ type AuthState =
   | { kind: "authed"; user: AuthUser };
 
 export default function App() {
-  const [auth, setAuth] = useState<AuthState>(() =>
-    getToken() ? { kind: "checking" } : { kind: "anon" },
-  );
+  const [auth, setAuth] = useState<AuthState>(() => {
+    if (!getToken()) return { kind: "anon" };
+    // 有本地用户时先进入聊天界面，避免弱网刷新时一直停在“检查登录状态”。
+    const cached = getStoredUser();
+    return cached ? { kind: "authed", user: cached } : { kind: "checking" };
+  });
 
   useEffect(() => {
     if (!getToken()) return;
@@ -25,13 +28,23 @@ export default function App() {
       .then((user) => {
         if (alive) setAuth({ kind: "authed", user });
       })
-      .catch(() => {
-        clearSession();
-        if (alive) setAuth({ kind: "anon" });
+      .catch((error: unknown) => {
+        if (!alive) return;
+        // 只有 401 才代表凭证失效；网络超时保留本地登录态，避免刷新黑屏。
+        if (error instanceof ChatApiError && error.status === 401) {
+          clearSession();
+          setAuth({ kind: "anon" });
+        } else if (!getStoredUser()) {
+          setAuth({ kind: "anon" });
+        }
       });
     return () => {
       alive = false;
     };
+  }, []);
+
+  useEffect(() => {
+    void navigator.storage?.persist?.().catch(() => undefined);
   }, []);
 
   useEffect(() => {
