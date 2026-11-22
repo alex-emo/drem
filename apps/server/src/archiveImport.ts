@@ -223,6 +223,7 @@ export async function streamArchiveImport({ url, skipIds, write }: ArchiveImport
     if (!response.ok) throw new ArchiveImportError(`下载导出文件失败：HTTP ${response.status}`, 502);
     if (!response.url.startsWith("https://")) throw new ArchiveImportError("下载重定向到了非 https 地址。", 502);
     const length = Number(response.headers.get("content-length") ?? "0");
+    stats.bytes = length;
     if (length > MAX_ARCHIVE_BYTES) {
       throw new ArchiveImportError("导出文件超过 300MB 上限。", 413);
     }
