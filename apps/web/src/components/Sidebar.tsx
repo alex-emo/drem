@@ -1,3 +1,4 @@
+import { useDownloadUrl } from "../lib/download";
 import type { AuthUser, Conversation, Theme } from "../lib/types";
 import {
   DownloadIcon,
@@ -39,6 +40,7 @@ export default function Sidebar({
   onOpenSettings,
   onLogout,
 }: SidebarProps) {
+  const downloadUrl = useDownloadUrl();
   return (
     <aside className={`sidebar${open ? " open" : ""}`} aria-label="会话列表">
       <div className="sidebar-head">
@@ -114,7 +116,7 @@ export default function Sidebar({
         </div>
         <a
           className="download-app"
-          href="/download/dream-android.apk?v=1.4.0"
+          href={downloadUrl}
           download
           aria-label="下载 Android App"
         >

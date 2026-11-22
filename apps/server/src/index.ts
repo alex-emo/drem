@@ -240,7 +240,7 @@ app.get("/api/v1/version", (c) => {
   return c.json({
     version: config.appVersion,
     apkUrl: `${proto}://${host}/download/dream-android.apk?v=${config.appVersion}`,
-    notes: "聊天手感优化、分享链接导入、应用内更新提示。",
+    notes: "导出链接流式导入、回复重新生成、后台 2.0。",
     publishedAt: "2026-11-22",
   });
 });

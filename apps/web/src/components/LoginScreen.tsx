@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { loginAccount, registerAccount } from "../lib/api";
 import { saveSession } from "../lib/auth";
+import { useDownloadUrl } from "../lib/download";
 import type { AuthUser } from "../lib/types";
 import { DownloadIcon } from "./Icons";
 
@@ -11,6 +12,7 @@ interface LoginScreenProps {
 type Mode = "login" | "register";
 
 export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
+  const downloadUrl = useDownloadUrl();
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -110,7 +112,7 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
 
         <a
           className="auth-download"
-          href="/download/dream-android.apk?v=1.4.0"
+          href={downloadUrl}
           download
           aria-label="下载 Android App（APK）"
         >

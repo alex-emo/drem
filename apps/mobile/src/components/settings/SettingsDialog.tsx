@@ -16,6 +16,7 @@ import {
   importHistory,
 } from '../../services/chat/backup.js'
 import { appendSession, useChatStore } from '../../services/chat/store.js'
+import { importArchiveFromUrl } from '../../services/dream/archive.js'
 import { buildShareSession, fetchSharedChat, isDeepSeekShare } from '../../services/dream/share.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
@@ -102,6 +103,7 @@ const SettingsContent = () => {
             <>
               <AccountSection />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
+              <ArchiveImportCell disabled={historyBusy} />
               <ShareImportCell disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
@@ -528,6 +530,72 @@ const AccountSection = () => {
       >
         退出登录
       </Button>
+    </div>
+  )
+}
+
+/** 粘贴 DeepSeek「导出所有历史对话」的华为云链接，服务端流式解压后逐会话写入。 */
+const ArchiveImportCell = ({ disabled }: { disabled: boolean }) => {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  const run = async () => {
+    const link = url.trim()
+    if (!link.includes('myhuaweicloud.com')) {
+      setFailed(true)
+      setMessage('请粘贴 DeepSeek App 生成的华为云导出链接')
+      return
+    }
+    setBusy(true)
+    setFailed(false)
+    setMessage('正在连接导出文件…')
+    try {
+      const skipIds = useChatStore.getState().sessions.map((session) => session.id)
+      const stats = await importArchiveFromUrl(link, skipIds, (progress) => {
+        setMessage(`已导入 ${progress.conversations} 个会话 / ${progress.messages} 条消息`)
+      })
+      setMessage(`已导入 ${stats.conversations} 个会话、${stats.messages} 条消息，跳过 ${stats.attachments} 个附件`)
+      setUrl('')
+      window.setTimeout(closeSettings, 1200)
+    } catch (error) {
+      setFailed(true)
+      setMessage(error instanceof Error ? error.message : '导入失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className={styles.cell}>
+      <div style={{ minWidth: 0 }}>
+        <div className={styles.label}>从导出链接导入</div>
+        <div className={clsx(styles.description, failed && styles.error)}>
+          {message ?? '粘贴 DeepSeek「导出所有历史对话」生成的链接（华为云 OBS），支持几百 MB。'}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          value={url}
+          disabled={disabled || busy}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://...myhuaweicloud.com/...zip"
+          style={{
+            width: 220,
+            minWidth: 0,
+            padding: '8px 10px',
+            borderRadius: 10,
+            border: '1px solid var(--ds-color-border, #e5e7eb)',
+            background: 'transparent',
+            color: 'inherit',
+            fontSize: 13,
+          }}
+        />
+        <Button variant="outlined" size="m" disabled={disabled || busy} onClick={() => void run()}>
+          {busy ? '导入中…' : '导入'}
+        </Button>
+      </div>
     </div>
   )
 }
