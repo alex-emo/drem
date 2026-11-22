@@ -32,6 +32,7 @@ interface AdminStats {
     username: string;
     displayName: string | null;
     disabled: boolean;
+    verified: boolean;
     createdAt: string;
     lastSeenAt: string | null;
     isAdmin: boolean;
@@ -420,12 +421,13 @@ export default function AdminPage() {
   const exportUsers = () =>
     downloadCsv(
       "dream-users.csv",
-      ["用户", "显示名称", "角色", "状态", "会话", "记忆", "注册时间", "最近使用", "请求", "输入", "输出", "总tokens", "拦截"],
+      ["用户", "显示名称", "角色", "状态", "验证", "会话", "记忆", "注册时间", "最近使用", "请求", "输入", "输出", "总tokens", "拦截"],
       users.map((user) => [
         user.username,
         user.displayName ?? "",
         user.isAdmin ? "管理员" : "用户",
         user.disabled ? "已禁用" : "正常",
+        user.verified ? "已验证" : "未验证",
         user.sessions,
         formatBytes(user.memoryBytes),
         formatTime(user.createdAt),
@@ -482,6 +484,7 @@ export default function AdminPage() {
                   <th><SortButton label="用户" column="username" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th>角色</th>
                   <th>状态</th>
+                  <th>验证</th>
                   <th className="num"><SortButton label="会话" column="sessions" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th className="num"><SortButton label="记忆" column="memory" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th><SortButton label="注册时间" column="created" sort={sort} direction={direction} onSort={onSort} /></th>
@@ -503,6 +506,7 @@ export default function AdminPage() {
                     </td>
                     <td>{user.isAdmin ? <span className="admin-tag">管理员</span> : "用户"}</td>
                     <td>{user.disabled ? <span className="admin-tag bad">已禁用</span> : <span className="admin-tag ok">正常</span>}</td>
+                    <td>{user.verified ? <span className="admin-tag ok">已验证</span> : <span className="admin-tag bad">未验证</span>}</td>
                     <td className="num">{user.sessions}</td>
                     <td className="num">{formatBytes(user.memoryBytes)}</td>
                     <td>{formatTime(user.createdAt)}</td>
@@ -512,6 +516,14 @@ export default function AdminPage() {
                     <td className="num">{user.moderationCount ? <span className="admin-tag bad">{user.moderationCount}</span> : 0}</td>
                     <td>
                       <div className="admin-row-actions">
+                        <button
+                          type="button"
+                          className="admin-btn tiny"
+                          disabled={busy !== null}
+                          onClick={() => void act(`/api/v1/admin/users/${user.id}`, "PATCH", { verified: !user.verified }, user.verified ? `已取消 ${user.username} 的验证` : `已验证 ${user.username}`)}
+                        >
+                          {user.verified ? "取消验证" : "标记验证"}
+                        </button>
                         <button
                           type="button"
                           className="admin-btn tiny"

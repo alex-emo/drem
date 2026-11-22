@@ -447,7 +447,7 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `PATCH` | `/api/v1/admin/users/:id` | `{"disabled":true}` 禁用（同时清理会话）或启用 |
+| `PATCH` | `/api/v1/admin/users/:id` | `{"disabled":true}` 禁用（同时清理会话）或启用；`{"verified":false}` 仅修改隐藏的验证标记（默认全部用户已验证，用户端不可见） |
 | `POST` | `/api/v1/admin/users/:id/password` | `{"password":"..."}` 重置密码并清理会话 |
 | `POST` | `/api/v1/admin/users/:id/revoke` | 撤销该用户全部登录会话 |
 

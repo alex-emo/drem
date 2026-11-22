@@ -24,6 +24,7 @@ import {
   adminResetPassword,
   adminRevokeSessions,
   adminSetUserDisabled,
+  adminSetUserVerified,
   requireAdmin,
   requireUser,
   getBackupKey,
@@ -335,14 +336,18 @@ app.get("/api/v1/admin/logs", (c) => {
 app.patch("/api/v1/admin/users/:id", async (c) => {
   const admin = requireAdmin(c.req.header("authorization"));
   const id = c.req.param("id");
-  const body = (await readJsonBody(c)) as { disabled?: unknown };
-  if (typeof body.disabled !== "boolean") {
-    throw new ApiError(400, "INVALID_ARGUMENT", "disabled 必须是布尔值");
+  const body = (await readJsonBody(c)) as { disabled?: unknown; verified?: unknown };
+  if (typeof body.disabled !== "boolean" && typeof body.verified !== "boolean") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "disabled 或 verified 必须是布尔值");
   }
-  if (body.disabled && id === admin.id) {
+  if (body.disabled === true && id === admin.id) {
     throw new ApiError(400, "INVALID_ARGUMENT", "不能禁用当前登录的管理员账号");
   }
-  return c.json(adminSetUserDisabled(id, body.disabled));
+  const result =
+    typeof body.disabled === "boolean"
+      ? adminSetUserDisabled(id, body.disabled)
+      : adminSetUserVerified(id, body.verified as boolean);
+  return c.json(result);
 });
 
 app.post("/api/v1/admin/users/:id/password", async (c) => {

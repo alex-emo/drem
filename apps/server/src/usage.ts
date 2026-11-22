@@ -136,6 +136,7 @@ interface UserStatRow {
   username: string;
   display_name: string | null;
   disabled: number;
+  verified: number;
   created_at: string;
   last_seen_at: string | null;
   sessions: number;
@@ -195,6 +196,7 @@ export interface AdminStats {
     username: string;
     displayName: string | null;
     disabled: boolean;
+    verified: boolean;
     createdAt: string;
     lastSeenAt: string | null;
     isAdmin: boolean;
@@ -272,7 +274,7 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
   const users = (
     db
       .prepare(
-        `SELECT u.id, u.username, u.display_name, u.disabled, u.created_at,
+        `SELECT u.id, u.username, u.display_name, u.disabled, u.verified, u.created_at,
                 (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
                 (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS sessions,
                 COUNT(e.id) AS requests,
@@ -293,6 +295,7 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
     username: row.username,
     displayName: row.display_name,
     disabled: Boolean(row.disabled),
+    verified: Boolean(row.verified),
     createdAt: row.created_at,
     lastSeenAt: row.last_seen_at,
     isAdmin: isAdmin(row.username),

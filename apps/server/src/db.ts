@@ -39,6 +39,7 @@ export interface UserRow {
   password_hash: string;
   created_at: string;
   disabled?: number;
+  verified?: number;
   backup_key?: string | null;
   backup_key_legacy?: string | null;
 }
@@ -47,6 +48,9 @@ export interface UserRow {
 const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
 if (!userColumns.some((column) => column.name === "disabled")) {
   db.exec("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");
+}
+if (!userColumns.some((column) => column.name === "verified")) {
+  db.exec("ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 1");
 }
 if (!userColumns.some((column) => column.name === "backup_key")) {
   db.exec("ALTER TABLE users ADD COLUMN backup_key TEXT");

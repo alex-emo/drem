@@ -195,6 +195,13 @@ export function adminSetUserDisabled(id: string, disabled: boolean): PublicUser 
   return toPublic({ ...row, disabled: disabled ? 1 : 0 });
 }
 
+export function adminSetUserVerified(id: string, verified: boolean): PublicUser {
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
+  if (!row) throw new ApiError(404, "NOT_FOUND", "用户不存在");
+  db.prepare("UPDATE users SET verified = ? WHERE id = ?").run(verified ? 1 : 0, id);
+  return toPublic({ ...row, verified: verified ? 1 : 0 });
+}
+
 export function adminResetPassword(id: string, password: string): void {
   if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
     throw new ApiError(400, "INVALID_ARGUMENT", `密码长度需为 ${PASSWORD_MIN}–${PASSWORD_MAX} 位`);
