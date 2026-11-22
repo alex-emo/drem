@@ -30,7 +30,6 @@ import {
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
-import { APP_VERSION } from '../../services/dream/update.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
@@ -99,21 +98,6 @@ const SettingsContent = () => {
               <LocaleSetting />
               <TtsVoiceSetting />
               <LocationSetting />
-              <SettingCell
-                label={t('settingsVersion')}
-                description={APP_VERSION}
-                status={null}
-                action={
-                  <Button
-                    variant="outlined"
-                    size="m"
-                    className={styles.cellButton}
-                    onClick={() => window.dispatchEvent(new Event('dream:check-update'))}
-                  >
-                    {t('checkUpdate')}
-                  </Button>
-                }
-              />
             </>
           ) : (
             <>

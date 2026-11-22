@@ -85,8 +85,6 @@ export const zh = {
   backupInvalidBranches: '文件中的消息分支已损坏，无法导入',
   backupInvalidFiles: '文件中的附件数据已损坏，无法导入',
   settingsLocalePreference: '语言',
-  settingsVersion: '版本',
-  checkUpdate: '检查更新',
   settingsTtsVoice: '朗读音色',
   settingsTtsVoiceStella: '海星（女声）',
   settingsTtsVoiceTide: '暗潮（男声）',

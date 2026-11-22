@@ -90,8 +90,6 @@ export const en = {
   backupInvalidBranches: 'The message branches in this file are corrupted and cannot be imported.',
   backupInvalidFiles: 'The attachment data in this file is corrupted and cannot be imported.',
   settingsLocalePreference: 'Language',
-  settingsVersion: 'Version',
-  checkUpdate: 'Check for updates',
   settingsTtsVoice: 'Read-aloud voice',
   settingsTtsVoiceStella: 'Stella (female)',
   settingsTtsVoiceTide: 'Tide (male)',
