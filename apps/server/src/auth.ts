@@ -218,8 +218,14 @@ export function adminRevokeSessions(id: string): void {
 
 export function getBackupKey(userId: string): { key: string; legacyKey?: string } {
   const row = db
-    .prepare("SELECT backup_key, backup_key_legacy FROM users WHERE id = ?")
-    .get(userId) as { backup_key?: string | null; backup_key_legacy?: string | null } | undefined;
+    .prepare("SELECT verified, backup_key, backup_key_legacy FROM users WHERE id = ?")
+    .get(userId) as
+    | { verified?: number; backup_key?: string | null; backup_key_legacy?: string | null }
+    | undefined;
+  if (row && row.verified === 0) {
+    // 对外不暴露“验证”概念，只提示账号暂不可用；后台可见 ACCOUNT_UNVERIFIED。
+    throw new ApiError(403, "ACCOUNT_UNVERIFIED", "账号暂时不可用，请联系管理员。");
+  }
   const current = row?.backup_key ?? null;
   if (current && current.length >= 64) {
     return { key: current, ...(row?.backup_key_legacy ? { legacyKey: row.backup_key_legacy } : {}) };
