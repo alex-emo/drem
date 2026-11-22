@@ -238,7 +238,7 @@ app.get("/api/v1/version", (c) => {
   const host = c.req.header("host") ?? new URL(c.req.url).host;
   return c.json({
     version: config.appVersion,
-    apkUrl: `${proto}://${host}/download/dream-android.apk`,
+    apkUrl: `${proto}://${host}/download/dream-android.apk?v=${config.appVersion}`,
     notes: "聊天手感优化、分享链接导入、应用内更新提示。",
     publishedAt: "2026-11-22",
   });
@@ -501,7 +501,7 @@ app.get("/download/:file", (c) => {
   c.header("content-type", entry.type);
   c.header("content-length", String(stat.size));
   c.header("content-disposition", `attachment; filename="${entry.name}"`);
-  c.header("cache-control", "public, max-age=3600");
+  c.header("cache-control", "no-store");
   return c.body(Readable.toWeb(createReadStream(entry.file)) as unknown as ReadableStream);
 });
 

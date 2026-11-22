@@ -110,7 +110,7 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
 
         <a
           className="auth-download"
-          href="/download/dream-android.apk"
+          href="/download/dream-android.apk?v=1.4.0"
           download
           aria-label="下载 Android App（APK）"
         >

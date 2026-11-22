@@ -114,7 +114,7 @@ export default function Sidebar({
         </div>
         <a
           className="download-app"
-          href="/download/dream-android.apk"
+          href="/download/dream-android.apk?v=1.4.0"
           download
           aria-label="下载 Android App"
         >
