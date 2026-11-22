@@ -463,3 +463,47 @@
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
+.importCell {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.importCell .text {
+  min-width: 0;
+}
+
+.importActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.importInput {
+  width: 220px;
+  min-width: 0;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-color-border, #e5e7eb);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .importCell .text {
+    flex: 1 0 100%;
+    padding-right: 0;
+  }
+
+  .importActions {
+    width: 100%;
+  }
+
+  .importInput {
+    width: auto;
+    flex: 1 1 auto;
+  }
+}

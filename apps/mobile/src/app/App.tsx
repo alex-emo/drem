@@ -71,6 +71,12 @@ export const App = () => {
   }, [])
 
   // 只在“用户主动登录成功”时检查更新；冷启动不检查。
+  // 已登录状态下启动/回到前台（包括划掉后重开）也检查一次；登录页不检查。
+  useEffect(() => {
+    if (!authed) return
+    checkForUpdate()
+  }, [authed, checkForUpdate])
+
   useEffect(() => {
     const onManual = (event: Event) => {
       const detail = (event as CustomEvent).detail as ServerVersion | undefined
@@ -247,10 +253,7 @@ export const App = () => {
   if (!authed) {
     return (
       <LoginScreen
-        onSuccess={() => {
-          setAuthed(true)
-          checkForUpdate()
-        }}
+        onSuccess={() => setAuthed(true)}
       />
     )
   }

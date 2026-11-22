@@ -604,29 +604,20 @@ const ArchiveImportCell = ({ disabled }: { disabled: boolean }) => {
   }
 
   return (
-    <div className={styles.cell}>
-      <div style={{ minWidth: 0 }}>
+    <div className={clsx(styles.cell, styles.importCell)}>
+      <div className={styles.text}>
         <div className={styles.label}>从导出链接导入</div>
         <div className={clsx(styles.description, failed && styles.error)}>
           {message ?? '粘贴 DeepSeek「导出所有历史对话」生成的链接（华为云 OBS），支持几百 MB。'}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div className={styles.importActions}>
         <input
           value={url}
           disabled={disabled || busy}
           onChange={(event) => setUrl(event.target.value)}
           placeholder="https://...myhuaweicloud.com/...zip"
-          style={{
-            width: 220,
-            minWidth: 0,
-            padding: '8px 10px',
-            borderRadius: 10,
-            border: '1px solid var(--ds-color-border, #e5e7eb)',
-            background: 'transparent',
-            color: 'inherit',
-            fontSize: 13,
-          }}
+          className={styles.importInput}
         />
         <Button variant="outlined" size="m" disabled={disabled || busy} onClick={() => void run()}>
           {busy ? '导入中…' : '导入'}
@@ -667,29 +658,20 @@ const ShareImportCell = ({ disabled }: { disabled: boolean }) => {
   }
 
   return (
-    <div className={clsx(styles.cell, styles.row)}>
+    <div className={clsx(styles.cell, styles.row, styles.importCell)}>
       <div className={styles.text}>
         <div className={styles.label}>从分享链接导入</div>
         <div className={clsx(styles.description, failed && styles.error)}>
           {message ?? '粘贴 DeepSeek 分享链接，导入为一个新会话，不会覆盖现有聊天。'}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div className={styles.importActions}>
         <input
           value={url}
           disabled={disabled || busy}
           onChange={(event) => setUrl(event.target.value)}
           placeholder="https://chat.deepseek.com/share/..."
-          style={{
-            width: 220,
-            minWidth: 0,
-            padding: '8px 10px',
-            borderRadius: 10,
-            border: '1px solid var(--ds-color-border, #e5e7eb)',
-            background: 'transparent',
-            color: 'inherit',
-            fontSize: 13,
-          }}
+          className={styles.importInput}
         />
         <Button variant="outlined" size="m" disabled={disabled || busy} onClick={() => void run()}>
           {busy ? '导入中…' : '导入'}
