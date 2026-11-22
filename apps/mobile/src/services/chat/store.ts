@@ -542,6 +542,16 @@ const removeSessionData = async (id: string): Promise<boolean> => {
 
 export const stopReply = (sessionId: string) => getStreamController(sessionId)?.abort()
 
+/** 页面重载/断流后遗留的 pending·streaming 回复没有控制器，手动收尾为已停止。 */
+export const settleStaleReply = (sessionId: string): void => {
+  const cached = useChatStore.getState().sessionCache[sessionId]
+  if (!cached) return
+  const settled = settleInterrupted(cached)
+  if (settled === cached) return
+  set((state) => ({ sessionCache: { ...state.sessionCache, [sessionId]: settled } }))
+  void persist(sessionId)
+}
+
 /**
  * 提交指定会话的最新草稿；null 表示新建会话。
  * 同步接收成功才清空草稿，附件原件由会话接管；保存失败仍通过保存入口重试。

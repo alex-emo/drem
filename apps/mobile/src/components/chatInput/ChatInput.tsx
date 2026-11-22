@@ -9,7 +9,7 @@ import {
 } from '../base/icons.js'
 import { setSearch, setThinking, useSettings } from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
-import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
+import { sendMessage, settleStaleReply, stopReply, useChatStore } from '../../services/chat/store.js'
 import {
   addDraftFiles,
   EMPTY_DRAFT,
@@ -49,6 +49,16 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const streaming = useChatStore(
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
+  const stalled = useChatStore((state) => {
+    const session = sessionId ? state.sessionCache[sessionId] : undefined
+    return (
+      session?.messages.some(
+        (message) =>
+          message.role === 'assistant' &&
+          (message.status === 'pending' || message.status === 'streaming'),
+      ) ?? false
+    )
+  })
   const thinking = useSettings((state) => state.thinking)
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
@@ -130,7 +140,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const recording = voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
-  const canSend = !importingHistory && !streaming && voice.status === 'idle' && draftReady
+  const canSend = !importingHistory && !streaming && !stalled && voice.status === 'idle' && draftReady
 
   const send = () => {
     if (
@@ -260,7 +270,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               event.target.value = ''
             }}
           />
-          {streaming && sessionId ? (
+          {(streaming || stalled) && sessionId ? (
             <button
               type="button"
               className={styles.sendButton}
@@ -268,6 +278,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               onClick={() => {
                 stopReadAloud()
                 stopReply(sessionId)
+                if (!streaming) settleStaleReply(sessionId)
               }}
             >
               <IconStopFill16 />

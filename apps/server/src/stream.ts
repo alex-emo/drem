@@ -133,6 +133,8 @@ export function dreamChatStream(
   const queue: PendingEvent[] = [];
 
   const pendingChars = (): number => queue.reduce((sum, item) => sum + item.text.length, 0);
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let lastActivityAt = Date.now();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -160,6 +162,20 @@ export function dreamChatStream(
       };
 
       let pump: ReturnType<typeof setInterval> | null = null;
+      heartbeat = setInterval(() => {
+        if (closed || cancelled) return;
+        if (Date.now() - lastActivityAt > 120_000) {
+          finish("error", {
+            error: {
+              code: "STREAM_TIMEOUT",
+              message: "生成超时，请稍后重试。",
+              requestId: meta.requestId,
+            },
+          });
+          return;
+        }
+        safeEnqueue(new TextEncoder().encode(": ping\n\n"));
+      }, 15000);
 
       const stopPump = (): void => {
         if (pump) {
@@ -170,6 +186,8 @@ export function dreamChatStream(
 
       const finish = (event: "done" | "error", data: unknown): void => {
         stopPump();
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = null;
         emit(event, data);
         close();
         if (!finished) {
@@ -275,6 +293,7 @@ export function dreamChatStream(
           const { done, value } = await reader.read();
           if (cancelled) return;
           if (done) break;
+          lastActivityAt = Date.now();
 
           buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
           let boundary = buffer.indexOf("\n\n");
@@ -332,6 +351,8 @@ export function dreamChatStream(
           },
         });
       } finally {
+        if (heartbeat) clearInterval(heartbeat);
+        heartbeat = null;
         if (clientSignal) clientSignal.removeEventListener("abort", onAbort);
         try {
           reader.releaseLock();
@@ -342,6 +363,8 @@ export function dreamChatStream(
     },
     cancel() {
       cancelled = true;
+      if (heartbeat) clearInterval(heartbeat);
+      heartbeat = null;
       queue.length = 0;
       void reader.cancel().catch(() => undefined);
     },
