@@ -17,6 +17,11 @@ const TEXT_LIKE = new Set([
   "kt", "kts", "sh", "bash", "zsh", "sql", "toml", "ini", "conf", "tex", "srt",
 ]);
 
+/** 统一附件解析失败文案：文件无法解析（具体原因）。 */
+function unparsable(reason: string): ApiError {
+  return new ApiError(400, "INVALID_ARGUMENT", `文件无法解析（${reason}）`);
+}
+
 export function extensionOf(name: string): string {
   const index = name.lastIndexOf(".");
   return index >= 0 ? name.slice(index + 1).toLowerCase() : "";
@@ -43,10 +48,10 @@ export function decodeDocx(bytes: Uint8Array): string {
   try {
     archive = unzipSync(bytes);
   } catch {
-    throw new ApiError(400, "INVALID_ARGUMENT", "无法解析这个 Word 文档，请另存为 .docx 后重试");
+    throw unparsable("Word 文档损坏或不是有效的 .docx");
   }
   const document = archive["word/document.xml"];
-  if (!document) throw new ApiError(400, "INVALID_ARGUMENT", "这个文件里没有 Word 正文");
+  if (!document) throw unparsable("Word 文档缺少正文");
   const xml = new TextDecoder("utf-8").decode(document);
   const text = xml
     .replace(/<w:tab[^>]*\/>/g, "\t")
@@ -61,12 +66,18 @@ export function decodeDocx(bytes: Uint8Array): string {
 /** 尝试按 UTF-8、GBK、UTF-16LE 解码；二进制内容拒绝。 */
 export function decodeText(bytes: Uint8Array): string {
   if (bytes.some((byte) => byte === 0)) {
-    // UTF-16 文本会包含大量零字节，先尝试 UTF-16LE；失败则按二进制拒绝。
-    try {
-      return new TextDecoder("utf-16le", { fatal: true }).decode(bytes);
-    } catch {
-      throw new ApiError(400, "INVALID_ARGUMENT", "这个文件看起来不是纯文本");
+    // 只有带 BOM 的 UTF-16 才按文本处理；其余含零字节的内容按二进制拒绝，
+    // 否则任意二进制都可能被 UTF-16 解码成乱码。
+    const hasUtf16LeBom = bytes[0] === 0xff && bytes[1] === 0xfe;
+    const hasUtf16BeBom = bytes[0] === 0xfe && bytes[1] === 0xff;
+    if (hasUtf16LeBom || hasUtf16BeBom) {
+      try {
+        return new TextDecoder(hasUtf16LeBom ? "utf-16le" : "utf-16be", { fatal: true }).decode(bytes);
+      } catch {
+        throw unparsable("UTF-16 文本编码损坏");
+      }
     }
+    throw unparsable("不是纯文本或包含二进制内容");
   }
   for (const encoding of ["utf-8", "gbk"] as const) {
     try {
@@ -79,7 +90,7 @@ export function decodeText(bytes: Uint8Array): string {
       // try next encoding
     }
   }
-  throw new ApiError(400, "INVALID_ARGUMENT", "无法识别文件编码，请转成 UTF-8 后重试");
+  throw unparsable("无法识别文件编码，请转为 UTF-8 后重试");
 }
 
 export interface PublicFile {
@@ -103,28 +114,24 @@ function toPublic(row: FileRow): PublicFile {
 }
 
 export function createTextFile(userId: string, name: string, bytes: Uint8Array): PublicFile {
-  if (bytes.byteLength === 0) throw new ApiError(400, "INVALID_ARGUMENT", "文件是空的");
+  if (bytes.byteLength === 0) throw unparsable("文件是空的");
   if (bytes.byteLength > MAX_FILE_BYTES) {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
   }
   const extension = extensionOf(name);
   if (extension === "docx") {
     const content = decodeDocx(bytes);
-    if (!content.trim()) throw new ApiError(400, "INVALID_ARGUMENT", "Word 文档没有可读取的文本");
+    if (!content.trim()) throw unparsable("Word 文档中没有可读取的文字");
     if (content.length > MAX_FILE_CHARS) {
       throw new ApiError(413, "PAYLOAD_TOO_LARGE", `文件文本超过 ${MAX_FILE_CHARS} 字符上限`);
     }
     return saveTextFile(userId, name, bytes, content);
   }
   if (extension === "doc" || extension === "pdf" || extension === "ppt" || extension === "pptx" || extension === "xlsx") {
-    throw new ApiError(
-      400,
-      "INVALID_ARGUMENT",
-      `暂不支持 .${extension}，请转为 .docx 或纯文本后上传`,
-    );
+    throw unparsable(`暂不支持 .${extension} 格式，请转为 .docx 或纯文本后上传`);
   }
   const content = decodeText(bytes);
-  if (!content.trim()) throw new ApiError(400, "INVALID_ARGUMENT", "文件没有可读取的文本");
+  if (!content.trim()) throw unparsable("没有可读取的文字");
   if (content.length > MAX_FILE_CHARS) {
     throw new ApiError(413, "PAYLOAD_TOO_LARGE", `文件文本超过 ${MAX_FILE_CHARS} 字符上限`);
   }

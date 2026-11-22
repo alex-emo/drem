@@ -91,6 +91,10 @@ const PARSE_FAILED_PATTERNS = [
   /The image is too large to process/i,
   /password-protected/i,
   /Failed to recognize the file/i,
+  /^文件无法解析/,
+  /不是纯文本/,
+  /无法识别文件编码/,
+  /暂不支持 \.[a-z0-9]+ 格式/,
 ]
 
 /**

@@ -66,6 +66,9 @@ export const describeUploadError = (error: unknown): TranslationMessage => {
     return { key: 'uploadServerBusy' }
   }
   if (getUploadErrorInfo(error)?.code === 'parseFailed') {
+    const raw = error instanceof Error ? error.message : ''
+    const reason = /^文件无法解析（(.+)）$/.exec(raw)?.[1]
+    if (reason) return { key: 'uploadParseFailedReason', params: { reason } }
     return { key: 'uploadParseFailed' }
   }
   return { key: 'uploadFileStatusFailed' }
