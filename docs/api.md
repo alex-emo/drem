@@ -414,7 +414,7 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
     "lastRequestAt": "2026-11-19T07:50:06.229Z"
   },
   "totals": { "users": 8, "activeSessions": 9, "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072, "moderationEvents": 3, "moderationUsers": 2, "errorEvents": 1 },
-  "users": [{ "username": "Alex", "isAdmin": true, "requests": 4, "promptTokens": 900, "completionTokens": 320, "totalTokens": 1220, "lastSeenAt": "...", "moderationCount": 2, "lastModerationAt": "..." }],
+  "users": [{ "username": "Alex", "isAdmin": true, "requests": 4, "promptTokens": 900, "completionTokens": 320, "totalTokens": 1220, "lastSeenAt": "...", "moderationCount": 2, "lastModerationAt": "...", "memoryBytes": 10384 }],
   "keys": [{ "id": 1, "available": true, "requests": 5, "promptTokens": 3000, "completionTokens": 1200, "totalTokens": 4200, "lastUsedAt": "..." }],
   "days": [{ "day": "2026-11-19", "requests": 21, "promptTokens": 12030, "completionTokens": 8042, "totalTokens": 20072 }],
   "moderation": [{ "id": 1, "username": "Alex", "requestId": "req_...", "provider": "qwen", "model": "qwen3.7-flash", "stage": "primary", "messageCount": 85, "detail": "DataInspectionFailed: ...", "createdAt": "..." }],
@@ -423,6 +423,8 @@ curl -s -X POST http://127.0.0.1:8787/api/v1/chat \
 ```
 
 Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 `usage` 后写入 SQLite `usage_events`（按用户与 Key 归因）；没有 usage 的请求按 0 记录，仍计入请求数。
+
+用户的 `memoryBytes` 为该账号云端加密备份（记忆文件）的密文字节数，未上传为 0，后台「用户」列表可按此列排序。
 
 内容拦截：主供应商返回内容安全错误时写入 `moderation_events`（每个调用阶段一条，当前仅 `primary`，不记录聊天正文）；用户表的 `moderationCount` 按 `request_id` 去重，表示触发轮次。`error_events` 记录 `status >= 500`、`RATE_LIMITED` 与所有 `UPSTREAM_*` 错误（内容拒绝走 `moderation_events`，不算错误），并带上请求编号，方便按用户报障时间反查。后台入口为 `https://<域名>/admin`。
 

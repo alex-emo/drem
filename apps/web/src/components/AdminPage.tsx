@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getToken, clearSession } from "../lib/auth";
+import { formatBytes } from "../lib/storage";
 
 interface AdminStats {
   generatedAt: string;
@@ -41,6 +42,7 @@ interface AdminStats {
     totalTokens: number;
     moderationCount: number;
     lastModerationAt: string | null;
+    memoryBytes: number;
   }>;
   keys: Array<{
     id: number;
@@ -326,7 +328,9 @@ export default function AdminPage() {
                 ? user.requests
                 : sort === "sessions"
                   ? user.sessions
-                  : sort === "moderation"
+                  : sort === "memory"
+                    ? user.memoryBytes
+                    : sort === "moderation"
                   ? user.moderationCount
                   : user.totalTokens,
       direction,
@@ -416,13 +420,14 @@ export default function AdminPage() {
   const exportUsers = () =>
     downloadCsv(
       "dream-users.csv",
-      ["用户", "显示名称", "角色", "状态", "会话", "注册时间", "最近使用", "请求", "输入", "输出", "总tokens", "拦截"],
+      ["用户", "显示名称", "角色", "状态", "会话", "记忆", "注册时间", "最近使用", "请求", "输入", "输出", "总tokens", "拦截"],
       users.map((user) => [
         user.username,
         user.displayName ?? "",
         user.isAdmin ? "管理员" : "用户",
         user.disabled ? "已禁用" : "正常",
         user.sessions,
+        formatBytes(user.memoryBytes),
         formatTime(user.createdAt),
         formatTime(user.lastSeenAt),
         user.requests,
@@ -478,6 +483,7 @@ export default function AdminPage() {
                   <th>角色</th>
                   <th>状态</th>
                   <th className="num"><SortButton label="会话" column="sessions" sort={sort} direction={direction} onSort={onSort} /></th>
+                  <th className="num"><SortButton label="记忆" column="memory" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th><SortButton label="注册时间" column="created" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th><SortButton label="最近使用" column="lastSeen" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th className="num"><SortButton label="请求" column="requests" sort={sort} direction={direction} onSort={onSort} /></th>
@@ -498,6 +504,7 @@ export default function AdminPage() {
                     <td>{user.isAdmin ? <span className="admin-tag">管理员</span> : "用户"}</td>
                     <td>{user.disabled ? <span className="admin-tag bad">已禁用</span> : <span className="admin-tag ok">正常</span>}</td>
                     <td className="num">{user.sessions}</td>
+                    <td className="num">{formatBytes(user.memoryBytes)}</td>
                     <td>{formatTime(user.createdAt)}</td>
                     <td>{formatTime(user.lastSeenAt)}</td>
                     <td className="num">{number(user.requests)}</td>

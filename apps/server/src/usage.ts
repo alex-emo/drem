@@ -145,6 +145,7 @@ interface UserStatRow {
   total_tokens: number;
   moderation_count: number;
   last_moderation_at: string | null;
+  backup_size: number;
 }
 
 interface KeyStatRow {
@@ -204,6 +205,7 @@ export interface AdminStats {
     totalTokens: number;
     moderationCount: number;
     lastModerationAt: string | null;
+    memoryBytes: number;
   }>;
   keys: Array<{
     id: number;
@@ -278,7 +280,8 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
                 COALESCE(SUM(e.completion_tokens), 0) AS completion_tokens,
                 COALESCE(SUM(e.total_tokens), 0) AS total_tokens,
                 (SELECT COUNT(DISTINCT request_id) FROM moderation_events m WHERE m.user_id = u.id) AS moderation_count,
-                (SELECT MAX(created_at) FROM moderation_events m WHERE m.user_id = u.id) AS last_moderation_at
+                (SELECT MAX(created_at) FROM moderation_events m WHERE m.user_id = u.id) AS last_moderation_at,
+                COALESCE((SELECT size FROM chat_backups b WHERE b.user_id = u.id), 0) AS backup_size
          FROM users u
          LEFT JOIN usage_events e ON e.user_id = u.id
          GROUP BY u.id
@@ -300,6 +303,7 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
     totalTokens: row.total_tokens,
     moderationCount: row.moderation_count,
     lastModerationAt: row.last_moderation_at,
+    memoryBytes: row.backup_size ?? 0,
   }));
 
   const keyRows = db
