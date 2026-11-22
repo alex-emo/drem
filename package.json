@@ -13,7 +13,8 @@
     "start": "npm run start --workspace @dream/server",
     "mobile:dev": "npm --workspace @dream/mobile run dev",
     "mobile:build": "npm --workspace @dream/mobile run build",
-    "mobile:sync": "npm --workspace @dream/mobile exec cap sync"
+    "mobile:sync": "npm --workspace @dream/mobile exec cap sync",
+    "version:check": "node scripts/check-versions.mjs"
   },
   "workspaces": [
     "apps/*"
