@@ -245,14 +245,9 @@ export function useChat() {
   const importShare = useCallback(
     async (url: string): Promise<ImportOutcome> => {
       const archive = await buildShareImport(url);
+      // 分享内容可能因 DeepSeek 删改历史而变长；重复导入时用最新快照替换旧版本。
       if (conversationsRef.current.some((item) => item.id === archive.conversation.id)) {
-        return {
-          added: 0,
-          skipped: 1,
-          messages: 0,
-          skippedMessages: archive.messages.length,
-          attachments: archive.attachments,
-        };
+        await deleteConversationData(archive.conversation.id);
       }
 
       await importConversationData([archive.conversation], archive.messages);
