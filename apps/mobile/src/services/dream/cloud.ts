@@ -1,0 +1,250 @@
+import { apiBase, getToken } from './auth.js'
+import { decryptBytes, encryptBytes, hasSessionKey, setSessionKey } from './crypto.js'
+import {
+  loadAllSessions,
+  loadSessionSummaries,
+  migrateAppEncryption,
+  saveSession,
+} from '../chat/db.js'
+import { getVisibleMessages } from '../chat/branches.js'
+import type { Message as AppMessage, Session } from '../chat/types.js'
+
+interface BackupPayload {
+  payload: string
+  updatedAt: string
+  size: number
+}
+
+interface CloudInfo {
+  key: string
+  legacyKey?: string
+  backup: BackupPayload | null
+}
+
+type WebMessage = {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant'
+  content: string
+  reasoning?: string
+  status: string
+  createdAt: number
+}
+
+type WebConversation = {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
+
+type BackupData = {
+  format: string
+  version: number
+  exportedAt?: string
+  conversations?: WebConversation[]
+  messages?: WebMessage[]
+  sessions?: Session[]
+}
+
+export interface AppCloudState {
+  key: string
+  backup: BackupPayload | null
+  merged: number
+  localSessions: number
+}
+
+async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const token = getToken()
+  const response = await fetch(`${apiBase()}${path}`, {
+    ...init,
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null
+    throw new Error(data?.error?.message ?? `云端同步失败（${response.status}）`)
+  }
+  return (await response.json()) as T
+}
+
+const gzip = async (text: string): Promise<Uint8Array> => {
+  if (typeof CompressionStream === 'undefined') return new TextEncoder().encode(text)
+  const blob = await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob()
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+const gunzip = async (bytes: Uint8Array): Promise<string> => {
+  if (typeof DecompressionStream === 'undefined') return new TextDecoder().decode(bytes)
+  return new Response(
+    new Blob([bytes as unknown as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')),
+  ).text()
+}
+
+const decodePayload = (payload: string): { iv: string; data: string } => {
+  const [tag, iv, data] = payload.split('.')
+  if (tag !== 'dream1' || !iv || !data) throw new Error('云端备份格式不正确。')
+  return { iv, data }
+}
+
+const assistantText = (message: Extract<AppMessage, { role: 'assistant' }>): string =>
+  message.blocks
+    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    .map((block) => block.text)
+    .join('')
+
+const assistantThinking = (message: Extract<AppMessage, { role: 'assistant' }>): string =>
+  message.blocks
+    .filter((block): block is Extract<typeof block, { type: 'thinking' }> => block.type === 'thinking')
+    .map((block) => block.thinking)
+    .join('')
+
+const toWeb = (sessions: Session[]): BackupData => {
+  const conversations: WebConversation[] = []
+  const messages: WebMessage[] = []
+  for (const session of sessions) {
+    conversations.push({
+      id: session.id,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    })
+    for (const message of getVisibleMessages(session)) {
+      const assistant = message.role === 'assistant' ? message : null
+      messages.push({
+        id: `${session.id}:${message.id}`,
+        conversationId: session.id,
+        role: message.role,
+        content: message.role === 'user' ? message.content : assistantText(message),
+        reasoning: assistant ? assistantThinking(assistant) : undefined,
+        status: assistant?.status ?? 'done',
+        createdAt: message.createdAt,
+      })
+    }
+  }
+  return { format: 'dream-backup', version: 1, exportedAt: new Date().toISOString(), conversations, messages, sessions }
+}
+
+const fromWeb = (data: BackupData): Session[] => {
+  if (data.sessions?.length) return data.sessions
+  const byConversation = new Map<string, WebMessage[]>()
+  for (const message of data.messages ?? []) {
+    const list = byConversation.get(message.conversationId) ?? []
+    list.push(message)
+    byConversation.set(message.conversationId, list)
+  }
+  return (data.conversations ?? []).map((conversation) => {
+    const messages: AppMessage[] = (byConversation.get(conversation.id) ?? [])
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((message) =>
+        message.role === 'user'
+          ? {
+              id: message.id,
+              role: 'user' as const,
+              content: message.content,
+              files: [],
+              createdAt: message.createdAt,
+            }
+          : {
+              id: message.id,
+              role: 'assistant' as const,
+              createdAt: message.createdAt,
+              model: null,
+              prefix: false,
+              status: 'done' as const,
+              blocks: [
+                { type: 'text' as const, text: message.content },
+                ...(message.reasoning ? [{ type: 'thinking' as const, thinking: message.reasoning }] : []),
+              ],
+            },
+      )
+    return {
+      id: conversation.id,
+      title: conversation.title,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      messages,
+    }
+  })
+}
+
+const mergeSessions = async (incoming: Session[]): Promise<number> => {
+  const local = new Map((await loadSessionSummaries()).map((session) => [session.id, session]))
+  let merged = 0
+  for (const session of incoming) {
+    const existing = local.get(session.id)
+    if (existing && existing.updatedAt >= session.updatedAt) continue
+    await saveSession(session)
+    merged += 1
+  }
+  return merged
+}
+
+export async function unlockAppCloud(): Promise<AppCloudState> {
+  const info = await api<CloudInfo>('/backup')
+  const localSessions = (await loadSessionSummaries()).length
+  let merged = 0
+  if (info.legacyKey) {
+    // 旧账号仍是 10 hex；先用旧密钥解开云端并迁移到 App，再切到 32 字节新密钥。
+    setSessionKey(info.legacyKey)
+    await migrateAppEncryption()
+    if (info.backup) {
+      try {
+        const { iv, data } = decodePayload(info.backup.payload)
+        const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+        merged = await mergeSessions(fromWeb(remote))
+      } catch {
+        // 旧备份损坏时放弃。
+      }
+    }
+    const oldSessions = await loadAllSessions()
+    setSessionKey(info.key)
+    for (const session of oldSessions) await saveSession(session)
+    try {
+      await pushAppCloud()
+    } catch {
+      // 网络差时下次再试。
+    }
+  } else {
+    setSessionKey(info.key)
+    await migrateAppEncryption()
+    if (info.backup) {
+      try {
+        const { iv, data } = decodePayload(info.backup.payload)
+        const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+        merged = await mergeSessions(fromWeb(remote))
+      } catch {
+        // 损坏或旧格式备份不阻断登录。
+      }
+    }
+  }
+  return { key: info.key, backup: info.backup, merged, localSessions }
+}
+
+export async function pushAppCloud(): Promise<void> {
+  if (!hasSessionKey()) return
+  const sessions = await loadAllSessions()
+  const payload = await gzip(JSON.stringify(toWeb(sessions)))
+  const { iv, data } = await encryptBytes(payload)
+  await api('/backup', {
+    method: 'PUT',
+    body: JSON.stringify({ payload: `dream1.${iv}.${data}` }),
+  })
+  localStorage.setItem('dream-app-last-push', String(Date.now()))
+}
+
+export async function maybePushAppCloud(): Promise<void> {
+  if (!hasSessionKey()) return
+  if (localStorage.getItem('dream-app-upload-declined') === '1') return
+  if (localStorage.getItem('dream-app-upload-pending') === '1') return
+  const last = Number(localStorage.getItem('dream-app-last-push')) || 0
+  if (Date.now() - last < 5 * 60 * 1000) return
+  try {
+    await pushAppCloud()
+  } catch {
+    // 网络差时下次再试。
+  }
+}

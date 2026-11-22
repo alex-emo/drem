@@ -40,6 +40,7 @@ export interface UserRow {
   created_at: string;
   disabled?: number;
   backup_key?: string | null;
+  backup_key_legacy?: string | null;
 }
 
 // 兼容旧库：增加禁用标记。
@@ -49,6 +50,9 @@ if (!userColumns.some((column) => column.name === "disabled")) {
 }
 if (!userColumns.some((column) => column.name === "backup_key")) {
   db.exec("ALTER TABLE users ADD COLUMN backup_key TEXT");
+}
+if (!userColumns.some((column) => column.name === "backup_key_legacy")) {
+  db.exec("ALTER TABLE users ADD COLUMN backup_key_legacy TEXT");
 }
 
 db.exec(`

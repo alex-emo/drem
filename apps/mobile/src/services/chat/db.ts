@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { decryptJson, decryptText, encryptJson, encryptText, hasSessionKey } from '../dream/crypto.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
@@ -75,14 +76,76 @@ const getDB = () =>
     throw error
   }))
 
-export const loadSessionSummaries = async (): Promise<SessionSummary[]> =>
-  (await (await getDB()).getAll('sessionSummaries')).map(toSessionSummary)
+const encryptSessionRecord = async (session: Session): Promise<Session> => {
+  if (!hasSessionKey()) return session
+  return { ...session, title: '', messages: [], enc: await encryptJson(session) }
+}
 
-export const loadSession = async (id: string): Promise<Session | undefined> =>
-  (await getDB()).get('sessions', id)
+const decryptSessionRecord = async (record: Session): Promise<Session> => {
+  if (!record.enc) return record
+  const session = await decryptJson<Session>(record.enc)
+  return { ...session, enc: undefined }
+}
+
+const encryptSummaryRecord = async (session: Session): Promise<StoredSessionSummary> => {
+  const summary = storedSummary(session)
+  if (!hasSessionKey()) return summary
+  return { ...summary, title: '', encTitle: await encryptText(session.title) }
+}
+
+export const migrateAppEncryption = async (): Promise<void> => {
+  if (!hasSessionKey()) return
+  const db = await getDB()
+  const sessions = await db.getAll('sessions')
+  const summaries = await db.getAll('sessionSummaries')
+  const needSessions = sessions.filter((session) => !session.enc)
+  const needSummaries = summaries.filter((summary) => !summary.encTitle)
+  if (!needSessions.length && !needSummaries.length) return
+  const encryptedSessions = await Promise.all(needSessions.map(encryptSessionRecord))
+  const encryptedSummaries = await Promise.all(
+    needSummaries.map(async (summary) => ({
+      ...summary,
+      encTitle: await encryptText(summary.title),
+      title: '',
+    })),
+  )
+  const tx = db.transaction(['sessions', 'sessionSummaries'], 'readwrite')
+  await Promise.all([
+    ...encryptedSessions.map((session) => tx.objectStore('sessions').put(session)),
+    ...encryptedSummaries.map((summary) => tx.objectStore('sessionSummaries').put(summary)),
+    tx.done,
+  ])
+}
+
+export const loadSessionSummaries = async (): Promise<SessionSummary[]> => {
+  const rows = await (await getDB()).getAll('sessionSummaries')
+  return Promise.all(
+    rows.map(async (row) => {
+      const summary = toSessionSummary(row)
+      if (!row.encTitle) return summary
+      return { ...summary, title: await decryptText(row.encTitle) }
+    }),
+  )
+}
+
+export const loadAllSessions = async (): Promise<Session[]> => {
+  const summaries = await loadSessionSummaries()
+  const sessions: Session[] = []
+  for (const summary of summaries) {
+    const session = await loadSession(summary.id)
+    if (session) sessions.push(session)
+  }
+  return sessions
+}
+
+export const loadSession = async (id: string): Promise<Session | undefined> => {
+  const record = await (await getDB()).get('sessions', id)
+  return record ? decryptSessionRecord(record) : undefined
+}
 
 export const saveSession = async (session: Session, files: StoredFile[] = []): Promise<void> => {
-  const summary = storedSummary(session)
+  const summary = await encryptSummaryRecord(session)
+  const stored = await encryptSessionRecord(session)
   const tx = (await getDB()).transaction(['sessions', 'sessionSummaries', 'files'], 'readwrite')
   await Promise.all([
     (async () => {
@@ -90,7 +153,7 @@ export const saveSession = async (session: Session, files: StoredFile[] = []): P
         for (const file of files) {
           await tx.objectStore('files').put(file)
         }
-        await tx.objectStore('sessions').put(session)
+        await tx.objectStore('sessions').put(stored)
         await tx.objectStore('sessionSummaries').put(summary)
       } catch (error) {
         abortTransaction(tx)
@@ -101,26 +164,11 @@ export const saveSession = async (session: Session, files: StoredFile[] = []): P
   ])
 }
 
-/** 未打开的会话也可重命名，只读取该会话，原子更新详情和列表。 */
+/** 未打开的会话也可重命名；读取→解密→改标题→重新加密写入。 */
 export const renameSession = async (id: string, title: string): Promise<void> => {
-  const tx = (await getDB()).transaction(['sessions', 'sessionSummaries'], 'readwrite')
-  await Promise.all([
-    (async () => {
-      try {
-        const sessions = tx.objectStore('sessions')
-        const session = await sessions.get(id)
-        if (session) {
-          session.title = title
-          await sessions.put(session)
-          await tx.objectStore('sessionSummaries').put(storedSummary(session))
-        }
-      } catch (error) {
-        abortTransaction(tx)
-        throw error
-      }
-    })(),
-    tx.done,
-  ])
+  const session = await loadSession(id)
+  if (!session) return
+  await saveSession({ ...session, title, updatedAt: Date.now() })
 }
 
 /** 删除会话，仅清理已无会话引用的本地原件；远端文件不删。 */
@@ -208,39 +256,38 @@ export const updateStagingFileTypes = async (types: ReadonlyMap<string, string>)
  * 逐条游标复制，同一时间只读取一条记录；事务失败时整体回滚，正式数据不变。
  */
 export const commitStaging = async (): Promise<SessionSummary[]> => {
-  const summaries: SessionSummary[] = []
-  const tx = (await getDB()).transaction(
+  const db = await getDB()
+  const stagingSessions = await db.getAll('sessionsStaging')
+  const encryptedSessions = await Promise.all(stagingSessions.map(encryptSessionRecord))
+  const encryptedSummaries = await Promise.all(stagingSessions.map(encryptSummaryRecord))
+  const summaries = stagingSessions.map(toSessionSummary)
+  const tx = db.transaction(
     ['sessions', 'sessionSummaries', 'files', 'sessionsStaging', 'filesStaging'],
     'readwrite'
   )
-  const move = async (from: 'sessionsStaging' | 'filesStaging', to: 'sessions' | 'files') => {
-    try {
-      const target = tx.objectStore(to)
-      await target.clear()
-      if (to === 'sessions') {
-        await tx.objectStore('sessionSummaries').clear()
-      }
-      for (
-        let cursor = await tx.objectStore(from).openCursor();
-        cursor;
-        cursor = await cursor.continue()
-      ) {
-        await target.put(cursor.value)
-        if (to === 'sessions') {
-          const summary = storedSummary(cursor.value as Session)
-          await tx.objectStore('sessionSummaries').put(summary)
-          summaries.push(toSessionSummary(summary))
+  await Promise.all([
+    (async () => {
+      try {
+        const sessions = tx.objectStore('sessions')
+        const summariesStore = tx.objectStore('sessionSummaries')
+        await sessions.clear()
+        await summariesStore.clear()
+        for (const session of encryptedSessions) await sessions.put(session)
+        for (const summary of encryptedSummaries) await summariesStore.put(summary)
+        const files = tx.objectStore('files')
+        await files.clear()
+        for (let cursor = await tx.objectStore('filesStaging').openCursor(); cursor; cursor = await cursor.continue()) {
+          await files.put(cursor.value)
         }
+        await tx.objectStore('sessionsStaging').clear()
+        await tx.objectStore('filesStaging').clear()
+      } catch (error) {
+        abortTransaction(tx)
+        throw error
       }
-      await tx.objectStore(from).clear()
-    } catch (error) {
-      // 同步抛出的错误不会让事务自动回滚，需显式中止，避免只提交清空和部分移入。
-      abortTransaction(tx)
-      throw error
-    }
-  }
-  await Promise.all([move('sessionsStaging', 'sessions'), move('filesStaging', 'files'), tx.done])
-  // 直接返回本次提交的列表，调用方无需在替换成功后再发起可能失败的读取。
+    })(),
+    tx.done,
+  ])
   return summaries
 }
 

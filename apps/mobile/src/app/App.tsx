@@ -15,6 +15,7 @@ import { SessionView } from '../components/session/SessionView.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { LoginScreen } from '../components/auth/LoginScreen.js'
+import { maybePushAppCloud, pushAppCloud, unlockAppCloud, type AppCloudState } from '../services/dream/cloud.js'
 import { clearSession, getToken } from '../services/dream/auth.js'
 import { setApiKey } from '../services/settings.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
@@ -57,6 +58,10 @@ export const App = () => {
   const activeId = useChatStore((state) => state.activeId)
   const [authed, setAuthed] = useState(() => Boolean(getToken()))
   const [update, setUpdate] = useState<ServerVersion | null>(null)
+  const [cloudPhase, setCloudPhase] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [cloudState, setCloudState] = useState<AppCloudState | null>(null)
+  const [cloudError, setCloudError] = useState('')
+  const [askUpload, setAskUpload] = useState(false)
 
   useEffect(() => {
     if (!authed) return
@@ -129,8 +134,30 @@ export const App = () => {
 
   useEffect(() => {
     if (!authed) return
+    let alive = true
     setApiKey(getToken())
-    void initChat()
+    setCloudPhase('loading')
+    void unlockAppCloud()
+      .then((state) => {
+        if (!alive) return
+        setCloudState(state)
+        setCloudPhase('ready')
+        if (!state.backup && state.localSessions > 0) {
+          localStorage.setItem('dream-app-upload-pending', '1')
+          setAskUpload(true)
+        }
+        void initChat()
+      })
+      .catch((error: unknown) => {
+        if (!alive) return
+        setCloudError(error instanceof Error ? error.message : '无法获取聊天记录密钥。')
+        setCloudPhase('error')
+      })
+    const timer = window.setInterval(() => void maybePushAppCloud(), 60_000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
   }, [authed])
 
   useEffect(() => {
@@ -142,6 +169,35 @@ export const App = () => {
     window.addEventListener('dream:unauthorized', onUnauthorized)
     return () => window.removeEventListener('dream:unauthorized', onUnauthorized)
   }, [])
+
+  if (authed && cloudPhase === 'loading') {
+    return (
+      <div className={styles.loadingScreen}>
+        <div className={styles.loadingLogo}>D</div>
+        <div className={styles.loadingText}>正在解密聊天记录…</div>
+      </div>
+    )
+  }
+
+  if (authed && cloudPhase === 'error') {
+    return (
+      <div className={styles.loadingScreen}>
+        <div className={styles.loadingText}>{cloudError}</div>
+        <Button variant="primary" onClick={() => window.location.reload()}>
+          重试
+        </Button>
+        <Button
+          onClick={() => {
+            clearSession()
+            setApiKey(null)
+            setAuthed(false)
+          }}
+        >
+          退出登录
+        </Button>
+      </div>
+    )
+  }
 
   if (!authed) {
     return <LoginScreen onSuccess={() => setAuthed(true)} />
@@ -206,6 +262,35 @@ export const App = () => {
         </main>
         <SearchPanel />
       </div>
+      {askUpload ? (
+        <Modal title="上传聊天记录到服务器" onClose={() => undefined}>
+          <div className={styles.uploadPrompt}>
+            <p>本机已有 {cloudState?.localSessions ?? 0} 个对话。上传后会压缩并用账号密钥加密，之后登录会与云端记录按时间合并。</p>
+            <p>聊天记录会保存在服务器上；不上传则仅保留在本机。</p>
+            <div className={styles.uploadActions}>
+              <Button
+                onClick={() => {
+                  localStorage.setItem('dream-app-upload-declined', '1')
+                  localStorage.removeItem('dream-app-upload-pending')
+                  setAskUpload(false)
+                }}
+              >
+                暂不上传
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  localStorage.removeItem('dream-app-upload-pending')
+                  setAskUpload(false)
+                  void pushAppCloud()
+                }}
+              >
+                上传
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       <SettingsDialog />
       <Toast />
       {update ? (

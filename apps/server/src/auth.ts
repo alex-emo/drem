@@ -103,7 +103,7 @@ export function registerUser(input: unknown): AuthResult {
     password_hash: hashPassword(password),
     created_at: new Date().toISOString(),
   };
-  const backupKey = randomBytes(5).toString("hex");
+  const backupKey = randomBytes(32).toString("hex");
 
   try {
     db.prepare(
@@ -209,12 +209,24 @@ export function adminRevokeSessions(id: string): void {
   db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
 }
 
-export function getBackupKey(userId: string): string {
-  const row = db.prepare("SELECT backup_key FROM users WHERE id = ?").get(userId) as
-    | { backup_key?: string | null }
-    | undefined;
-  if (row?.backup_key) return row.backup_key;
-  const key = randomBytes(5).toString("hex");
-  db.prepare("UPDATE users SET backup_key = ? WHERE id = ?").run(key, userId);
-  return key;
+export function getBackupKey(userId: string): { key: string; legacyKey?: string } {
+  const row = db
+    .prepare("SELECT backup_key, backup_key_legacy FROM users WHERE id = ?")
+    .get(userId) as { backup_key?: string | null; backup_key_legacy?: string | null } | undefined;
+  const current = row?.backup_key ?? null;
+  if (current && current.length >= 64) {
+    return { key: current, ...(row?.backup_key_legacy ? { legacyKey: row.backup_key_legacy } : {}) };
+  }
+  // 旧版是 10 位十六进制；登录时升级为 32 字节（64 hex），旧密钥保留到客户端完成重加密。
+  const key = randomBytes(32).toString("hex");
+  db.prepare("UPDATE users SET backup_key = ?, backup_key_legacy = ? WHERE id = ?").run(
+    key,
+    current,
+    userId,
+  );
+  return { key, ...(current ? { legacyKey: current } : {}) };
+}
+
+export function clearBackupLegacy(userId: string): void {
+  db.prepare("UPDATE users SET backup_key_legacy = NULL WHERE id = ?").run(userId);
 }

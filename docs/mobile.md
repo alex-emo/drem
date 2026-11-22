@@ -80,3 +80,11 @@ https://dream.pum.org.cn/download/dream-android.apk
 ## 流式观感
 
 APK 内置客户端文本节拍器：即使 Cloudflare 隧道把 SSE 攒包，回复也会按约 30ms/小段连续出现。
+
+
+## 本地加密与云端同步（1.6+）
+
+- 登录后先用 `/api/v1/backup` 取密钥，`chat-demo` 的会话与标题用 AES-GCM 加密后写入 IndexedDB；未解锁不初始化聊天。
+- 云端备份为 gzip + AES-GCM；App 上传同时包含 `sessions`（保留分支）与 `conversations/messages`（供 Web 读取）。
+- 首次登录、云端无备份且本机有会话时弹窗询问是否上传；拒绝后不再自动上传。
+- 旧 10 位密钥账号自动迁移：旧密钥解密云端 → 转 App 会话 → 新 32 字节密钥重加密并上传，服务端清除旧密钥。

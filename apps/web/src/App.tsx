@@ -176,6 +176,7 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     if (cloud.hadCloudBackup || cloud.localConversations === 0) return;
     if (localStorage.getItem("dream-cloud-upload-declined") === "1") return;
+    localStorage.setItem("dream-cloud-upload-pending", "1");
     setShowCloudPrompt(true);
   }, [cloud]);
   useEffect(() => {
@@ -344,6 +345,7 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
               label: "暂不上传",
               onClick: () => {
                 localStorage.setItem("dream-cloud-upload-declined", "1");
+                localStorage.removeItem("dream-cloud-upload-pending");
                 setShowCloudPrompt(false);
               },
             },
@@ -351,6 +353,7 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
               label: "上传",
               primary: true,
               onClick: () => {
+                localStorage.removeItem("dream-cloud-upload-pending");
                 setShowCloudPrompt(false);
                 void pushCloudBackup()
                   .then(() => {

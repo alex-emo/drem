@@ -27,6 +27,7 @@ import {
   requireAdmin,
   requireUser,
   getBackupKey,
+  clearBackupLegacy,
 } from "./auth.js";
 import { db } from "./db.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
@@ -282,12 +283,13 @@ app.get("/api/v1/me", (c) => {
 
 app.get("/api/v1/backup", (c) => {
   const { user } = requireUser(c.req.header("authorization"));
-  const key = getBackupKey(user.id);
+  const { key, legacyKey } = getBackupKey(user.id);
   const row = db
     .prepare("SELECT payload, updated_at, size FROM chat_backups WHERE user_id = ?")
     .get(user.id) as { payload?: string; updated_at?: string; size?: number } | undefined;
   return c.json({
     key,
+    ...(legacyKey ? { legacyKey } : {}),
     backup: row?.payload
       ? { payload: row.payload, updatedAt: row.updated_at, size: row.size ?? row.payload.length }
       : null,
@@ -307,6 +309,7 @@ app.put("/api/v1/backup", async (c) => {
     `INSERT INTO chat_backups (user_id, payload, updated_at, size) VALUES (?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at, size = excluded.size`,
   ).run(user.id, payload, updatedAt, payload.length);
+  clearBackupLegacy(user.id);
   return c.json({ ok: true, updatedAt, size: payload.length });
 });
 

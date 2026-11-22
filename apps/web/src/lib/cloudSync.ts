@@ -11,6 +11,7 @@ interface BackupPayload {
 
 export interface CloudBackupInfo {
   key: string;
+  legacyKey?: string;
   backup: BackupPayload | null;
 }
 
@@ -115,6 +116,14 @@ export interface UnlockResult {
 }
 
 /** 登录后：取服务端密钥 → 迁移本地加密 → 拉取云端并合并。 */
+async function rekeyLocalData(oldKey: string, newKey: string): Promise<void> {
+  setSessionKey(oldKey);
+  const conversations = await getAllConversations();
+  const messages = await getAllMessages();
+  setSessionKey(newKey);
+  await importConversationData(conversations, messages);
+}
+
 export async function unlockAccount(userId: string): Promise<UnlockResult> {
   const owner = localStorage.getItem("dream-local-owner");
   if (owner && owner !== userId) {
@@ -123,15 +132,52 @@ export async function unlockAccount(userId: string): Promise<UnlockResult> {
   }
   localStorage.setItem("dream-local-owner", userId);
   const info = await fetchCloudInfo();
-  setSessionKey(info.key);
-  await migrateLocalEncryption();
-  const localConversations = (await getAllConversations()).length;
+  const storedKey = localStorage.getItem("dream-encryption-key");
+  const needsLegacyMigration = Boolean(info.legacyKey) && storedKey !== info.key;
   let merged: { conversations: number; messages: number } | null = null;
   let pullError: string | undefined;
-  try {
-    merged = await pullCloudBackup(info);
-  } catch (error) {
-    pullError = error instanceof Error ? error.message : "云端备份无法解密，已保留本地记录。";
+  let localConversations = 0;
+  if (needsLegacyMigration) {
+    setSessionKey(info.legacyKey!);
+    try {
+      await migrateLocalEncryption();
+      localConversations = (await getAllConversations()).length;
+    } catch {
+      // 本地可能是旧密钥且已无法解密，清空后从旧云端备份恢复。
+      await clearLocalChats();
+      localConversations = 0;
+    }
+    try {
+      merged = await pullCloudBackup(info);
+    } catch {
+      // 旧备份可能不存在或已损坏，不阻断升级。
+    }
+    await rekeyLocalData(info.legacyKey!, info.key);
+    setSessionKey(info.key);
+    try {
+      await pushCloudBackup();
+      localStorage.setItem("dream-encryption-key", info.key);
+    } catch {
+      // 下次登录继续尝试覆盖旧备份。
+    }
+  } else {
+    setSessionKey(info.key);
+    try {
+      await migrateLocalEncryption();
+      localConversations = (await getAllConversations()).length;
+      merged = await pullCloudBackup(info);
+    } catch (error) {
+      // 密钥已轮换（或本地被别处重新加密）时无法解开旧本地记录：清空后只用云端新备份。
+      await clearLocalChats();
+      localConversations = 0;
+      try {
+        merged = await pullCloudBackup(info);
+      } catch (retryError) {
+        pullError = retryError instanceof Error ? retryError.message : "云端备份无法解密。";
+      }
+      if (!pullError && !(error instanceof Error)) pullError = "本地聊天记录无法解密，已从云端恢复。";
+    }
+    localStorage.setItem("dream-encryption-key", info.key);
   }
   return { key: info.key, hadCloudBackup: Boolean(info.backup), localConversations, merged, pullError };
 }
@@ -147,6 +193,7 @@ export function accountUnlocked(): boolean {
 export async function maybePushCloudBackup(): Promise<void> {
   if (!getSessionKey()) return;
   if (localStorage.getItem("dream-cloud-upload-declined") === "1") return;
+  if (localStorage.getItem("dream-cloud-upload-pending") === "1") return;
   const last = Number(localStorage.getItem("dream-cloud-last-push")) || 0;
   const rev = Number(localStorage.getItem("dream-backup-rev")) || 0;
   if (!rev || rev <= last) return;
