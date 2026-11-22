@@ -9,6 +9,16 @@ export interface DreamBackup {
   messages: Awaited<ReturnType<typeof getAllMessages>>;
 }
 
+export async function collectBackup(): Promise<DreamBackup> {
+  return {
+    format: "dream-backup",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    conversations: await getAllConversations(),
+    messages: await getAllMessages(),
+  };
+}
+
 export async function createBackup(): Promise<Blob> {
   const payload: DreamBackup = {
     format: "dream-backup",

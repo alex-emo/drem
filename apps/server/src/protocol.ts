@@ -4,8 +4,8 @@ export const API_VERSION = "v1";
 export const SERVER_VERSION = "0.2.0";
 
 /** 请求体上限：8 MiB。长对话（含代码块/长文）历史可能超过 1 MiB，但仍需限制单请求大小。 */
-export const MAX_BODY_BYTES = 8 * 1024 * 1024;
-export const MAX_BODY_MIB = 8;
+export const MAX_BODY_BYTES = 16 * 1024 * 1024;
+export const MAX_BODY_MIB = 16;
 
 /** 内容安全拒绝时返回给客户端的固定答复（与 DeepSeek 客户端一致）。 */
 export const REFUSAL_MESSAGE = "你好，这个问题我暂时无法回答，让我们换个话题再聊聊吧。";

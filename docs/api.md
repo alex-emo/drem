@@ -451,6 +451,30 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 禁用用户后登录返回 403 `ACCOUNT_DISABLED`，已登录会话也会失效。
 
+## 10. 聊天记录云备份
+
+### `GET /api/v1/backup`
+
+需 Bearer。返回账号密钥与云端备份（可能为 `null`）：
+
+```json
+{
+  "key": "a23d69ec61",
+  "backup": { "payload": "base64(iv+ciphertext)", "updatedAt": "2026-11-22T07:23:00.000Z", "size": 10384 }
+}
+```
+
+- `key` 为 10 位十六进制随机串，服务端每个用户一个，注册时生成；登录后直接分发。
+- `payload` 为客户端 gzip 后的备份，再经 AES-GCM 加密并 base64；服务端无法解密内容。
+
+### `PUT /api/v1/backup`
+
+需 Bearer。请求体 `{"payload":"..."}`；空值 400，payload 超过 12MiB 返回 413 `PAYLOAD_TOO_LARGE`；成功返回 `{ok:true,updatedAt,size}`，覆盖该用户旧备份。
+
+客户端合并策略：会话按 `updatedAt`、消息按 `createdAt` 取新或补缺；上传前先压缩，失败不影响聊天。
+
+请求体上限由 8MiB 提升到 16MiB（含加密备份）。密钥强度有限（10 hex，约 40 bit），属于用户明确接受的产品取舍。
+
 ## 9. 规划中的端点（M1）
 
 | 方法 | 路径 | 说明 |

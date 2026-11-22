@@ -134,7 +134,7 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 界面：深/浅色主题、桌面/移动端响应式侧边栏、空态、健康状态提示条
 - 服务端：请求校验（条数/长度/角色）、SSE 头、AbortSignal 传播、错误信息透出
 - 账号体系：注册 / 登录 / 退出；服务端 scrypt 存密码、token 哈希入库；除 health/models 外的 API 均要求 `Authorization: Bearer`
-- 设置弹窗：通用设置（外观、服务状态）与数据管理
+- 设置弹窗：通用设置（外观、阅读宽度、服务状态）与数据管理（导入/导出、云端备份、本地自动备份、持久化状态）
 - 阅读宽度：桌面端设置里可用滑块在 560–1100px 之间调整消息/输入框宽度，自动记忆；手机端始终铺满屏幕
 - 文件上传：txt / md / csv / json / 代码等纯文本，服务端解码后作为文件资料注入对话；支持多文件、大小校验、附件 chip 与删除
 - 联网搜索：开启后调用 Qwen 联网搜索，回答带 `[n]` 角标与「参考来源」列表；Web 与 App 均支持
@@ -161,6 +161,8 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 | `POST` | `/api/v1/files` | 上传纯文本文件（multipart，需 Bearer） |
 | `GET` | `/api/v1/files` | 当前用户的文件列表 |
 | `DELETE` | `/api/v1/files/:id` | 删除文件 |
+| `GET` | `/api/v1/backup` | 获取聊天记录备份密钥与云端备份（需 Bearer） |
+| `PUT` | `/api/v1/backup` | 上传加密后的聊天记录备份（需 Bearer） |
 | `GET` | `/api/v1/health` | 存活、模式、是否配置 Key、模型名 |
 | `GET` | `/api/v1/models` | 服务端配置的模型 |
 | `POST` | `/api/v1/chat` | 流式对话（SSE，需 Bearer） |
@@ -229,11 +231,16 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 - 图片与文件附件暂不支持，会在结果里提示数量
 - 导入在浏览器内完成，ZIP 不会上传到服务端
 
-## 本地数据
+## 本地数据与云端备份
 
 - IndexedDB 库名 `dream`，v1：
-  - `conversations`：`{ id, title, createdAt, updatedAt }`，索引 `by-updated`
-  - `messages`：`{ id, conversationId, role, content, reasoning?, status, error?, createdAt }`，索引 `by-conversation`、`by-created`
+  - `conversations`：`{ id, title?, encTitle?, createdAt, updatedAt }`，索引 `by-updated`
+  - `messages`：`{ id, conversationId, role, content?, enc?, reasoning?, encReasoning?, status, error?, createdAt }`，索引 `by-conversation`、`by-created`
+- 登录后本地标题/正文/思考会用账号密钥 AES-GCM 加密，`title`/`content` 等明文字段置空；只有从服务端取到密钥并解锁后才可读。
+- 登录后自动从云端拉取加密备份，按 `updatedAt`（会话）/`createdAt`（消息）合并；之后每 5 分钟检查一次，数据变化时异步上传。
+- 首次登录且云端没有备份、本机有记录时，会弹窗询问是否上传；上传前 gzip 压缩再用账号密钥加密。
+- 服务端只保存密文与密钥，不保存可读聊天内容。密钥为 10 位十六进制随机串（用户明确接受暴力破解风险，便于运维）。
+- 浏览器持久化、自动备份到本机（下载/File System Access）也在「设置 → 数据管理」中，详见该页面。
 - `localStorage`：
   - `dream-theme`：`dark` / `light`
   - `dream-active-id`：上次打开的会话 id
@@ -242,7 +249,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 ## 尚未实现（下一步）
 
-- 单一设备会话（在线互踢）、邀请码/管理员审批、用户管理后台、限流（当前开放注册，请勿把 Key 共享给不可信用户）
+- 单一设备会话（在线互踢）、邀请码/管理员审批、限流（当前开放注册，请勿把 Key 共享给不可信用户）
 - PDF / Word / PPT / Excel / 图片解析（当前仅支持纯文本与联网搜索）
 - 重新生成、继续生成（编辑消息与消息分支已实现）
 - 语音输入 / 朗读、KaTeX、Mermaid

@@ -39,6 +39,7 @@ export interface UserRow {
   password_hash: string;
   created_at: string;
   disabled?: number;
+  backup_key?: string | null;
 }
 
 // 兼容旧库：增加禁用标记。
@@ -46,6 +47,18 @@ const userColumns = db.prepare("PRAGMA table_info(users)").all() as Array<{ name
 if (!userColumns.some((column) => column.name === "disabled")) {
   db.exec("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");
 }
+if (!userColumns.some((column) => column.name === "backup_key")) {
+  db.exec("ALTER TABLE users ADD COLUMN backup_key TEXT");
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_backups (
+    user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    payload    TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    size       INTEGER NOT NULL DEFAULT 0
+  );
+`);
 
 export interface SessionRow {
   id: string;

@@ -2249,3 +2249,20 @@ body,
 .notice-body { display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.7; color: var(--text-secondary); }
 .notice-body p { margin: 0; }
 .notice-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+.cloud-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 120;
+  max-width: min(520px, 90vw);
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}

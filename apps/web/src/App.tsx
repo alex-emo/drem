@@ -9,6 +9,7 @@ import { ChatApiError, fetchMe, logoutAccount } from "./lib/api";
 import { clearSession, getStoredUser, getToken } from "./lib/auth";
 import { autoBackupConsented, autoBackupEnabled, backupNow, consentAutoBackup, setAutoBackupEnabled, startAutoBackup } from "./lib/autoBackup";
 import { detectPrivateMode } from "./lib/privacy";
+import { lockAccount, maybePushCloudBackup, pushCloudBackup, unlockAccount, type UnlockResult } from "./lib/cloudSync";
 import type { AuthUser, HealthInfo, HealthState, Theme } from "./lib/types";
 
 type AuthState =
@@ -58,6 +59,7 @@ export default function App() {
 
   useEffect(() => {
     const onUnauthorized = () => {
+      lockAccount();
       clearSession();
       setAuth({ kind: "anon" });
     };
@@ -83,7 +85,54 @@ export default function App() {
     return <LoginScreen onAuthenticated={(user) => setAuth({ kind: "authed", user })} />;
   }
 
-  return <ChatShell user={auth.user} onLogout={() => void logout()} />;
+  return <AuthedShell user={auth.user} onLogout={() => void logout()} />;
+}
+
+function AuthedShell({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+  const [state, setState] = useState<
+    { kind: "loading" } | { kind: "error"; message: string } | { kind: "ready"; cloud: UnlockResult }
+  >({ kind: "loading" });
+
+  useEffect(() => {
+    let alive = true;
+    void unlockAccount(user.id)
+      .then((cloud) => {
+        if (alive) setState({ kind: "ready", cloud });
+      })
+      .catch((error: unknown) => {
+        if (alive) {
+          setState({ kind: "error", message: error instanceof Error ? error.message : "无法获取聊天记录密钥。" });
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="auth-screen">
+        <p className="auth-muted">正在解密并同步聊天记录…</p>
+      </div>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <h1>无法解锁聊天记录</h1>
+          <p className="auth-muted">{state.message}</p>
+          <button type="button" className="btn primary" onClick={() => window.location.reload()}>
+            重试
+          </button>
+          <button type="button" className="btn ghost" onClick={onLogout}>
+            退出登录
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return <ChatShell user={user} onLogout={onLogout} cloud={state.cloud} />;
 }
 
 function initialTheme(): Theme {
@@ -94,7 +143,7 @@ function initialTheme(): Theme {
   }
 }
 
-function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => void; cloud: UnlockResult }) {
   const chat = useChat();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [contentWidth, setContentWidth] = useState<number>(() => {
@@ -108,6 +157,8 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [privateMode, setPrivateMode] = useState(false);
   const [showBackupPrompt, setShowBackupPrompt] = useState(false);
+  const [showCloudPrompt, setShowCloudPrompt] = useState(false);
+  const [cloudMessage, setCloudMessage] = useState(cloud.pullError ?? "");
 
   useEffect(() => {
     let alive = true;
@@ -122,6 +173,15 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   }, []);
 
   useEffect(() => startAutoBackup(), []);
+  useEffect(() => {
+    if (cloud.hadCloudBackup || cloud.localConversations === 0) return;
+    if (localStorage.getItem("dream-cloud-upload-declined") === "1") return;
+    setShowCloudPrompt(true);
+  }, [cloud]);
+  useEffect(() => {
+    const timer = window.setInterval(() => void maybePushCloudBackup(), 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (privateMode || !autoBackupEnabled() || autoBackupConsented()) return;
@@ -239,7 +299,10 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
           setSettingsOpen(true);
           closeOnMobile();
         }}
-        onLogout={onLogout}
+        onLogout={() => {
+          lockAccount();
+          onLogout();
+        }}
       />
       {sidebarOpen ? <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} /> : null}
       <ChatView chat={chat} health={health} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
@@ -273,6 +336,38 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
           <p>建议退出无痕模式，或先导出一份备份；正式使用请安装 Dream 到桌面/主屏幕。</p>
         </NoticeDialog>
       ) : null}
+      {showCloudPrompt ? (
+        <NoticeDialog
+          title="上传聊天记录到服务器？"
+          actions={[
+            {
+              label: "暂不上传",
+              onClick: () => {
+                localStorage.setItem("dream-cloud-upload-declined", "1");
+                setShowCloudPrompt(false);
+              },
+            },
+            {
+              label: "上传",
+              primary: true,
+              onClick: () => {
+                setShowCloudPrompt(false);
+                void pushCloudBackup()
+                  .then(() => {
+                    localStorage.removeItem("dream-cloud-upload-declined");
+                    setCloudMessage("已上传并加密保存到服务器。");
+                  })
+                  .catch((error: unknown) => {
+                    setCloudMessage(error instanceof Error ? error.message : "上传失败。");
+                  });
+              },
+            },
+          ]}
+        >
+          <p>检测到本机已有 {cloud.localConversations} 个对话。上传后会压缩并用你的账号密钥加密，之后登录会与云端记录按时间合并。</p>
+          <p>聊天记录会保存在服务器上；不上传则仅保留在本机。</p>
+        </NoticeDialog>
+      ) : null}
       {showBackupPrompt ? (
         <NoticeDialog
           title="自动备份到本机？"
@@ -299,6 +394,11 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
           <p>Dream 会定期把聊天记录导出到手机的下载目录，浏览器可能要求确认一次下载。</p>
           <p>备份文件不包含账号密码，可随时在「设置 → 数据管理」中恢复。</p>
         </NoticeDialog>
+      ) : null}
+      {cloudMessage ? (
+        <div className="cloud-toast" role="status" onClick={() => setCloudMessage("")}>
+          {cloudMessage}
+        </div>
       ) : null}
       <SettingsDialog
         open={settingsOpen}

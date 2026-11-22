@@ -103,12 +103,13 @@ export function registerUser(input: unknown): AuthResult {
     password_hash: hashPassword(password),
     created_at: new Date().toISOString(),
   };
+  const backupKey = randomBytes(5).toString("hex");
 
   try {
     db.prepare(
-      `INSERT INTO users (id, username, display_name, password_hash, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(user.id, user.username, user.display_name, user.password_hash, user.created_at);
+      `INSERT INTO users (id, username, display_name, password_hash, created_at, backup_key)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(user.id, user.username, user.display_name, user.password_hash, user.created_at, backupKey);
   } catch {
     throw new ApiError(409, "USERNAME_TAKEN", "这个用户名已经被注册");
   }
@@ -206,4 +207,14 @@ export function adminResetPassword(id: string, password: string): void {
 
 export function adminRevokeSessions(id: string): void {
   db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+}
+
+export function getBackupKey(userId: string): string {
+  const row = db.prepare("SELECT backup_key FROM users WHERE id = ?").get(userId) as
+    | { backup_key?: string | null }
+    | undefined;
+  if (row?.backup_key) return row.backup_key;
+  const key = randomBytes(5).toString("hex");
+  db.prepare("UPDATE users SET backup_key = ? WHERE id = ?").run(key, userId);
+  return key;
 }

@@ -4,6 +4,11 @@ export type ChatRole = "user" | "assistant";
 
 export type MessageStatus = "streaming" | "done" | "refused" | "error";
 
+export interface EncryptedTitle {
+  iv: string;
+  data: string;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -11,6 +16,8 @@ export interface Conversation {
   updatedAt: number;
   /** 消息树的根节点；编辑第一条提问后可能换根。 */
   rootMessageId?: string | null;
+  /** 本地加密后的标题；有值时 title 为空。 */
+  encTitle?: EncryptedTitle;
 }
 
 export interface FileAttachment {
@@ -28,6 +35,11 @@ export interface SearchSource {
   url: string;
   siteName?: string;
   icon?: string;
+}
+
+export interface EncryptedMessageText {
+  iv: string;
+  data: string;
 }
 
 export interface Message {
@@ -48,6 +60,9 @@ export interface Message {
   /** 消息树结构：同一父节点下可以有多个版本。 */
   parentId?: string | null;
   selectedChildId?: string | null;
+  /** 本地加密后的正文/思考；有值时 content/reasoning 为空。 */
+  enc?: EncryptedMessageText;
+  encReasoning?: EncryptedMessageText;
 }
 
 export interface HealthInfo {

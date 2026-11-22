@@ -26,7 +26,9 @@ import {
   adminSetUserDisabled,
   requireAdmin,
   requireUser,
+  getBackupKey,
 } from "./auth.js";
+import { db } from "./db.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
 import { createTextFile, deleteUserFile, expandFiles, listUserFiles, MAX_FILE_BYTES } from "./files.js";
 import { openSearchStream } from "./search.js";
@@ -276,6 +278,36 @@ app.post("/api/v1/auth/logout", (c) => {
 app.get("/api/v1/me", (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   return c.json({ user });
+});
+
+app.get("/api/v1/backup", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const key = getBackupKey(user.id);
+  const row = db
+    .prepare("SELECT payload, updated_at, size FROM chat_backups WHERE user_id = ?")
+    .get(user.id) as { payload?: string; updated_at?: string; size?: number } | undefined;
+  return c.json({
+    key,
+    backup: row?.payload
+      ? { payload: row.payload, updatedAt: row.updated_at, size: row.size ?? row.payload.length }
+      : null,
+  });
+});
+
+app.put("/api/v1/backup", async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const body = (await readJsonBody(c)) as { payload?: unknown; updatedAt?: unknown };
+  const payload = typeof body.payload === "string" ? body.payload : "";
+  if (!payload) throw new ApiError(400, "INVALID_ARGUMENT", "payload 不能为空");
+  if (payload.length > 12 * 1024 * 1024) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "备份内容超过 12 MiB 上限");
+  }
+  const updatedAt = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO chat_backups (user_id, payload, updated_at, size) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at, size = excluded.size`,
+  ).run(user.id, payload, updatedAt, payload.length);
+  return c.json({ ok: true, updatedAt, size: payload.length });
 });
 
 app.get("/api/v1/admin/stats", (c) => {
