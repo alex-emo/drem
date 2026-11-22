@@ -15,6 +15,8 @@ type ImportState =
 interface SettingsDialogProps {
   open: boolean;
   theme: Theme;
+  contentWidth: number;
+  onContentWidthChange: (width: number) => void;
   health: HealthState;
   onClose: () => void;
   onThemeChange: (theme: Theme) => void;
@@ -37,6 +39,8 @@ function serverState(health: HealthState): string {
 export default function SettingsDialog({
   open,
   theme,
+  contentWidth,
+  onContentWidthChange,
   health,
   onClose,
   onThemeChange,
@@ -225,6 +229,26 @@ export default function SettingsDialog({
                       onClick={() => onThemeChange("dark")}
                     >
                       深色
+                    </button>
+                  </div>
+                </section>
+
+                <section className="settings-section settings-width">
+                  <h3>阅读宽度</h3>
+                  <p className="settings-note">调整消息与输入框的最大宽度，适合宽屏阅读；手机端自动铺满屏幕。</p>
+                  <div className="width-control">
+                    <input
+                      type="range"
+                      min={560}
+                      max={1100}
+                      step={20}
+                      value={contentWidth}
+                      aria-label="阅读宽度"
+                      onChange={(event) => onContentWidthChange(Number(event.target.value))}
+                    />
+                    <span className="width-value">{contentWidth}px</span>
+                    <button type="button" className="btn ghost small" onClick={() => onContentWidthChange(760)}>
+                      恢复默认
                     </button>
                   </div>
                 </section>

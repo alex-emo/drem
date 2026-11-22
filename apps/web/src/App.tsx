@@ -75,6 +75,10 @@ function initialTheme(): Theme {
 function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const chat = useChat();
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [contentWidth, setContentWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("dream-content-width"));
+    return Number.isFinite(saved) && saved >= 560 && saved <= 1100 ? saved : 760;
+  });
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 820);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const sidebarOpenRef = useRef(sidebarOpen);
@@ -138,6 +142,11 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   }, [theme]);
 
   useEffect(() => {
+    document.documentElement.style.setProperty("--content-width", `${contentWidth}px`);
+    localStorage.setItem("dream-content-width", String(contentWidth));
+  }, [contentWidth]);
+
+  useEffect(() => {
     let alive = true;
     fetch("/api/v1/health")
       .then(async (response) => {
@@ -193,6 +202,8 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
       <SettingsDialog
         open={settingsOpen}
         theme={theme}
+        contentWidth={contentWidth}
+        onContentWidthChange={setContentWidth}
         health={health}
         onClose={() => setSettingsOpen(false)}
         onThemeChange={setTheme}

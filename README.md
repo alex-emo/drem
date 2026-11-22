@@ -135,6 +135,7 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 - 服务端：请求校验（条数/长度/角色）、SSE 头、AbortSignal 传播、错误信息透出
 - 账号体系：注册 / 登录 / 退出；服务端 scrypt 存密码、token 哈希入库；除 health/models 外的 API 均要求 `Authorization: Bearer`
 - 设置弹窗：通用设置（外观、服务状态）与数据管理
+- 阅读宽度：桌面端设置里可用滑块在 560–1100px 之间调整消息/输入框宽度，自动记忆；手机端始终铺满屏幕
 - 文件上传：txt / md / csv / json / 代码等纯文本，服务端解码后作为文件资料注入对话；支持多文件、大小校验、附件 chip 与删除
 - 联网搜索：开启后调用 Qwen 联网搜索，回答带 `[n]` 角标与「参考来源」列表；Web 与 App 均支持
 - 大文件导入：粘贴 DeepSeek App「导出所有历史对话」生成的华为云 OBS 链接，由服务端流式下载、边下边解压，逐会话写入 IndexedDB；Web 与 App 均支持，不受浏览器 200MB 限制
