@@ -69,6 +69,7 @@ https://dream.pum.org.cn/download/dream-android.apk
 ## v1 限制
 
 - 已支持：联网搜索、纯文本文件上传（txt/md/csv/json/代码）；
+- 大 ZIP 导出链接导入目前仅在 Web 设置页提供，App 端后续接入；
 - 图片、PDF、Word 等附件暂不支持，上传会返回可读错误；
 
 - 联网搜索、文件上传按钮已隐藏（服务端尚未实现对应工具，避免点了报错）。

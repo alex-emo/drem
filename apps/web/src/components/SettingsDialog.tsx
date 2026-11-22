@@ -20,6 +20,10 @@ interface SettingsDialogProps {
   onThemeChange: (theme: Theme) => void;
   onImport: (archive: Awaited<ReturnType<typeof parseDeepSeekArchive>>) => Promise<ImportOutcome>;
   onImportShare: (url: string) => Promise<ImportOutcome>;
+  onImportArchiveUrl: (
+    url: string,
+    onProgress?: (progress: { conversations: number; messages: number }) => void,
+  ) => Promise<ImportOutcome>;
 }
 
 function serverState(health: HealthState): string {
@@ -38,11 +42,15 @@ export default function SettingsDialog({
   onThemeChange,
   onImport,
   onImportShare,
+  onImportArchiveUrl,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<Tab>("data");
   const [state, setState] = useState<ImportState>({ kind: "idle" });
   const [shareUrl, setShareUrl] = useState("");
   const [shareState, setShareState] = useState<ImportState>({ kind: "idle" });
+  const [archiveUrl, setArchiveUrl] = useState("");
+  const [archiveState, setArchiveState] = useState<ImportState>({ kind: "idle" });
+  const [archiveProgress, setArchiveProgress] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -64,6 +72,9 @@ export default function SettingsDialog({
       setState({ kind: "idle" });
       setShareState({ kind: "idle" });
       setShareUrl("");
+      setArchiveState({ kind: "idle" });
+      setArchiveUrl("");
+      setArchiveProgress("");
       setTab("data");
     }
   }, [open]);
@@ -130,6 +141,27 @@ export default function SettingsDialog({
       });
     } catch (error) {
       setShareState({
+        kind: "error",
+        text: error instanceof Error ? error.message : "导入失败，请稍后重试。",
+      });
+    }
+  };
+
+  const handleImportArchiveUrl = async () => {
+    const url = archiveUrl.trim();
+    if (!url) return;
+    setArchiveState({ kind: "working" });
+    setArchiveProgress("正在连接导出文件…");
+    try {
+      const outcome = await onImportArchiveUrl(url, (progress) => {
+        setArchiveProgress(`已导入 ${progress.conversations} 个会话 / ${progress.messages} 条消息`);
+      });
+      setArchiveState({
+        kind: "ok",
+        text: `已导入 ${outcome.added} 个对话、${outcome.messages} 条消息；跳过 ${outcome.skipped} 个已存在会话、${outcome.skippedMessages} 条空消息。`,
+      });
+    } catch (error) {
+      setArchiveState({
         kind: "error",
         text: error instanceof Error ? error.message : "导入失败，请稍后重试。",
       });
@@ -246,6 +278,44 @@ export default function SettingsDialog({
                   <p className="import-status error" role="alert">
                     {state.text}
                   </p>
+                ) : null}
+
+                <hr className="settings-divider" />
+
+                <h3>从导出链接导入</h3>
+                <p className="settings-note">
+                  粘贴 DeepSeek App「设置 → 数据管理 → 导出所有历史对话」生成的链接。服务端会流式下载并解压，
+                  适合几百 MB 的大导出；只导入文本提问、回答与深度思考。
+                </p>
+                <div className="share-import-row">
+                  <input
+                    type="url"
+                    className="share-import-input"
+                    placeholder="https://…myhuaweicloud.com/…zip?…"
+                    value={archiveUrl}
+                    onChange={(event) => setArchiveUrl(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void handleImportArchiveUrl();
+                    }}
+                    disabled={archiveState.kind === "working"}
+                  />
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => void handleImportArchiveUrl()}
+                    disabled={!archiveUrl.trim() || archiveState.kind === "working"}
+                  >
+                    {archiveState.kind === "working" ? "导入中…" : "导入链接"}
+                  </button>
+                </div>
+                {archiveState.kind === "working" && archiveProgress ? (
+                  <p className="import-status" role="status">{archiveProgress}</p>
+                ) : null}
+                {archiveState.kind === "ok" ? (
+                  <p className="import-status ok" role="status">{archiveState.text}</p>
+                ) : null}
+                {archiveState.kind === "error" ? (
+                  <p className="import-status error" role="alert">{archiveState.text}</p>
                 ) : null}
 
                 <hr className="settings-divider" />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChatApiError, streamChat, warmContext } from "../lib/api";
+import { ChatApiError, importArchiveFromUrl, streamChat, warmContext } from "../lib/api";
 import {
   buildVersions,
   getVisibleMessages,
@@ -262,6 +262,47 @@ export function useChat() {
         messages: archive.messages.length,
         skippedMessages: 0,
         attachments: archive.attachments,
+      };
+    },
+    [openConversation],
+  );
+
+  /** 从 DeepSeek 导出的临时链接导入：服务端流式解压，客户端分批写 IndexedDB。 */
+  const importArchiveUrl = useCallback(
+    async (
+      url: string,
+      onProgress?: (progress: { conversations: number; messages: number }) => void,
+    ): Promise<ImportOutcome> => {
+      const existing = new Set(conversationsRef.current.map((conversation) => conversation.id));
+      let latest: Conversation | null = null;
+      const stats = await importArchiveFromUrl(
+        url,
+        [...existing],
+        {
+          onConversation: async (conversation) => {
+            await importConversationData([conversation], []);
+            if (!latest || conversation.updatedAt > latest.updatedAt) latest = conversation;
+          },
+          onMessages: async (messages) => {
+            await importConversationData([], messages);
+          },
+          onProgress,
+        },
+      );
+
+      if (latest) {
+        const items = await listConversations();
+        conversationsRef.current = items;
+        setConversations(items);
+        await openConversation((latest as Conversation).id);
+      }
+
+      return {
+        added: stats.conversations,
+        skipped: stats.skippedConversations,
+        messages: stats.messages,
+        skippedMessages: stats.skippedMessages,
+        attachments: stats.attachments,
       };
     },
     [openConversation],
@@ -669,5 +710,6 @@ export function useChat() {
     removeConversation,
     importHistory,
     importShare,
+    importArchiveUrl,
   };
 }

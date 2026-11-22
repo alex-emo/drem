@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import type { AuthResult, AuthUser, FileAttachment, SearchSource } from "./types";
+import type { AuthResult, AuthUser, Conversation, FileAttachment, Message, SearchSource } from "./types";
 
 export interface ApiChatMessage {
   role: "system" | "user" | "assistant";
@@ -340,4 +340,108 @@ export async function warmContext(messages: ApiChatMessage[]): Promise<void> {
   if (!response.ok) {
     throw new ChatApiError("上下文预热失败", response.status, "WARM_FAILED");
   }
+}
+
+
+export interface ArchiveImportHandlers {
+  onConversation?: (conversation: Conversation) => void | Promise<void>;
+  onMessages?: (messages: Message[]) => void | Promise<void>;
+  onProgress?: (progress: { conversations: number; messages: number }) => void;
+}
+
+export interface ArchiveImportResult {
+  conversations: number;
+  messages: number;
+  skippedConversations: number;
+  skippedMessages: number;
+  attachments: number;
+}
+
+/** 让服务端流式下载并解压 DeepSeek 导出 ZIP，客户端按 NDJSON 分批落库。 */
+export async function importArchiveFromUrl(
+  url: string,
+  skipIds: string[],
+  handlers: ArchiveImportHandlers = {},
+  signal?: AbortSignal,
+): Promise<ArchiveImportResult> {
+  const response = await fetch("/api/v1/import/archive", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ url, skipIds }),
+    signal,
+  });
+  if (!response.ok) {
+    let message = `导入失败（HTTP ${response.status}）`;
+    try {
+      const payload = (await response.json()) as { error?: { message?: string } };
+      if (payload.error?.message) message = payload.error.message;
+    } catch {
+      // ignore
+    }
+    throw new ChatApiError(message, response.status, "IMPORT_FAILED");
+  }
+  if (!response.body) throw new ChatApiError("导入响应为空", 502, "IMPORT_FAILED");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let conversions = 0;
+  let messages = 0;
+  let finalStats: ArchiveImportResult | null = null;
+
+  const handleLine = async (line: string) => {
+    if (!line.trim()) return;
+    let payload: {
+      type?: string;
+      conversation?: Conversation;
+      messages?: Message[];
+      stats?: ArchiveImportResult;
+      message?: string;
+    };
+    try {
+      payload = JSON.parse(line) as typeof payload;
+    } catch {
+      return;
+    }
+    if (payload.type === "conversation" && payload.conversation) {
+      await handlers.onConversation?.(payload.conversation);
+      conversions += 1;
+      handlers.onProgress?.({ conversations: conversions, messages });
+    } else if (payload.type === "messages" && payload.messages) {
+      await handlers.onMessages?.(payload.messages);
+      messages += payload.messages.length;
+      handlers.onProgress?.({ conversations: conversions, messages });
+    } else if (payload.type === "done" && payload.stats) {
+      finalStats = payload.stats;
+    } else if (payload.type === "error") {
+      throw new ChatApiError(payload.message ?? "导入过程中发生错误", 502, "IMPORT_FAILED");
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let index = buffer.indexOf("\n");
+      while (index >= 0) {
+        await handleLine(buffer.slice(0, index));
+        buffer = buffer.slice(index + 1);
+        index = buffer.indexOf("\n");
+      }
+    }
+    if (buffer.trim()) await handleLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+
+  return (
+    finalStats ?? {
+      conversations: conversions,
+      messages,
+      skippedConversations: 0,
+      skippedMessages: 0,
+      attachments: 0,
+    }
+  );
 }

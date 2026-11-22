@@ -296,6 +296,27 @@ DELETE /api/v1/files/:id
 }
 ```
 
+## 5.9 `POST /api/v1/import/archive`
+
+从 DeepSeek App 导出的华为云 OBS 临时链接导入（需登录）。
+
+请求：
+
+```json
+{ "url": "https://...myhuaweicloud.com/....zip?Expires=...", "skipIds": ["ds-..."] }
+```
+
+响应为 `application/x-ndjson` 流，逐行：
+
+```text
+{"type":"conversation","conversation":{...}}
+{"type":"messages","messages":[...]}   // 每 200 条一批
+{"type":"done","stats":{"conversations":622,"messages":35490,...}}
+{"type":"error","message":"..."}       // 失败时
+```
+
+服务端不在磁盘/内存保存完整 ZIP；限制：链接必须 https 且域名以 `myhuaweicloud.com` 结尾，ZIP ≤ 300MB，导出格式版本 3。
+
 ## 6. `GET /api/v1/import/share`
 
 需要 `Authorization: Bearer`。由服务端抓取 DeepSeek 分享页数据（浏览器直接请求会被 CORS 拦截），归一化后返回，客户端再写入本地 IndexedDB。

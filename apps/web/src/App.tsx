@@ -198,6 +198,7 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
         onThemeChange={setTheme}
         onImport={chat.importHistory}
         onImportShare={chat.importShare}
+        onImportArchiveUrl={chat.importArchiveUrl}
       />
     </div>
   );

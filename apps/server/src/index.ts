@@ -31,6 +31,7 @@ import { parseChatRequest, openChatStream } from "./deepseek.js";
 import { createTextFile, deleteUserFile, expandFiles, listUserFiles, MAX_FILE_BYTES } from "./files.js";
 import { openSearchStream } from "./search.js";
 import { fetchSharedChat } from "./share.js";
+import { archiveStream, streamArchiveImport, validateArchiveUrl, ArchiveImportError } from "./archiveImport.js";
 import { mockChatStream } from "./mock.js";
 import {
   API_VERSION,
@@ -325,6 +326,40 @@ app.post("/api/v1/admin/users/:id/revoke", (c) => {
   return c.json({ ok: true });
 });
 
+app.post("/api/v1/import/archive", async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const body = (await readJsonBody(c)) as { url?: unknown; skipIds?: unknown };
+  if (typeof body.url !== "string" || !body.url.trim()) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "缺少导出文件链接");
+  }
+  const url = validateArchiveUrl(body.url.trim());
+  const skipIds = new Set(
+    Array.isArray(body.skipIds) ? body.skipIds.filter((id): id is string => typeof id === "string") : [],
+  );
+  console.log(`[dream-server] archive import by ${user.username}: ${url.hostname}`);
+  const { pass, write } = archiveStream();
+  void (async () => {
+    try {
+      const stats = await streamArchiveImport({ url: url.toString(), skipIds, write });
+      await write({ type: "done", stats });
+    } catch (error) {
+      const message = error instanceof ArchiveImportError ? error.message : "导入过程中发生错误。";
+      try {
+        await write({ type: "error", message, status: error instanceof ArchiveImportError ? error.status : 500 });
+      } catch {
+        // 客户端已断开时忽略
+      }
+    } finally {
+      pass.end();
+    }
+  })();
+  return c.body(Readable.toWeb(pass) as unknown as ReadableStream, 200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store",
+    "x-accel-buffering": "no",
+  });
+});
+
 app.get("/api/v1/import/share", async (c) => {
   requireUser(c.req.header("authorization"));
   const url = c.req.query("url") ?? "";
@@ -563,6 +598,16 @@ app.onError((err, c) => {
     return c.json(
       errorBody(new ApiError(499, "REQUEST_ABORTED", "客户端已断开连接"), requestId),
       499 as ContentfulStatusCode,
+    );
+  }
+
+  if (err instanceof ArchiveImportError) {
+    const status = err.status === 413 ? 413 : 400;
+    c.header("x-request-id", requestId);
+    c.header("x-api-version", API_VERSION);
+    return c.json(
+      errorBody(new ApiError(status, status === 413 ? "PAYLOAD_TOO_LARGE" : "INVALID_ARGUMENT", err.message), requestId),
+      status as ContentfulStatusCode,
     );
   }
 

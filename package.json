@@ -8,7 +8,7 @@
     "dev:web": "npm run dev --workspace @dream/web",
     "dev:server": "npm run dev --workspace @dream/server",
     "build": "npm run build --workspace @dream/web",
-    "build:server": "esbuild apps/server/src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=apps/server/dist/server.mjs --log-level=warning",
+    "build:server": "esbuild apps/server/src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=apps/server/dist/server.mjs --log-level=warning --external:@aws-sdk/client-s3 --banner:js=\"import { createRequire as __dshCreateRequire } from 'node:module'; const require = __dshCreateRequire(import.meta.url);\"",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "start": "npm run start --workspace @dream/server",
     "mobile:dev": "npm --workspace @dream/mobile run dev",
