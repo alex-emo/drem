@@ -266,6 +266,13 @@ export default function SettingsDialog({
                 </section>
 
                 <section className="settings-section">
+                  <h3>数据存储</h3>
+                  <p className="settings-note">
+                    对话记录会缓存在当前浏览器；登录后会加密同步到你的账号，换设备登录可恢复。
+                  </p>
+                </section>
+
+                <section className="settings-section">
                   <h3>服务状态</h3>
                   <p className="settings-note">{serverState(health)}</p>
                 </section>
