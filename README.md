@@ -218,7 +218,7 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 - 会话 id 使用 `ds-share-<分享 id>`；重复导入自动跳过
 - 图片与文件附件暂不支持，会在结果里提示数量
 
-### 方式二：导出 ZIP
+### 方式二：导入 DeepSeek 导出的 ZIP
 
 入口：左下角「设置」→「数据管理」→「选择 ZIP 文件」。
 
@@ -231,13 +231,25 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 - 图片与文件附件暂不支持，会在结果里提示数量
 - 导入在浏览器内完成，ZIP 不会上传到服务端
 
+### 方式三：Dream 自有加密备份（`*.dream`）
+
+入口：「设置 → 数据管理 → 导出加密备份 / 恢复备份」或「选择备份 / ZIP 文件」。
+
+- 文件格式为 Dream 自有 `dream-export` v1：外层 JSON 包含 `format/version/exportedAt/encrypted/algorithm/compression/iv/data`。
+- 导出时先 gzip 再用当前登录账号的 256-bit 密钥 AES-GCM 加密，文件名 `dream-export-YYYYMMDD-HHmm.dream`；服务端与云端不需要参与导出。
+- 导入时自动识别：
+  - `encrypted: true`：用当前账号密钥解密后导入；
+  - 未加密的 `dream-export` / 旧 `dream-backup` JSON：直接导入；
+  - 旧 `*.json.gz`：自动解压后导入（向上兼容）。
+- 自动备份到本机也使用同一加密格式；恢复时必须先登录并解锁。
+
 ## 本地数据与云端备份
 
 - IndexedDB 库名 `dream`，v1：
   - `conversations`：`{ id, title?, encTitle?, createdAt, updatedAt }`，索引 `by-updated`
   - `messages`：`{ id, conversationId, role, content?, enc?, reasoning?, encReasoning?, status, error?, createdAt }`，索引 `by-conversation`、`by-created`
 - 登录后本地标题/正文/思考会用账号密钥 AES-GCM 加密，`title`/`content` 等明文字段置空；只有从服务端取到密钥并解锁后才可读。
-- 登录后自动从云端拉取加密备份，按 `updatedAt`（会话）/`createdAt`（消息）合并；之后每 5 分钟检查一次，数据变化时异步上传。
+- 登录后自动从云端拉取加密备份，按 `updatedAt`（会话）/`createdAt`（消息）合并；本地写入后 2.5 秒触发一次上传，另有每 5 分钟兜底检查；数据变化时异步上传。
 - 首次登录且云端没有备份、本机有记录时，会弹窗询问是否上传；上传前 gzip 压缩再用账号密钥加密。
 - 服务端只保存密文与密钥，不保存可读聊天内容。密钥为 32 字节（64 位十六进制）随机串；旧账号登录时自动把 10 位旧密钥升级并重加密本地与云端记录。Android App 同样在本地加密并参与云端同步。
 - 浏览器持久化、自动备份到本机（下载/File System Access）也在「设置 → 数据管理」中，详见该页面。

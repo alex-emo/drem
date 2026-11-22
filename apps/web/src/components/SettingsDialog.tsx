@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ImportOutcome } from "../hooks/useChat";
 import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
 import { autoBackupConsented, autoBackupEnabled, backupNow, consentAutoBackup, lastBackupAt, setAutoBackupEnabled } from "../lib/autoBackup";
-import { backupFileName, restoreBackup } from "../lib/backup";
+import { backupFileName, downloadBackup, restoreBackup } from "../lib/backup";
 import { backupHandleName, chooseBackupFile, supportsBackupFile } from "../lib/backupTarget";
 import { formatBytes, readStorageInfo, requestPersistentStorage, type StorageInfo } from "../lib/storage";
 import type { HealthState, Theme } from "../lib/types";
@@ -123,6 +123,15 @@ export default function SettingsDialog({
 
     setState({ kind: "working" });
     try {
+      if (/\.(dream|json|gz)$/i.test(file.name)) {
+        const result = await restoreBackup(file);
+        setState({
+          kind: "ok",
+          text: `已从 Dream 备份导入 ${result.conversations} 个对话、${result.messages} 条消息，正在刷新…`,
+        });
+        window.setTimeout(() => window.location.reload(), 800);
+        return;
+      }
       const archive = await parseDeepSeekArchive(file);
       const outcome = await onImport(archive);
       if (outcome.added === 0 && outcome.skipped > 0) {
@@ -382,6 +391,21 @@ export default function SettingsDialog({
                   <button
                     type="button"
                     className="btn ghost"
+                    onClick={async () => {
+                      try {
+                        setBackupMessage("正在导出加密备份…");
+                        const mode = await downloadBackup();
+                        setBackupMessage(mode === "file" ? "已写入备份文件。" : "已开始下载加密备份文件。");
+                      } catch (error) {
+                        setBackupMessage(error instanceof Error ? error.message : "导出失败。");
+                      }
+                    }}
+                  >
+                    导出加密备份
+                  </button>
+                  <button
+                    type="button"
+                    className="btn ghost"
                     onClick={() => restoreRef.current?.click()}
                   >
                     恢复备份
@@ -389,7 +413,7 @@ export default function SettingsDialog({
                   <input
                     ref={restoreRef}
                     type="file"
-                    accept=".json,.gz,application/json,application/gzip"
+                    accept=".dream,.json,.gz,application/json,application/gzip"
                     className="visually-hidden"
                     onChange={async (event) => {
                       const file = event.target.files?.[0];
@@ -414,7 +438,7 @@ export default function SettingsDialog({
               <section className="settings-section">
                 <h3>导入历史对话</h3>
                 <p className="settings-note">
-                  支持 DeepSeek 客户端导出的 <code>deepseek_data-*.zip</code>。会导入提问、回答和深度思考内容；
+                  支持 Dream 自己的加密备份 <code>*.dream</code>（自动识别加密/未加密，加密的会用当前账号密钥解密）与 DeepSeek 客户端导出的 <code>deepseek_data-*.zip</code>。会导入提问、回答和深度思考内容；
                   图片与文件附件暂不支持。导入不会删除现有对话，重复导入同一会话会自动跳过。
                 </p>
 
@@ -425,15 +449,15 @@ export default function SettingsDialog({
                     onClick={pickFile}
                     disabled={state.kind === "working"}
                   >
-                    {state.kind === "working" ? "正在解析…" : "选择 ZIP 文件"}
+                    {state.kind === "working" ? "正在解析…" : "选择备份 / ZIP 文件"}
                   </button>
-                  <span className="settings-hint">在 DeepSeek App 的「设置 → 数据管理」中导出聊天记录</span>
+                  <span className="settings-hint">支持 Dream 加密备份（*.dream）或 DeepSeek 导出的 ZIP</span>
                 </div>
 
                 <input
                   ref={inputRef}
                   type="file"
-                  accept=".zip,application/zip"
+                  accept=".dream,.json,.gz,.zip,application/zip,application/json,application/gzip"
                   className="visually-hidden"
                   onChange={(event) => void handleFile(event)}
                 />

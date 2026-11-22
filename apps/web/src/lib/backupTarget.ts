@@ -62,7 +62,7 @@ export async function chooseBackupFile(name: string): Promise<boolean> {
   try {
     const handle = await picker({
       suggestedName: name,
-      types: [{ description: "Dream 备份", accept: { "application/gzip": [".json.gz"], "application/json": [".json"] } }],
+      types: [{ description: "Dream 备份", accept: { "application/json": [".dream", ".json"] } }],
     });
     await setHandle(handle);
     return true;
