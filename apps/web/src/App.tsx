@@ -48,16 +48,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    void navigator.storage?.persist?.().catch(() => undefined);
-    // 首次交互时再次申请：Chrome 会参考站点参与度，点击后再申请成功率更高。
-    const ask = () => {
-      void navigator.storage?.persist?.().catch(() => undefined);
-    };
-    window.addEventListener("pointerdown", ask, { once: true });
-    return () => window.removeEventListener("pointerdown", ask);
-  }, []);
-
-  useEffect(() => {
     const onUnauthorized = () => {
       lockAccount();
       clearSession();
