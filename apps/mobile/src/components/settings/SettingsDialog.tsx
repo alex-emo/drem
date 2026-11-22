@@ -96,10 +96,6 @@ const SettingsContent = () => {
         <div role="tabpanel" className={styles.content}>
           {section === 'general' ? (
             <>
-              <ThemeSetting />
-              <LocaleSetting />
-              <TtsVoiceSetting />
-              <LocationSetting />
               <SettingCell
                 label={t('settingsVersion')}
                 description={APP_VERSION}
@@ -132,6 +128,10 @@ const SettingsContent = () => {
                   </Button>
                 }
               />
+              <ThemeSetting />
+              <LocaleSetting />
+              <TtsVoiceSetting />
+              <LocationSetting />
             </>
           ) : (
             <>
