@@ -70,6 +70,7 @@ export function useChat() {
   const [storageError, setStorageError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const settleRef = useRef<((reason: "stop" | "timeout") => void) | null>(null);
   const activeRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const messagesRef = useRef<Message[]>([]);
@@ -174,6 +175,7 @@ export function useChat() {
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
+    settleRef.current?.("stop");
   }, []);
 
   const newChat = useCallback(() => {
@@ -323,6 +325,7 @@ export function useChat() {
       const acc = { content: "", reasoning: "", sources: [] as SearchSource[] };
       let settled = false;
       let refused = false;
+      let lastActivityAt = Date.now();
 
       // 隧道/代理常把 SSE 攒成一批送达；这里按时间把文本摊开显示。
       let pending = "";
@@ -354,6 +357,33 @@ export function useChat() {
         if (timer === null) timer = window.setInterval(tick, 30);
       };
 
+      // 用户点停止或上游长时间无数据时，立即结算，不能依赖 fetch abort 一定 reject。
+      const settleNow = (reason: "stop" | "timeout") => {
+        if (settled) return;
+        if (reason === "stop" && pending) {
+          acc.content += pending;
+          pending = "";
+        }
+        if (timer !== null) {
+          window.clearInterval(timer);
+          timer = null;
+        }
+        drainResolve?.();
+        drainResolve = null;
+        if (reason === "timeout") {
+          void finish("error", "生成超时，请稍后重试。");
+        } else {
+          void finish("done");
+        }
+      };
+      settleRef.current = settleNow;
+      const watchdog = window.setInterval(() => {
+        if (Date.now() - lastActivityAt > 90_000) {
+          controller.abort();
+          settleNow("timeout");
+        }
+      }, 10_000);
+
       const finish = async (
         status: "done" | "refused" | "error",
         error?: string,
@@ -361,6 +391,12 @@ export function useChat() {
       ) => {
         if (settled) return;
         settled = true;
+        settleRef.current = null;
+        window.clearInterval(watchdog);
+        if (timer !== null) {
+          window.clearInterval(timer);
+          timer = null;
+        }
         abortRef.current = null;
 
         const final: Message = {
@@ -408,6 +444,7 @@ export function useChat() {
           webSearch: options.webSearch,
           signal: controller.signal,
           onSources: (sources) => {
+            lastActivityAt = Date.now();
             acc.sources = sources;
             setMessages((prev) =>
               prev.map((message) =>
@@ -416,10 +453,12 @@ export function useChat() {
             );
           },
           onDelta: (chunk) => {
+            lastActivityAt = Date.now();
             pending += chunk;
             ensureTimer();
           },
           onReasoning: (chunk) => {
+            lastActivityAt = Date.now();
             acc.reasoning += chunk;
             setMessages((prev) =>
               prev.map((message) =>
@@ -445,7 +484,6 @@ export function useChat() {
       } catch (error) {
         if (timer !== null) window.clearInterval(timer);
         timer = null;
-        pending = "";
         if (error instanceof Error && error.name === "AbortError") {
           await finish("done");
         } else {
