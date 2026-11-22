@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
@@ -63,13 +63,19 @@ export const App = () => {
   const [cloudError, setCloudError] = useState('')
   const [askUpload, setAskUpload] = useState(false)
 
-  useEffect(() => {
-    if (!authed) return
+  const checkForUpdate = useCallback(() => {
     if (Capacitor.getPlatform() === 'ios') return
     void fetchServerVersion().then((info) => {
       if (info && compareVersion(info.version, APP_VERSION) > 0) setUpdate(info)
     })
-  }, [authed])
+  }, [])
+
+  // 只在“用户主动登录成功”时检查更新；冷启动不检查。
+  useEffect(() => {
+    const onManual = () => checkForUpdate()
+    window.addEventListener('dream:check-update', onManual)
+    return () => window.removeEventListener('dream:check-update', onManual)
+  }, [checkForUpdate])
 
   usePreventPageScroll(isMobile)
 
@@ -235,7 +241,14 @@ export const App = () => {
   }
 
   if (!authed) {
-    return <LoginScreen onSuccess={() => setAuthed(true)} />
+    return (
+      <LoginScreen
+        onSuccess={() => {
+          setAuthed(true)
+          checkForUpdate()
+        }}
+      />
+    )
   }
 
   return (
