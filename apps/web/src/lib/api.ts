@@ -193,7 +193,70 @@ export async function deleteFile(id: string): Promise<void> {
   });
 }
 
+const RETRY_MAX_MESSAGES = 24;
+const RETRY_MAX_CHARS = 80_000;
+
+/** 只保留最近一段上下文，用于请求体过大/网络层无法建立连接时自动重试。 */
+function trimMessagesForRetry(messages: ApiChatMessage[]): ApiChatMessage[] {
+  const kept: ApiChatMessage[] = [];
+  let chars = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (kept.length >= RETRY_MAX_MESSAGES) break;
+    if (kept.length > 0 && chars + message.content.length > RETRY_MAX_CHARS) break;
+    kept.unshift(message);
+    chars += message.content.length;
+  }
+  const firstUser = kept.findIndex((message) => message.role === "user");
+  return firstUser > 0 ? kept.slice(firstUser) : kept;
+}
+
+function isRetryableNetworkError(error: unknown): boolean {
+  if (error instanceof ChatApiError) {
+    return error.status === 0 || error.status === 413 || error.code === "PAYLOAD_TOO_LARGE";
+  }
+  if (error instanceof TypeError) return true;
+  return /failed to fetch|load failed|network/i.test((error as Error)?.message ?? "");
+}
+
 export async function streamChat(options: StreamChatOptions): Promise<void> {
+  let received = false;
+  const tracked: StreamChatOptions = {
+    ...options,
+    onDelta: (text) => {
+      received = true;
+      options.onDelta(text);
+    },
+    onReasoning: (text) => {
+      received = true;
+      options.onReasoning(text);
+    },
+    onSources: (sources) => {
+      received = true;
+      options.onSources?.(sources);
+    },
+    onRefusal: (text) => {
+      received = true;
+      options.onRefusal?.(text);
+    },
+  };
+
+  try {
+    await streamChatOnce(tracked);
+  } catch (error) {
+    if (received || !isRetryableNetworkError(error)) throw error;
+    const trimmed = trimMessagesForRetry(options.messages);
+    if (trimmed.length >= options.messages.length) throw error;
+    console.warn("请求上下文过大，已自动丢弃较早消息并重试", {
+      before: options.messages.length,
+      after: trimmed.length,
+      reason: (error as Error)?.message,
+    });
+    await streamChatOnce({ ...tracked, messages: trimmed });
+  }
+}
+
+async function streamChatOnce(options: StreamChatOptions): Promise<void> {
   const { messages, thinking, files, webSearch, signal, onStart, onSources, onDelta, onReasoning, onRefusal, onDone } = options;
 
   const encoded = await encodeJsonBody({ messages, thinking, files, webSearch });

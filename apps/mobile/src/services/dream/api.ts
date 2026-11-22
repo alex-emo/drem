@@ -93,6 +93,31 @@ async function encodeJsonBody(value: unknown): Promise<{ body: BodyInit; headers
   return { body: compressed, headers: { 'content-encoding': 'gzip' } }
 }
 
+const RETRY_MAX_MESSAGES = 24
+const RETRY_MAX_CHARS = 80_000
+
+type DreamMessage = { role: 'user' | 'assistant' | 'system'; content: string }
+
+/** 请求体过大导致网络层连不上时，只保留最近一段上下文重试。 */
+function trimMessagesForRetry(messages: DreamMessage[]): DreamMessage[] {
+  const kept: DreamMessage[] = []
+  let chars = 0
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (kept.length >= RETRY_MAX_MESSAGES) break
+    if (kept.length > 0 && chars + message.content.length > RETRY_MAX_CHARS) break
+    kept.unshift(message)
+    chars += message.content.length
+  }
+  const firstUser = kept.findIndex((message) => message.role === 'user')
+  return firstUser > 0 ? kept.slice(firstUser) : kept
+}
+
+function isRetryableNetworkError(error: unknown): boolean {
+  if (error instanceof ApiError) return error.kind === 'network' || error.status === 413
+  return /failed to fetch|load failed|network/i.test((error as Error)?.message ?? '')
+}
+
 const clearStoredSession = () => {
   try {
     localStorage.removeItem('dream:token')
@@ -119,15 +144,14 @@ export async function* streamDreamMessage(
   if (!messages.some((message) => message.role === 'user')) {
     throw new ApiError('protocol', '没有可发送的用户消息')
   }
-  let response: Response
-  try {
+  const post = async (attemptMessages: DreamMessage[]): Promise<Response> => {
     const encoded = await encodeJsonBody({
-      messages,
+      messages: attemptMessages,
       thinking: body.thinking.type === 'enabled',
       files: collectFileIds(body),
       webSearch: Boolean(body.tools?.some((tool) => tool.name === 'deepseek_web_search')),
     })
-    response = await fetch(`${apiBase()}/chat`, {
+    return fetch(`${apiBase()}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -138,12 +162,43 @@ export async function* streamDreamMessage(
       body: encoded.body,
       signal,
     })
+  }
+
+  let response: Response
+  try {
+    response = await post(messages)
   } catch (error) {
     if (signal.aborted) throw error
-    throw new ApiError('network', error instanceof Error ? error.message : String(error))
+    const trimmed = trimMessagesForRetry(messages)
+    if (!isRetryableNetworkError(error) || trimmed.length >= messages.length) {
+      throw new ApiError('network', error instanceof Error ? error.message : String(error))
+    }
+    console.warn('请求上下文过大，已自动丢弃较早消息并重试', {
+      before: messages.length,
+      after: trimmed.length,
+      reason: (error as Error)?.message,
+    })
+    try {
+      response = await post(trimmed)
+    } catch (retryError) {
+      if (signal.aborted) throw retryError
+      throw new ApiError('network', retryError instanceof Error ? retryError.message : String(retryError))
+    }
   }
+
   if (!response.ok) {
-    throw await readError(response)
+    const failure = await readError(response)
+    if (failure.status === 413) {
+      const trimmed = trimMessagesForRetry(messages)
+      if (trimmed.length < messages.length) {
+        console.warn('请求体过大，已自动丢弃较早消息并重试', {
+          before: messages.length,
+          after: trimmed.length,
+        })
+        response = await post(trimmed)
+      }
+    }
+    if (!response.ok) throw failure
   }
   const contentType = response.headers.get('Content-Type') ?? ''
   if (!response.body || !contentType.includes('text/event-stream')) {
