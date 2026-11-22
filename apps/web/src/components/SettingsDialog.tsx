@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ImportOutcome } from "../hooks/useChat";
 import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
+import { formatBytes, readStorageInfo, requestPersistentStorage, type StorageInfo } from "../lib/storage";
 import type { HealthState, Theme } from "../lib/types";
 import { CloseIcon, DatabaseIcon, SettingsIcon } from "./Icons";
 
@@ -36,6 +37,12 @@ function serverState(health: HealthState): string {
   return "Dream 模型服务 · 已连接";
 }
 
+function storageText(info: StorageInfo): string {
+  if (!info.supported) return "当前浏览器不支持持久化存储申请。";
+  if (info.persisted) return "已持久化：浏览器在空间不足时也不会自动清理本站数据。";
+  return "未持久化：浏览器在空间不足或清理站点数据时可能删除聊天记录。";
+}
+
 export default function SettingsDialog({
   open,
   theme,
@@ -49,8 +56,15 @@ export default function SettingsDialog({
   onImportArchiveUrl,
 }: SettingsDialogProps) {
   const [tab, setTab] = useState<Tab>("data");
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
+  const [storageBusy, setStorageBusy] = useState(false);
   const [state, setState] = useState<ImportState>({ kind: "idle" });
   const [shareUrl, setShareUrl] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    void readStorageInfo().then(setStorage).catch(() => undefined);
+  }, [open]);
+
   const [shareState, setShareState] = useState<ImportState>({ kind: "idle" });
   const [archiveUrl, setArchiveUrl] = useState("");
   const [archiveState, setArchiveState] = useState<ImportState>({ kind: "idle" });
@@ -258,6 +272,30 @@ export default function SettingsDialog({
                   <p className="settings-note">
                     对话记录只保存在当前浏览器的 IndexedDB 中，不会上传到 Dream 服务端。发送消息时，内容会经本地服务端转发给 Dream 模型服务。
                   </p>
+                  {storage ? (
+                    <div className="storage-status">
+                      <p className={"settings-note" + (storage.persisted ? "" : " storage-warn")}>{storageText(storage)}</p>
+                      <p className="settings-note">
+                        已用 {formatBytes(storage.usage)} / 浏览器配额 {formatBytes(storage.quota)}
+                        {storage.persisted ? "" : "；建议点击下方按钮申请持久化，或安装到桌面/主屏幕后使用。"}
+                      </p>
+                      {!storage.persisted ? (
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          disabled={storageBusy}
+                          onClick={async () => {
+                            setStorageBusy(true);
+                            await requestPersistentStorage();
+                            setStorage(await readStorageInfo());
+                            setStorageBusy(false);
+                          }}
+                        >
+                          {storageBusy ? "申请中…" : "申请本地持久化"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </section>
 
                 <section className="settings-section">

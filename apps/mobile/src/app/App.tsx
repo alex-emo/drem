@@ -20,6 +20,7 @@ import { setApiKey } from '../services/settings.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
 import { installApk } from '../services/dream/installer.js'
+import { Capacitor } from '@capacitor/core'
 import { APP_VERSION, compareVersion, fetchServerVersion, type ServerVersion } from '../services/dream/update.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
@@ -59,6 +60,7 @@ export const App = () => {
 
   useEffect(() => {
     if (!authed) return
+    if (Capacitor.getPlatform() === 'ios') return
     void fetchServerVersion().then((info) => {
       if (info && compareVersion(info.version, APP_VERSION) > 0) setUpdate(info)
     })
