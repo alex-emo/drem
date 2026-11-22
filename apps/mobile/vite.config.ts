@@ -28,5 +28,5 @@ export default defineConfig({
   },
   server: { port: 8090, host: true },
   preview: { port: 8091 },
-  build: { outDir: 'dist', emptyOutDir: true, target: 'es2020' },
+  build: { outDir: 'dist', emptyOutDir: true, target: 'es2017' },
 })

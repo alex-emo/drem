@@ -6,6 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https',
+    errorPath: 'error.html',
   },
   android: {
     allowMixedContent: false,

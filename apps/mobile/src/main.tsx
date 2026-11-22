@@ -1,3 +1,4 @@
+import './lib/compat.js'
 import { createRoot } from 'react-dom/client'
 import { App } from './app/App.js'
 import { setupTheme } from './app/theme.js'
@@ -9,3 +10,5 @@ ensureKatex()
 setupTheme()
 
 createRoot(document.getElementById('root') as HTMLElement).render(<App />)
+;(window as unknown as { __dreamBooted?: boolean }).__dreamBooted = true
+document.getElementById('boot')?.remove()

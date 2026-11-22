@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Dream</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #151517; color: #f9fafb; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+      .card { max-width: 340px; padding: 28px 24px; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; background: #1b1b1c; text-align: center; }
+      .logo { width: 42px; height: 42px; margin: 0 auto 14px; border-radius: 12px; background: #5686fe; color: #fff; font-weight: 700; font-size: 22px; display: grid; place-items: center; }
+      h1 { font-size: 18px; margin: 0 0 8px; }
+      p { color: #adb2b8; font-size: 13px; line-height: 1.7; margin: 0 0 18px; }
+      button { width: 100%; padding: 11px; border: 0; border-radius: 22px; background: #5686fe; color: #fff; font-size: 14px; }
+      button.secondary { margin-top: 8px; background: transparent; border: 1px solid rgba(255,255,255,.16); color: #cfd3d6; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="logo">D</div>
+      <h1>页面加载失败</h1>
+      <p>请检查网络后重试。如果仍然失败，可能是系统 WebView 版本过旧，尝试在应用商店更新「Android System WebView」或 Chrome。</p>
+      <button onclick="location.reload()">重新加载</button>
+      <button class="secondary" onclick="window.open('https://dream.pum.org.cn','_blank')">在浏览器中打开</button>
+    </div>
+  </body>
+</html>

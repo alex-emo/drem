@@ -5,9 +5,35 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
     <title>Dream</title>
+    <style>
+      #boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #151517; color: #f9fafb; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; z-index: 9999; }
+      #boot .logo { width: 46px; height: 46px; border-radius: 13px; background: #5686fe; display: grid; place-items: center; font-weight: 700; font-size: 24px; }
+      #boot p { margin: 0; color: #adb2b8; font-size: 13px; line-height: 1.7; max-width: 300px; text-align: center; }
+      #boot button { padding: 9px 22px; border: 0; border-radius: 20px; background: #5686fe; color: #fff; font-size: 14px; }
+    </style>
   </head>
   <body>
     <script type="module" src="/src/main.tsx"></script>
     <div id="root"></div>
+    <div id="boot">
+      <div class="logo">D</div>
+      <p>正在加载 Dream…</p>
+    </div>
+    <script>
+      (function () {
+        var timer = setTimeout(function () {
+          if (window.__dreamBooted) return;
+          var boot = document.getElementById('boot');
+          if (!boot) return;
+          boot.innerHTML = '<div class="logo">D</div><h1 style="font-size:18px;margin:6px 0">页面加载超时</h1><p>请检查网络后重试；如果反复失败，可能是系统 WebView 过旧，请在应用商店更新「Android System WebView」。</p><button onclick="location.reload()">重新加载</button>';
+        }, 15000);
+        window.addEventListener('error', function () {
+          if (window.__dreamBooted) return;
+          var boot = document.getElementById('boot');
+          if (boot) boot.innerHTML = '<div class="logo">D</div><h1 style="font-size:18px;margin:6px 0">页面加载出错</h1><p>请尝试重新加载。若持续失败，请更新系统 WebView 或联系支持。</p><button onclick="location.reload()">重新加载</button>';
+          clearTimeout(timer);
+        }, true);
+      })();
+    </script>
   </body>
 </html>
