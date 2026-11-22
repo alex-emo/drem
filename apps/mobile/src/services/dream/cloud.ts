@@ -6,7 +6,7 @@ import {
   migrateAppEncryption,
   saveSession,
 } from '../chat/db.js'
-import { getVisibleMessages } from '../chat/branches.js'
+import { getVisibleMessages, normalizeSession } from '../chat/branches.js'
 import type { Message as AppMessage, Session } from '../chat/types.js'
 
 interface BackupPayload {
@@ -112,7 +112,7 @@ export const toWeb = (sessions: Session[]): BackupData => {
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
     })
-    for (const message of getVisibleMessages(session)) {
+    for (const message of getVisibleMessages(normalizeSession(session))) {
       const assistant = message.role === 'assistant' ? message : null
       messages.push({
         id: `${session.id}:${message.id}`,
@@ -173,7 +173,7 @@ export const fromWeb = (data: BackupData): Session[] => {
     const existing = sessions.get(session.id)
     if (!existing || session.updatedAt > existing.updatedAt) sessions.set(session.id, session)
   }
-  return [...sessions.values()]
+  return [...sessions.values()].map(normalizeSession)
 }
 
 const mergeSessions = async (incoming: Session[]): Promise<number> => {

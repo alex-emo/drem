@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { decryptJson, decryptText, encryptJson, encryptText, hasSessionKey } from '../dream/crypto.js'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
+import { normalizeSession } from './branches.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
 const DB_VERSION = 11
@@ -133,7 +134,7 @@ export const loadAllSessions = async (): Promise<Session[]> => {
   const sessions: Session[] = []
   for (const summary of summaries) {
     const session = await loadSession(summary.id)
-    if (session) sessions.push(session)
+    if (session) sessions.push(normalizeSession(session))
   }
   return sessions
 }

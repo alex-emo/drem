@@ -1,4 +1,5 @@
 import type { AssistantMessage, Message, Session, UserMessage } from '../chat/types.js'
+import { normalizeSession } from '../chat/branches.js'
 import { apiBase, getToken } from './auth.js'
 
 export interface SharedChatMessage {
@@ -81,14 +82,14 @@ export function buildShareSession(chat: SharedChat): Session {
     parentId = messageId
   })
 
-  return {
+  return normalizeSession({
     id,
     title,
     createdAt: base,
     updatedAt: base + Math.max(chat.messages.length - 1, 0),
     messages,
     rootMessageId: messages[0]?.id ?? null,
-  }
+  })
 }
 
 export { isDeepSeekShare }

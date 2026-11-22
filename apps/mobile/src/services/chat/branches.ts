@@ -1,18 +1,23 @@
 import type { Message, Session } from './types.js'
 
 /** 将线性消息列表规范化为单分支，保留消息 ID、内容及时间。 */
-export const normalizeSession = (session: Session): Session =>
-  session.rootMessageId !== undefined
-    ? session
-    : {
-        ...session,
-        rootMessageId: session.messages[0]?.id ?? null,
-        messages: session.messages.map((message, index, messages) => ({
-          ...message,
-          parentId: messages[index - 1]?.id ?? null,
-          selectedChildId: messages[index + 1]?.id,
-        })),
-      }
+export const normalizeSession = (session: Session): Session => {
+  // 导入的会话可能只有 rootMessageId 却没有 selectedChildId，分支遍历会停在第一条消息。
+  const isLinear =
+    session.messages.length > 1 && session.messages.every((message) => message.selectedChildId === undefined)
+  if (session.rootMessageId !== undefined && !isLinear) {
+    return session
+  }
+  return {
+    ...session,
+    rootMessageId: session.rootMessageId ?? session.messages[0]?.id ?? null,
+    messages: session.messages.map((message, index, messages) => ({
+      ...message,
+      parentId: message.parentId ?? messages[index - 1]?.id ?? null,
+      selectedChildId: message.selectedChildId ?? messages[index + 1]?.id,
+    })),
+  }
+}
 
 /** 展示内容与请求上下文共用当前选中的分支路径。 */
 export const getVisibleMessages = (session: Session): Message[] => {

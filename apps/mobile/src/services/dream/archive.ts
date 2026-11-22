@@ -1,4 +1,5 @@
 import type { AssistantMessage, Message, Session, UserMessage } from '../chat/types.js'
+import { normalizeSession } from '../chat/branches.js'
 import { appendSession } from '../chat/store.js'
 import { apiBase, getToken } from './auth.js'
 
@@ -64,14 +65,14 @@ function toSession(conversation: ServerConversation, source: ServerMessage[]): S
     return message
   })
 
-  return {
+  return normalizeSession({
     id: conversation.id,
     title: conversation.title,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
     messages,
     rootMessageId: messages[0]?.id ?? null,
-  }
+  })
 }
 
 /** 服务端流式下载并解压导出 ZIP，客户端按会话增量写入 chat-demo 的 IndexedDB。 */
