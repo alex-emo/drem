@@ -2236,3 +2236,16 @@ body,
 
 .storage-status { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .storage-warn { color: var(--danger); }
+
+.notice-card {
+  width: min(440px, 100%);
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+.notice-card h3 { margin: 0 0 10px; font-size: 16px; color: var(--text); }
+.notice-body { display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.7; color: var(--text-secondary); }
+.notice-body p { margin: 0; }
+.notice-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }

@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import ChatView from "./components/ChatView";
 import LoginScreen from "./components/LoginScreen";
 import SettingsDialog from "./components/SettingsDialog";
+import NoticeDialog from "./components/NoticeDialog";
 import Sidebar from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
 import { ChatApiError, fetchMe, logoutAccount } from "./lib/api";
 import { clearSession, getStoredUser, getToken } from "./lib/auth";
+import { autoBackupConsented, autoBackupEnabled, backupNow, consentAutoBackup, setAutoBackupEnabled, startAutoBackup } from "./lib/autoBackup";
+import { detectPrivateMode } from "./lib/privacy";
 import type { AuthUser, HealthInfo, HealthState, Theme } from "./lib/types";
 
 type AuthState =
@@ -103,6 +106,28 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   const sidebarOpenRef = useRef(sidebarOpen);
   sidebarOpenRef.current = sidebarOpen;
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
+  const [privateMode, setPrivateMode] = useState(false);
+  const [showBackupPrompt, setShowBackupPrompt] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void detectPrivateMode().then((isPrivate) => {
+      if (!alive || !isPrivate) return;
+      if (sessionStorage.getItem("dream-private-dismissed") === "1") return;
+      setPrivateMode(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => startAutoBackup(), []);
+
+  useEffect(() => {
+    if (privateMode || !autoBackupEnabled() || autoBackupConsented()) return;
+    const timer = window.setTimeout(() => setShowBackupPrompt(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, [privateMode]);
 
   // 移动浏览器：左缘右滑打开、抽屉内左滑关闭，贴合原生 App 手势
   useEffect(() => {
@@ -218,6 +243,63 @@ function ChatShell({ user, onLogout }: { user: AuthUser; onLogout: () => void })
       />
       {sidebarOpen ? <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} /> : null}
       <ChatView chat={chat} health={health} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
+      {privateMode ? (
+        <NoticeDialog
+          title="可能处于无痕/隐私模式"
+          onClose={() => {
+            sessionStorage.setItem("dream-private-dismissed", "1");
+            setPrivateMode(false);
+          }}
+          actions={[
+            {
+              label: "先导出备份",
+              onClick: () => {
+                void backupNow().catch(() => undefined);
+                sessionStorage.setItem("dream-private-dismissed", "1");
+                setPrivateMode(false);
+              },
+            },
+            {
+              label: "我知道了",
+              primary: true,
+              onClick: () => {
+                sessionStorage.setItem("dream-private-dismissed", "1");
+                setPrivateMode(false);
+              },
+            },
+          ]}
+        >
+          <p>关闭窗口、刷新或清理站点数据后，当前聊天记录可能被浏览器清空。</p>
+          <p>建议退出无痕模式，或先导出一份备份；正式使用请安装 Dream 到桌面/主屏幕。</p>
+        </NoticeDialog>
+      ) : null}
+      {showBackupPrompt ? (
+        <NoticeDialog
+          title="自动备份到本机？"
+          actions={[
+            {
+              label: "暂不",
+              onClick: () => {
+                setAutoBackupEnabled(false);
+                setShowBackupPrompt(false);
+              },
+            },
+            {
+              label: "开启并备份",
+              primary: true,
+              onClick: () => {
+                setAutoBackupEnabled(true);
+                consentAutoBackup();
+                setShowBackupPrompt(false);
+                void backupNow().catch(() => undefined);
+              },
+            },
+          ]}
+        >
+          <p>Dream 会定期把聊天记录导出到手机的下载目录，浏览器可能要求确认一次下载。</p>
+          <p>备份文件不包含账号密码，可随时在「设置 → 数据管理」中恢复。</p>
+        </NoticeDialog>
+      ) : null}
       <SettingsDialog
         open={settingsOpen}
         theme={theme}

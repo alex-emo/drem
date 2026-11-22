@@ -14,6 +14,14 @@ interface DreamDB extends DBSchema {
   };
 }
 
+function markBackupDirty(): void {
+  try {
+    localStorage.setItem("dream-backup-rev", String(Date.now()));
+  } catch {
+    // localStorage 不可用时只影响自动备份判断，不影响聊天保存
+  }
+}
+
 const dbPromise = openDB<DreamDB>("dream", 1, {
   upgrade(db) {
     const conversations = db.createObjectStore("conversations", { keyPath: "id" });
@@ -33,6 +41,7 @@ export async function listConversations(): Promise<Conversation[]> {
 export async function putConversation(conversation: Conversation): Promise<void> {
   const db = await dbPromise;
   await db.put("conversations", conversation);
+  markBackupDirty();
 }
 
 export async function getMessages(conversationId: string): Promise<Message[]> {
@@ -44,6 +53,7 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
 export async function putMessage(message: Message): Promise<void> {
   const db = await dbPromise;
   await db.put("messages", message);
+  markBackupDirty();
 }
 
 export async function putMessages(messages: Message[]): Promise<void> {
@@ -54,6 +64,7 @@ export async function putMessages(messages: Message[]): Promise<void> {
     await tx.store.put(message);
   }
   await tx.done;
+  markBackupDirty();
 }
 
 export async function importConversationData(
@@ -71,6 +82,7 @@ export async function importConversationData(
     await messageStore.put(message);
   }
   await tx.done;
+  markBackupDirty();
 }
 
 export async function deleteConversationData(conversationId: string): Promise<void> {
@@ -80,4 +92,15 @@ export async function deleteConversationData(conversationId: string): Promise<vo
   const keys = await tx.objectStore("messages").index("by-conversation").getAllKeys(conversationId);
   await Promise.all(keys.map((key) => tx.objectStore("messages").delete(key)));
   await tx.done;
+  markBackupDirty();
+}
+
+export async function getAllMessages(): Promise<Message[]> {
+  const db = await dbPromise;
+  return db.getAll("messages");
+}
+
+export async function getAllConversations(): Promise<Conversation[]> {
+  const db = await dbPromise;
+  return db.getAll("conversations");
 }
