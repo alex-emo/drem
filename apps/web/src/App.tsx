@@ -7,7 +7,7 @@ import Sidebar from "./components/Sidebar";
 import { useChat } from "./hooks/useChat";
 import { ChatApiError, fetchMe, logoutAccount } from "./lib/api";
 import { clearSession, getStoredUser, getToken } from "./lib/auth";
-import { autoBackupConsented, autoBackupEnabled, backupNow, consentAutoBackup, setAutoBackupEnabled, startAutoBackup } from "./lib/autoBackup";
+import { downloadBackup } from "./lib/backup";
 import { detectPrivateMode } from "./lib/privacy";
 import { lockAccount, maybePushCloudBackup, pushCloudBackup, unlockAccount, type UnlockResult } from "./lib/cloudSync";
 import type { AuthUser, HealthInfo, HealthState, Theme } from "./lib/types";
@@ -156,7 +156,6 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
   sidebarOpenRef.current = sidebarOpen;
   const [health, setHealth] = useState<HealthState>({ kind: "loading" });
   const [privateMode, setPrivateMode] = useState(false);
-  const [showBackupPrompt, setShowBackupPrompt] = useState(false);
   const [showCloudPrompt, setShowCloudPrompt] = useState(false);
   const [cloudMessage, setCloudMessage] = useState(cloud.pullError ?? "");
 
@@ -172,7 +171,6 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
     };
   }, []);
 
-  useEffect(() => startAutoBackup(), []);
   useEffect(() => {
     if (!cloud.hadCloudBackup) return;
     const timer = window.setTimeout(() => {
@@ -206,12 +204,6 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
       window.removeEventListener("dream:backup-dirty", onDirty);
     };
   }, []);
-
-  useEffect(() => {
-    if (privateMode || !autoBackupEnabled() || autoBackupConsented()) return;
-    const timer = window.setTimeout(() => setShowBackupPrompt(true), 2500);
-    return () => window.clearTimeout(timer);
-  }, [privateMode]);
 
   // 移动浏览器：左缘右滑打开、抽屉内左滑关闭，贴合原生 App 手势
   useEffect(() => {
@@ -341,7 +333,7 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
             {
               label: "先导出备份",
               onClick: () => {
-                void backupNow().catch(() => undefined);
+                void downloadBackup().catch(() => undefined);
                 sessionStorage.setItem("dream-private-dismissed", "1");
                 setPrivateMode(false);
               },
@@ -392,33 +384,6 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
         >
           <p>检测到本机已有 {cloud.localConversations} 个对话。上传后会压缩并用你的账号密钥加密，之后登录会与云端记录按时间合并。</p>
           <p>聊天记录会保存在服务器上；不上传则仅保留在本机。</p>
-        </NoticeDialog>
-      ) : null}
-      {showBackupPrompt ? (
-        <NoticeDialog
-          title="自动备份到本机？"
-          actions={[
-            {
-              label: "暂不",
-              onClick: () => {
-                setAutoBackupEnabled(false);
-                setShowBackupPrompt(false);
-              },
-            },
-            {
-              label: "开启并备份",
-              primary: true,
-              onClick: () => {
-                setAutoBackupEnabled(true);
-                consentAutoBackup();
-                setShowBackupPrompt(false);
-                void backupNow().catch(() => undefined);
-              },
-            },
-          ]}
-        >
-          <p>Dream 会定期把聊天记录导出到手机的下载目录，浏览器可能要求确认一次下载。</p>
-          <p>备份文件不包含账号密码，可随时在「设置 → 数据管理」中恢复。</p>
         </NoticeDialog>
       ) : null}
       {cloudMessage ? (

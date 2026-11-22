@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ImportOutcome } from "../hooks/useChat";
 import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
-import { autoBackupConsented, autoBackupEnabled, backupNow, consentAutoBackup, lastBackupAt, setAutoBackupEnabled } from "../lib/autoBackup";
-import { backupFileName, downloadBackup, restoreBackup } from "../lib/backup";
-import { backupHandleName, chooseBackupFile, supportsBackupFile } from "../lib/backupTarget";
+import { downloadBackup, restoreBackup } from "../lib/backup";
 import { formatBytes, readStorageInfo, requestPersistentStorage, type StorageInfo } from "../lib/storage";
 import type { HealthState, Theme } from "../lib/types";
 import { CloseIcon, DatabaseIcon, SettingsIcon } from "./Icons";
@@ -61,20 +59,13 @@ export default function SettingsDialog({
   const [tab, setTab] = useState<Tab>("data");
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [storageBusy, setStorageBusy] = useState(false);
-  const [autoBackup, setAutoBackup] = useState(autoBackupEnabled);
-  const [backupAt, setBackupAt] = useState(lastBackupAt);
-  const [backupBusy, setBackupBusy] = useState(false);
   const [backupMessage, setBackupMessage] = useState("");
-  const [backupFile, setBackupFile] = useState<string | null>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<ImportState>({ kind: "idle" });
   const [shareUrl, setShareUrl] = useState("");
   useEffect(() => {
     if (!open) return;
     void readStorageInfo().then(setStorage).catch(() => undefined);
-    setAutoBackup(autoBackupEnabled());
-    setBackupAt(lastBackupAt());
-    void backupHandleName().then(setBackupFile).catch(() => undefined);
   }, [open]);
 
   const [shareState, setShareState] = useState<ImportState>({ kind: "idle" });
@@ -327,70 +318,14 @@ export default function SettingsDialog({
             ) : (
               <>
               <section className="settings-section">
-                <h3>自动备份到本机</h3>
+                <h3>备份与恢复</h3>
                 <p className="settings-note">
-                  手机浏览器默认无法静默写入相册/文件系统，Dream 会把聊天记录导出为下载文件；
-                  开启后每 10 分钟检查一次，只有数据变化时才生成新备份。浏览器可能要求确认一次下载。
+                  不再自动把聊天记录写入本机。需要备份时手动导出加密文件；恢复时选择 .dream / .json / .gz 备份。
                 </p>
-                {autoBackup && autoBackupConsented() ? (
-                  <p className="settings-note">
-                    已开启{backupAt ? ` · 最近备份：${new Date(backupAt).toLocaleString()}` : ""}
-                  </p>
-                ) : null}
                 <div className="settings-action">
                   <button
                     type="button"
                     className="btn primary"
-                    disabled={backupBusy}
-                    onClick={async () => {
-                      setBackupBusy(true);
-                      try {
-                        setAutoBackupEnabled(true);
-                        consentAutoBackup();
-                        await backupNow();
-                        setAutoBackup(true);
-                        setBackupAt(lastBackupAt());
-                        setBackupMessage("已开启自动备份，并导出了一份备份。");
-                      } catch (error) {
-                        setBackupMessage(error instanceof Error ? error.message : "备份失败。");
-                      } finally {
-                        setBackupBusy(false);
-                      }
-                    }}
-                  >
-                    {autoBackup && autoBackupConsented() ? "立即备份" : "开启并立即备份"}
-                  </button>
-                  {autoBackup ? (
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => {
-                        setAutoBackupEnabled(false);
-                        setAutoBackup(false);
-                        setBackupMessage("已关闭自动备份。");
-                      }}
-                    >
-                      关闭自动备份
-                    </button>
-                  ) : null}
-                  {supportsBackupFile() ? (
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={async () => {
-                        const ok = await chooseBackupFile(backupFileName());
-                        if (ok) {
-                          setBackupFile(await backupHandleName());
-                          setBackupMessage("已选定备份文件位置；自动备份会静默写入该文件。");
-                        }
-                      }}
-                    >
-                      选择保存位置
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn ghost"
                     onClick={async () => {
                       try {
                         setBackupMessage("正在导出加密备份…");
@@ -431,7 +366,6 @@ export default function SettingsDialog({
                     }}
                   />
                 </div>
-                {backupFile ? <p className="settings-note">备份文件：{backupFile}</p> : null}
                 {backupMessage ? <p className="settings-note">{backupMessage}</p> : null}
               </section>
 
