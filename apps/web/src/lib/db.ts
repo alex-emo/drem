@@ -18,6 +18,7 @@ interface DreamDB extends DBSchema {
 function markBackupDirty(): void {
   try {
     localStorage.setItem("dream-backup-rev", String(Date.now()));
+    window.dispatchEvent(new CustomEvent("dream:backup-dirty"));
   } catch {
     // localStorage 不可用时只影响自动备份判断，不影响聊天保存
   }

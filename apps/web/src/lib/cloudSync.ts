@@ -91,15 +91,29 @@ export async function pullCloudBackup(info: CloudBackupInfo): Promise<{ conversa
   return mergeBackup(parsed);
 }
 
+async function existingCloudSessions(): Promise<unknown[] | undefined> {
+  try {
+    const info = await fetchCloudInfo();
+    if (!info.backup) return undefined;
+    const { iv, data } = decodePayload(info.backup.payload);
+    const parsed = JSON.parse(await gunzip(await decryptBytes({ iv, data }))) as BackupData & { sessions?: unknown[] };
+    return parsed.sessions;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function pushCloudBackup(): Promise<{ size: number; updatedAt: string }> {
   const conversations = await getAllConversations();
   const messages = await getAllMessages();
-  const payload: BackupData = {
+  const sessions = await existingCloudSessions();
+  const payload: BackupData & { sessions?: unknown[] } = {
     format: "dream-backup",
     version: 1,
     exportedAt: new Date().toISOString(),
     conversations,
     messages,
+    ...(sessions?.length ? { sessions } : {}),
   };
   const compressed = await gzip(JSON.stringify(payload));
   const encrypted = await encryptBytes(compressed);

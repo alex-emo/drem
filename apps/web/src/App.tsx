@@ -174,6 +174,15 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
 
   useEffect(() => startAutoBackup(), []);
   useEffect(() => {
+    if (!cloud.hadCloudBackup) return;
+    const timer = window.setTimeout(() => {
+      if (localStorage.getItem("dream-cloud-upload-declined") === "1") return;
+      if (localStorage.getItem("dream-cloud-upload-pending") === "1") return;
+      void pushCloudBackup().catch(() => undefined);
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [cloud]);
+  useEffect(() => {
     if (cloud.hadCloudBackup || cloud.localConversations === 0) return;
     if (localStorage.getItem("dream-cloud-upload-declined") === "1") return;
     localStorage.setItem("dream-cloud-upload-pending", "1");
@@ -181,7 +190,21 @@ function ChatShell({ user, onLogout, cloud }: { user: AuthUser; onLogout: () => 
   }, [cloud]);
   useEffect(() => {
     const timer = window.setInterval(() => void maybePushCloudBackup(), 60 * 1000);
-    return () => window.clearInterval(timer);
+    let debounce = 0;
+    const onDirty = () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(() => {
+        if (localStorage.getItem("dream-cloud-upload-declined") === "1") return;
+        if (localStorage.getItem("dream-cloud-upload-pending") === "1") return;
+        void pushCloudBackup().catch(() => undefined);
+      }, 2500);
+    };
+    window.addEventListener("dream:backup-dirty", onDirty);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(debounce);
+      window.removeEventListener("dream:backup-dirty", onDirty);
+    };
   }, []);
 
   useEffect(() => {

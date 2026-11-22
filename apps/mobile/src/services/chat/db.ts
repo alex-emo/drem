@@ -162,6 +162,11 @@ export const saveSession = async (session: Session, files: StoredFile[] = []): P
     })(),
     tx.done,
   ])
+  try {
+    window.dispatchEvent(new CustomEvent('dream-app-backup-dirty'))
+  } catch {
+    // 不影响会话保存。
+  }
 }
 
 /** 未打开的会话也可重命名；读取→解密→改标题→重新加密写入。 */

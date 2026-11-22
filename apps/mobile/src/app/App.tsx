@@ -122,6 +122,31 @@ export const App = () => {
   }, [locale])
 
   // 文件数、存储空间达到上限时，附件上只显示「上传失败」，原因用 toast 说明
+  useEffect(() => {
+    if (!cloudState?.backup || cloudState.localSessions === 0) return
+    if (localStorage.getItem('dream-app-upload-declined') === '1') return
+    if (localStorage.getItem('dream-app-upload-pending') === '1') return
+    const timer = window.setTimeout(() => void pushAppCloud().catch(() => undefined), 3000)
+    return () => window.clearTimeout(timer)
+  }, [cloudState])
+  useEffect(() => {
+    const timer = window.setInterval(() => void maybePushAppCloud(), 60 * 1000)
+    let debounce = 0
+    const onDirty = () => {
+      window.clearTimeout(debounce)
+      debounce = window.setTimeout(() => {
+        if (localStorage.getItem('dream-app-upload-declined') === '1') return
+        if (localStorage.getItem('dream-app-upload-pending') === '1') return
+        void pushAppCloud().catch(() => undefined)
+      }, 2500)
+    }
+    window.addEventListener('dream-app-backup-dirty', onDirty)
+    return () => {
+      window.clearInterval(timer)
+      window.clearTimeout(debounce)
+      window.removeEventListener('dream-app-backup-dirty', onDirty)
+    }
+  }, [])
   useEffect(() => onUploadNotice(showToast), [])
   useEffect(bindChatPersistence, [])
 

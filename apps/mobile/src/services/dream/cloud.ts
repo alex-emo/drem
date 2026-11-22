@@ -129,14 +129,14 @@ const toWeb = (sessions: Session[]): BackupData => {
 }
 
 const fromWeb = (data: BackupData): Session[] => {
-  if (data.sessions?.length) return data.sessions
   const byConversation = new Map<string, WebMessage[]>()
   for (const message of data.messages ?? []) {
     const list = byConversation.get(message.conversationId) ?? []
     list.push(message)
     byConversation.set(message.conversationId, list)
   }
-  return (data.conversations ?? []).map((conversation) => {
+  const sessions = new Map((data.sessions ?? []).map((session) => [session.id, session]))
+  const linear = (data.conversations ?? []).map((conversation) => {
     const messages: AppMessage[] = (byConversation.get(conversation.id) ?? [])
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((message) =>
@@ -169,6 +169,11 @@ const fromWeb = (data: BackupData): Session[] => {
       messages,
     }
   })
+  for (const session of linear) {
+    const existing = sessions.get(session.id)
+    if (!existing || session.updatedAt > existing.updatedAt) sessions.set(session.id, session)
+  }
+  return [...sessions.values()]
 }
 
 const mergeSessions = async (incoming: Session[]): Promise<number> => {
@@ -226,6 +231,16 @@ export async function unlockAppCloud(): Promise<AppCloudState> {
 
 export async function pushAppCloud(): Promise<void> {
   if (!hasSessionKey()) return
+  try {
+    const info = await api<CloudInfo>('/backup')
+    if (info.backup && !info.legacyKey) {
+      const { iv, data } = decodePayload(info.backup.payload)
+      const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+      await mergeSessions(fromWeb(remote))
+    }
+  } catch {
+    // 拉取失败不阻断本次上传。
+  }
   const sessions = await loadAllSessions()
   const payload = await gzip(JSON.stringify(toWeb(sessions)))
   const { iv, data } = await encryptBytes(payload)
