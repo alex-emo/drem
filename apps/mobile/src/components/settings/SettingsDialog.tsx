@@ -30,7 +30,7 @@ import {
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
-import { APP_VERSION } from '../../services/dream/update.js'
+import { APP_VERSION, compareVersion, fetchServerVersion } from '../../services/dream/update.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
@@ -60,6 +60,7 @@ const SettingsContent = () => {
   const t = useTranslate()
   // 打开时按调用方指定的分组选中，之后在弹窗内切换
   const [section, setSection] = useState(() => useSettingsDialog.getState().section)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
   const historyImport = useHistoryImport()
   const historyDelete = useHistoryDelete()
   const replacingHistory = useChatStore((state) => state.importingHistory)
@@ -108,9 +109,26 @@ const SettingsContent = () => {
                     variant="outlined"
                     size="m"
                     className={styles.cellButton}
-                    onClick={() => window.dispatchEvent(new Event('dream:check-update'))}
+                    disabled={checkingUpdate}
+                    onClick={() => {
+                      if (checkingUpdate) return
+                      setCheckingUpdate(true)
+                      void fetchServerVersion()
+                        .then((info) => {
+                          if (!info) {
+                            showToast('检查更新失败，请检查网络后重试')
+                            return
+                          }
+                          if (compareVersion(info.version, APP_VERSION) > 0) {
+                            window.dispatchEvent(new CustomEvent('dream:check-update', { detail: info }))
+                          } else {
+                            showToast(`已是最新版本（${APP_VERSION}）`)
+                          }
+                        })
+                        .finally(() => setCheckingUpdate(false))
+                    }}
                   >
-                    {t('checkUpdate')}
+                    {checkingUpdate ? '检查中…' : t('checkUpdate')}
                   </Button>
                 }
               />

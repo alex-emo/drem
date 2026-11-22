@@ -72,7 +72,11 @@ export const App = () => {
 
   // 只在“用户主动登录成功”时检查更新；冷启动不检查。
   useEffect(() => {
-    const onManual = () => checkForUpdate()
+    const onManual = (event: Event) => {
+      const detail = (event as CustomEvent).detail as ServerVersion | undefined
+      if (detail) setUpdate(detail)
+      else checkForUpdate()
+    }
     window.addEventListener('dream:check-update', onManual)
     return () => window.removeEventListener('dream:check-update', onManual)
   }, [checkForUpdate])
