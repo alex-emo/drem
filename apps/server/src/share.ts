@@ -81,6 +81,62 @@ function currentBranch(messages: RawMessage[]): RawMessage[] {
   return chain.reverse();
 }
 
+/**
+ * 分享接口会省略已删除的消息：parent_id 指向不存在的消息时，子消息就是下一段的起点。
+ * 这里按“缺失父节点即分段”的规则还原可见消息；每段内仍取最晚的一条分支。
+ */
+function segmentedBranch(messages: RawMessage[]): RawMessage[] {
+  if (messages.length === 0) return [];
+  const byId = new Map<number, RawMessage>();
+  const children = new Map<number, RawMessage[]>();
+  const roots: RawMessage[] = [];
+  for (const message of messages) {
+    if (typeof message.message_id !== "number") continue;
+    byId.set(message.message_id, message);
+    const parent = message.parent_id;
+    if (typeof parent === "number" && byId.has(parent)) {
+      const list = children.get(parent) ?? [];
+      list.push(message);
+      children.set(parent, list);
+    }
+  }
+  for (const message of messages) {
+    if (typeof message.message_id !== "number") continue;
+    if (typeof message.parent_id !== "number" || !byId.has(message.parent_id)) {
+      roots.push(message);
+    }
+  }
+  if (roots.length === 0) return currentBranch(messages);
+
+  const at = (message: RawMessage) => (typeof message.inserted_at === "number" ? message.inserted_at : 0);
+  roots.sort((a, b) => at(a) - at(b));
+  const seen = new Set<number>();
+  const result: RawMessage[] = [];
+  for (const root of roots) {
+    let latest = root;
+    const stack = [root];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (at(current) >= at(latest)) latest = current;
+      for (const child of children.get(current.message_id as number) ?? []) stack.push(child);
+    }
+    const path: RawMessage[] = [];
+    let cursor: RawMessage | undefined = latest;
+    while (cursor && typeof cursor.message_id === "number") {
+      path.push(cursor);
+      const parentId = cursor.parent_id;
+      cursor = typeof parentId === "number" ? byId.get(parentId) : undefined;
+    }
+    for (const message of path.reverse()) {
+      const id = message.message_id;
+      if (typeof id !== "number" || seen.has(id)) continue;
+      seen.add(id);
+      result.push(message);
+    }
+  }
+  return result;
+}
+
 export async function fetchSharedChat(input: string): Promise<SharedChat> {
   const shareId = parseShareId(input);
   if (!shareId) {
@@ -121,7 +177,7 @@ export async function fetchSharedChat(input: string): Promise<SharedChat> {
     throw new ApiError(404, "NOT_FOUND", "分享不存在或已被删除");
   }
 
-  const branch = currentBranch(biz.messages);
+  const branch = segmentedBranch(biz.messages);
   const messages: SharedMessage[] = [];
   let attachments = 0;
 
