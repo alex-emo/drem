@@ -208,3 +208,12 @@ export function FileIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+
+export function RegenerateIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 5v6h-6" />
+    </Icon>
+  );
+}

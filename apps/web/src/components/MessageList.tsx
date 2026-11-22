@@ -8,6 +8,7 @@ interface MessageListProps {
   versions: Map<string, VersionInfo>;
   streaming: boolean;
   onEdit: (messageId: string, content: string) => Promise<boolean>;
+  onRegenerate: (messageId: string) => void;
   onSelectVersion: (messageId: string) => void;
 }
 
@@ -16,6 +17,7 @@ export default function MessageList({
   versions,
   streaming,
   onEdit,
+  onRegenerate,
   onSelectVersion,
 }: MessageListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -46,6 +48,7 @@ export default function MessageList({
             versions={versions.get(message.id)}
             streaming={streaming}
             onEdit={onEdit}
+            onRegenerate={onRegenerate}
             onSelectVersion={onSelectVersion}
           />
         ))}

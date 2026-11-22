@@ -327,6 +327,7 @@ export function useChat() {
           content: acc.content,
           reasoning: acc.reasoning || undefined,
           files: options.files,
+          webSearch: options.webSearch,
           sources: acc.sources.length > 0 ? acc.sources : undefined,
           status,
           error,
@@ -574,6 +575,60 @@ export function useChat() {
     [runReply],
   );
 
+  /** 重新生成助手回复：在同一用户消息下挂一个新的兄弟版本。 */
+  const regenerate = useCallback(
+    async (assistantMessageId: string) => {
+      if (streamingRef.current) return;
+      const conversationId = activeRef.current;
+      const conversation = conversationsRef.current.find((item) => item.id === conversationId);
+      if (!conversationId || !conversation) return;
+      const visible = messagesRef.current;
+      const index = visible.findIndex((message) => message.id === assistantMessageId);
+      const target = visible[index];
+      if (!target || target.role !== "assistant" || !target.parentId) return;
+
+      const all = allMessagesRef.current;
+      const path: Message[] = [];
+      let cursor = all.find((message) => message.id === target.parentId);
+      while (cursor) {
+        path.unshift(cursor);
+        cursor = cursor.parentId ? all.find((message) => message.id === cursor?.parentId) : undefined;
+      }
+      if (path.length === 0 || path.at(-1)?.role !== "user") return;
+
+      const newAssistant: Message = {
+        id: newId(),
+        conversationId,
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        createdAt: Date.now(),
+        parentId: target.parentId,
+        selectedChildId: null,
+      };
+
+      const nextAll = [
+        ...all.map((message) =>
+          message.id === target.parentId ? { ...message, selectedChildId: newAssistant.id } : message,
+        ),
+        newAssistant,
+      ];
+      allMessagesRef.current = nextAll;
+      setAllMessages(nextAll);
+
+      const nextVisible = [...visible.slice(0, index), newAssistant];
+      messagesRef.current = nextVisible;
+      setMessages(nextVisible);
+      await putMessage(newAssistant);
+
+      await runReply(conversation, newAssistant, historyFor(path), {
+        files: target.files,
+        webSearch: target.webSearch,
+      });
+    },
+    [runReply],
+  );
+
   const selectMessageVersion = useCallback(
     async (messageId: string) => {
       if (streamingRef.current) return;
@@ -606,6 +661,7 @@ export function useChat() {
     setThinking,
     sendMessage,
     editMessage,
+    regenerate,
     selectMessageVersion,
     stop,
     newChat,

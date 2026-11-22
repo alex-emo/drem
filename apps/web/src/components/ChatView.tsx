@@ -46,6 +46,7 @@ export default function ChatView({ chat, health, onToggleSidebar }: ChatViewProp
           versions={chat.versions}
           streaming={chat.streaming}
           onEdit={chat.editMessage}
+          onRegenerate={chat.regenerate}
           onSelectVersion={chat.selectMessageVersion}
         />
       )}

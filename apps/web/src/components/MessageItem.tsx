@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { VersionInfo } from "../lib/branches";
 import type { Message } from "../lib/types";
 import BranchSwitcher from "./BranchSwitcher";
-import { CheckIcon, CopyIcon, EditIcon } from "./Icons";
+import { CheckIcon, CopyIcon, EditIcon, RegenerateIcon } from "./Icons";
 import Markdown from "./Markdown";
 
 /** 把服务端返回的 [n] 引用编号转成可点击的站内链接，代码块内不转换。 */
@@ -44,6 +44,7 @@ interface MessageItemProps {
   versions?: VersionInfo;
   streaming: boolean;
   onEdit: (messageId: string, content: string) => Promise<boolean>;
+  onRegenerate: (messageId: string) => void;
   onSelectVersion: (messageId: string) => void;
 }
 
@@ -52,6 +53,7 @@ export default function MessageItem({
   versions,
   streaming,
   onEdit,
+  onRegenerate,
   onSelectVersion,
 }: MessageItemProps) {
   const displayContent = linkCitations(message.content);
@@ -256,11 +258,22 @@ export default function MessageItem({
         </details>
       ) : null}
 
-      {(message.status === "done" || message.status === "refused") && message.content ? (
+      {(message.status === "done" || message.status === "refused" || message.status === "error") && message.content ? (
         <div className="msg-actions">
           <button type="button" className="icon-btn small" onClick={() => void copy()} aria-label="复制回复" title="复制">
             {copied ? <CheckIcon size={15} /> : <CopyIcon size={15} />}
           </button>
+          {!streaming ? (
+            <button
+              type="button"
+              className="icon-btn small"
+              onClick={() => onRegenerate(message.id)}
+              aria-label="重新生成"
+              title="重新生成"
+            >
+              <RegenerateIcon size={15} />
+            </button>
+          ) : null}
           {versions && versions.ids.length > 1 ? (
             <BranchSwitcher versions={versions} disabled={streaming} onSelect={onSelectVersion} />
           ) : null}

@@ -41,6 +41,7 @@ export interface Message {
   /** 服务端错误码与请求编号，便于用户报障时定位日志。 */
   errorCode?: string;
   errorRequestId?: string;
+  webSearch?: boolean;
   files?: FileAttachment[];
   sources?: SearchSource[];
   createdAt: number;
