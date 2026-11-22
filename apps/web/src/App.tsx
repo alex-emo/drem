@@ -85,7 +85,10 @@ function AuthedShell({ user, onLogout }: { user: AuthUser; onLogout: () => void 
 
   useEffect(() => {
     let alive = true;
-    void unlockAccount(user.id)
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("同步超时，请检查网络后重试。")), 45_000),
+    );
+    void Promise.race([unlockAccount(user.id), timeout])
       .then((cloud) => {
         if (alive) setState({ kind: "ready", cloud });
       })

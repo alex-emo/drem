@@ -73,6 +73,12 @@ export const App = () => {
 
   usePreventPageScroll(isMobile)
 
+  // 首帧成功渲染后再移除启动兜底层；渲染崩溃时保留兜底层与错误页。
+  useEffect(() => {
+    ;(window as unknown as { __dreamBooted?: boolean }).__dreamBooted = true
+    document.getElementById('boot')?.remove()
+  }, [])
+
   // 从屏幕左缘右滑打开抽屉，抽屉内左滑关闭（DS App 的手势习惯）
   useEffect(() => {
     if (!isMobile) return
@@ -162,7 +168,11 @@ export const App = () => {
     let alive = true
     setApiKey(getToken())
     setCloudPhase('loading')
-    void unlockAppCloud()
+    const timeout = new Promise<never>((_, reject) => {
+      const id = window.setTimeout(() => reject(new Error('同步超时，请检查网络后重试。')), 45_000)
+      void id
+    })
+    void Promise.race([unlockAppCloud(), timeout])
       .then((state) => {
         if (!alive) return
         setCloudState(state)
