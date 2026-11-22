@@ -221,8 +221,18 @@ function isRetryableNetworkError(error: unknown): boolean {
 
 export async function streamChat(options: StreamChatOptions): Promise<void> {
   let received = false;
+  const totalChars = options.messages.reduce((sum, message) => sum + message.content.length, 0);
+  const prepared = totalChars > 800_000 ? trimMessagesForRetry(options.messages) : options.messages;
+  if (prepared.length < options.messages.length) {
+    console.warn("请求上下文过大，发送前自动丢弃较早消息", {
+      before: options.messages.length,
+      after: prepared.length,
+      chars: totalChars,
+    });
+  }
   const tracked: StreamChatOptions = {
     ...options,
+    messages: prepared,
     onDelta: (text) => {
       received = true;
       options.onDelta(text);
@@ -245,10 +255,10 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     await streamChatOnce(tracked);
   } catch (error) {
     if (received || !isRetryableNetworkError(error)) throw error;
-    const trimmed = trimMessagesForRetry(options.messages);
-    if (trimmed.length >= options.messages.length) throw error;
+    const trimmed = trimMessagesForRetry(prepared);
+    if (trimmed.length >= prepared.length) throw error;
     console.warn("请求上下文过大，已自动丢弃较早消息并重试", {
-      before: options.messages.length,
+      before: prepared.length,
       after: trimmed.length,
       reason: (error as Error)?.message,
     });

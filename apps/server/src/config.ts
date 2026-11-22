@@ -66,8 +66,8 @@ const model =
 
 export const config = {
   port: Number(process.env.PORT ?? 8787),
-  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.1",
-  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 24),
+  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.2",
+  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 25),
   host: process.env.DREAM_HOST ?? "127.0.0.1",
   provider,
   providerLabel: provider === "qwen" ? "Qwen" : "DeepSeek",

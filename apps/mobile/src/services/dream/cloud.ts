@@ -246,6 +246,11 @@ export async function pushAppCloud(): Promise<void> {
   if (!hasSessionKey()) return
   try {
     const info = await api<CloudInfo>('/backup')
+    // 超大备份在低端 WebView 上加密/压缩会触发内存峰值，改为只拉取、不自动上传。
+    if (info.backup && info.backup.size > 6_000_000) {
+      console.warn('云端备份超过 6MB，已暂停自动上传以避免内存崩溃', { size: info.backup.size })
+      return
+    }
     if (info.backup && !info.legacyKey) {
       const { iv, data } = decodePayload(info.backup.payload)
       const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData

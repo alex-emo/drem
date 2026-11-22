@@ -144,6 +144,15 @@ export async function* streamDreamMessage(
   if (!messages.some((message) => message.role === 'user')) {
     throw new ApiError('protocol', '没有可发送的用户消息')
   }
+  const totalChars = messages.reduce((sum, message) => sum + message.content.length, 0)
+  const prepared = totalChars > 800_000 ? trimMessagesForRetry(messages) : messages
+  if (prepared.length < messages.length) {
+    console.warn('请求上下文过大，发送前自动丢弃较早消息', {
+      before: messages.length,
+      after: prepared.length,
+      chars: totalChars,
+    })
+  }
   const post = async (attemptMessages: DreamMessage[]): Promise<Response> => {
     const encoded = await encodeJsonBody({
       messages: attemptMessages,
@@ -166,15 +175,15 @@ export async function* streamDreamMessage(
 
   let response: Response
   try {
-    response = await post(messages)
+    response = await post(prepared)
   } catch (error) {
     if (signal.aborted) throw error
-    const trimmed = trimMessagesForRetry(messages)
-    if (!isRetryableNetworkError(error) || trimmed.length >= messages.length) {
+    const trimmed = trimMessagesForRetry(prepared)
+    if (!isRetryableNetworkError(error) || trimmed.length >= prepared.length) {
       throw new ApiError('network', error instanceof Error ? error.message : String(error))
     }
     console.warn('请求上下文过大，已自动丢弃较早消息并重试', {
-      before: messages.length,
+      before: prepared.length,
       after: trimmed.length,
       reason: (error as Error)?.message,
     })
@@ -189,10 +198,10 @@ export async function* streamDreamMessage(
   if (!response.ok) {
     const failure = await readError(response)
     if (failure.status === 413) {
-      const trimmed = trimMessagesForRetry(messages)
-      if (trimmed.length < messages.length) {
+      const trimmed = trimMessagesForRetry(prepared)
+      if (trimmed.length < prepared.length) {
         console.warn('请求体过大，已自动丢弃较早消息并重试', {
-          before: messages.length,
+          before: prepared.length,
           after: trimmed.length,
         })
         response = await post(trimmed)
