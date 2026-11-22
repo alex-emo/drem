@@ -21,7 +21,7 @@ const jsToTs = () => ({
 export default defineConfig({
   plugins: [jsToTs(), react()],
   define: {
-      __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '1.2.0'),
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '1.4.0'),
     __API_ORIGIN__: JSON.stringify(process.env.DREAM_API_ORIGIN ?? 'https://dream.pum.org.cn'),
   },
   server: { port: 8090, host: true },
