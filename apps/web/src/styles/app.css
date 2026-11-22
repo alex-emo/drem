@@ -2184,3 +2184,8 @@ body,
   .admin-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-head-page { display: none; }
 }
+
+.admin-table { min-width: 760px; }
+.admin-page-panel .admin-table { min-width: 960px; }
+.admin-row-actions { flex-wrap: nowrap; }
+.admin-table td.admin-user { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
