@@ -28,7 +28,7 @@ export const compareVersion = (a: string, b: string): number => {
 
 export async function fetchServerVersion(): Promise<ServerVersion | null> {
   try {
-    const response = await fetch(`${apiBase()}/version`)
+    const response = await fetch(`${apiBase()}/version`, { cache: 'no-store' })
     if (!response.ok) return null
     return (await response.json()) as ServerVersion
   } catch {

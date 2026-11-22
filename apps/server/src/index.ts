@@ -241,9 +241,10 @@ app.delete("/api/v1/files/:id", (c) => {
 app.get("/api/v1/version", (c) => {
   const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
   const host = c.req.header("host") ?? new URL(c.req.url).host;
+  c.header("cache-control", "no-store, no-cache, must-revalidate");
   return c.json({
     version: config.appVersion,
-    apkUrl: `${proto}://${host}/download/dream-android.apk?v=${config.appVersion}`,
+    apkUrl: `${proto}://${host}/download/dream-android.apk?v=${config.appVersion}&t=${Date.now()}`,
     notes: "导出链接流式导入、回复重新生成、后台 2.0。",
     publishedAt: "2026-11-22",
   });
