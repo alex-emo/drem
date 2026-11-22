@@ -66,9 +66,27 @@ export const App = () => {
   useEffect(() => {
     if (!authed) return
     if (Capacitor.getPlatform() === 'ios') return
-    void fetchServerVersion().then((info) => {
-      if (info && compareVersion(info.version, APP_VERSION) > 0) setUpdate(info)
-    })
+    let alive = true
+    const check = () => {
+      void fetchServerVersion().then((info) => {
+        if (!alive || !info) return
+        if (compareVersion(info.version, APP_VERSION) > 0) setUpdate(info)
+      })
+    }
+    check()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    const onManual = () => check()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('dream:check-update', onManual)
+    const timer = window.setInterval(check, 30 * 60 * 1000)
+    return () => {
+      alive = false
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('dream:check-update', onManual)
+      window.clearInterval(timer)
+    }
   }, [authed])
 
   usePreventPageScroll(isMobile)
