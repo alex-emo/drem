@@ -252,6 +252,12 @@ export interface AnnouncementRow {
 }
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS announcements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL DEFAULT '',
@@ -291,4 +297,23 @@ export function updateAnnouncement(id: number, title: string, body: string, acti
 
 export function deleteAnnouncement(id: number): boolean {
   return db.prepare("DELETE FROM announcements WHERE id = ?").run(id).changes > 0;
+}
+
+export interface AppSettingRow {
+  key: string;
+  value: string;
+  updated_at: string;
+}
+
+export function getAppSetting(key: string): AppSettingRow | undefined {
+  return db.prepare("SELECT key, value, updated_at FROM app_settings WHERE key = ?").get(key) as
+    | AppSettingRow
+    | undefined;
+}
+
+export function setAppSetting(key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(key, value, new Date().toISOString());
 }

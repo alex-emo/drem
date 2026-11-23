@@ -93,7 +93,8 @@ interface LogEntry {
   message?: string;
 }
 
-type Page = "overview" | "users" | "keys" | "moderation" | "errors" | "logs";
+type Page = "overview" | "users" | "keys" | "moderation" | "errors" | "logs" | "model";
+type ModelSettings = { temperature: number; identityPrompt: string; updatedAt: string | null };
 type Announcement = { id: number; title: string; body: string; active: number; created_at: string; updated_at: string };
 type SortDirection = "asc" | "desc";
 
@@ -104,6 +105,7 @@ const PAGE_TITLES: Record<Page, string> = {
   moderation: "内容拦截",
   errors: "错误记录",
   logs: "请求日志",
+  model: "模型设置",
 };
 
 const number = (value: number) => value.toLocaleString("zh-CN");
@@ -227,6 +229,11 @@ export default function AdminPage() {
   const [annTitle, setAnnTitle] = useState("");
   const [annBody, setAnnBody] = useState("");
   const [annBusy, setAnnBusy] = useState(false);
+  const [modelSettings, setModelSettings] = useState<ModelSettings | null>(null);
+  const [modelDefaults, setModelDefaults] = useState<ModelSettings | null>(null);
+  const [modelTemp, setModelTemp] = useState("0.7");
+  const [modelPrompt, setModelPrompt] = useState("");
+  const [modelBusy, setModelBusy] = useState(false);
 
   const token = getToken();
   const currentUserId = useMemo(() => {
@@ -275,9 +282,52 @@ export default function AdminPage() {
     }
   }, [token]);
 
+  const loadModelSettings = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch("/api/v1/admin/model-settings", { headers: { authorization: `Bearer ${token}` } });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { settings: ModelSettings; defaults: ModelSettings };
+      setModelSettings(payload.settings);
+      setModelDefaults(payload.defaults);
+      setModelTemp(String(payload.settings.temperature));
+      setModelPrompt(payload.settings.identityPrompt);
+    } catch {
+      // 模型设置加载失败不阻塞后台其他页面。
+    }
+  }, [token]);
+
   useEffect(() => {
     document.title = "Dream 后台";
   }, []);
+
+  useEffect(() => {
+    if (page === "model") void loadModelSettings();
+  }, [page, loadModelSettings]);
+
+  const saveModelSettings = useCallback(async () => {
+    if (!token) return;
+    setModelBusy(true);
+    try {
+      const response = await fetch("/api/v1/admin/model-settings", {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ temperature: Number(modelTemp), identityPrompt: modelPrompt }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { settings?: ModelSettings; error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
+      if (payload.settings) {
+        setModelSettings(payload.settings);
+        setModelTemp(String(payload.settings.temperature));
+        setModelPrompt(payload.settings.identityPrompt);
+      }
+      setNotice("模型设置已保存，下一条请求生效");
+    } catch (err) {
+      setNotice(`保存失败：${(err as Error).message}`);
+    } finally {
+      setModelBusy(false);
+    }
+  }, [modelPrompt, modelTemp, token]);
 
   useEffect(() => {
     void load();
@@ -806,7 +856,7 @@ export default function AdminPage() {
       <div className="admin-layout">
         <aside className={`admin-sidebar ${drawerOpen ? "open" : ""}`}>
           <nav className="admin-nav">
-            {(["overview", "users", "keys", "moderation", "errors", "logs"] as Page[]).map((item) => (
+            {(["overview", "users", "keys", "moderation", "errors", "logs", "model"] as Page[]).map((item) => (
               <button key={item} type="button" className={`admin-nav-item ${page === item ? "active" : ""}`} onClick={() => resetSort(item)}>
                 <span>{PAGE_TITLES[item]}</span>
                 {item === "users" ? <em>{totals.users}</em> : null}
@@ -823,7 +873,33 @@ export default function AdminPage() {
         {drawerOpen ? <div className="admin-overlay" onClick={() => setDrawerOpen(false)} /> : null}
 
         <main className="admin-main">
-          {page === "overview" ? (
+          {page === "model" ? (
+            <section className="admin-panel admin-page-panel">
+              <div className="admin-panel-head">
+                <div>
+                  <h2>模型设置</h2>
+                  <span className="admin-muted">影响所有用户的下一次聊天请求</span>
+                </div>
+              </div>
+              <div className="admin-model-form">
+                <label className="admin-model-field">
+                  <span>温度 <b>{modelTemp}</b></span>
+                  <input className="admin-range" type="range" min="0" max="2" step="0.1" value={modelTemp} onChange={(event) => setModelTemp(event.target.value)} />
+                  <span className="admin-muted">0–2，越高越随机；DeepSeek reasoner 模式不传该参数。</span>
+                </label>
+                <label className="admin-model-field">
+                  <span>初始提示词（system）</span>
+                  <textarea className="admin-input admin-textarea admin-model-prompt" rows={12} maxLength={4000} value={modelPrompt} onChange={(event) => setModelPrompt(event.target.value)} placeholder="留空则不注入 system 身份提示" />
+                  <span className="admin-muted">{modelPrompt.length}/4000；当前默认：说自己是 Dream 模型。修改后只影响新请求，不改写历史消息。</span>
+                </label>
+                <div className="admin-actions">
+                  <button type="button" className="admin-btn primary" disabled={modelBusy} onClick={() => void saveModelSettings()}>{modelBusy ? "保存中…" : "保存设置"}</button>
+                  <button type="button" className="admin-btn" disabled={modelBusy || !modelDefaults} onClick={() => { if (!modelDefaults) return; setModelTemp(String(modelDefaults.temperature)); setModelPrompt(modelDefaults.identityPrompt); }}>恢复默认</button>
+                  {modelSettings?.updatedAt ? <span className="admin-muted">上次更新 {formatTime(modelSettings.updatedAt)}</span> : null}
+                </div>
+              </div>
+            </section>
+          ) : page === "overview" ? (
             <>
               <section className="admin-cards">
                 <article className="admin-card"><span className="admin-card-label">用户</span><strong>{number(totals.users)}</strong><span className="admin-card-sub">近 24h 活跃会话 {number(totals.activeSessions)}</span></article>

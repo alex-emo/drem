@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { isContextLengthError } from "./deepseek.js";
 import { withDreamIdentity } from "./identity.js";
+import { getModelSettings } from "./settings.js";
 import { cooldownForStatus, isRetryableStatus, keyPool, type PooledKey } from "./keys.js";
 import { ApiError, sseEncode } from "./protocol.js";
 import { redactOutput } from "./stream.js";
@@ -45,6 +46,7 @@ function buildPayload(messages: ChatMessageLike[], thinking: boolean) {
       enable_thinking: thinking,
       incremental_output: true,
       stream: true,
+      temperature: getModelSettings().temperature,
     },
   };
 }

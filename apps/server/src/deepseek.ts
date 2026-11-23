@@ -1,5 +1,6 @@
 import { config } from "./config.js";
 import { withDreamIdentity } from "./identity.js";
+import { getModelSettings } from "./settings.js";
 import {
   cooldownForStatus,
   isRetryableStatus,
@@ -303,6 +304,7 @@ export async function openChatStream(
   model: string;
   provider: "deepseek" | "qwen";
 }> {
+  const temperature = getModelSettings().temperature;
   const payload =
     config.provider === "qwen"
       ? {
@@ -311,12 +313,14 @@ export async function openChatStream(
           stream: true,
           stream_options: { include_usage: true },
           enable_thinking: parsed.thinking,
+          temperature,
         }
       : {
           model: parsed.thinking ? config.reasonerModel : config.model,
           messages: withDreamIdentity(parsed.messages),
           stream: true,
           stream_options: { include_usage: true },
+          ...(parsed.thinking ? {} : { temperature }),
         };
 
   const result = await fetchUpstream(primaryTarget, payload, clientSignal);

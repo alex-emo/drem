@@ -44,6 +44,7 @@ import { openSearchStream } from "./search.js";
 import { fetchSharedChat } from "./share.js";
 import { archiveStream, streamArchiveImport, validateArchiveUrl, ArchiveImportError } from "./archiveImport.js";
 import { mockChatStream } from "./mock.js";
+import { DEFAULT_IDENTITY_PROMPT, DEFAULT_TEMPERATURE, getModelSettings, updateModelSettings } from "./settings.js";
 import {
   API_VERSION,
   ApiError,
@@ -416,6 +417,32 @@ app.get("/api/v1/admin/logs", (c) => {
       limit: Number.isFinite(limit) ? limit : 200,
     }),
   );
+});
+
+app.get("/api/v1/admin/model-settings", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  return c.json({ settings: getModelSettings(), defaults: { temperature: DEFAULT_TEMPERATURE, identityPrompt: DEFAULT_IDENTITY_PROMPT } });
+});
+
+app.put("/api/v1/admin/model-settings", async (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const body = (await readJsonBody(c)) as { temperature?: unknown; identityPrompt?: unknown };
+  const current = getModelSettings();
+  if (body.temperature !== undefined && (typeof body.temperature !== "number" || !Number.isFinite(body.temperature))) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "temperature 必须是数字");
+  }
+  if (body.identityPrompt !== undefined && typeof body.identityPrompt !== "string") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "identityPrompt 必须是字符串");
+  }
+  const temperature = body.temperature === undefined ? current.temperature : Number(body.temperature);
+  if (temperature < 0 || temperature > 2) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "temperature 必须在 0 到 2 之间");
+  }
+  const identityPrompt = body.identityPrompt === undefined ? current.identityPrompt : String(body.identityPrompt);
+  if (identityPrompt.length > 4000) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "初始提示词不能超过 4000 字");
+  }
+  return c.json({ settings: updateModelSettings({ temperature, identityPrompt }) });
 });
 
 app.get("/api/v1/admin/announcements", (c) => {
