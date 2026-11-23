@@ -117,6 +117,7 @@ docs/
   feature-teardown.md     # DeepSeek C 端功能拆解、优先级与实现规格
   screenshots/            # 界面截图
 scripts/dev.mjs           # 同时启动 web + server 的开发脚本
+tests/                    # 测试：unit（server/web）+ integration + e2e，见 tests/README.md
 ```
 
 ## 已实现
@@ -318,6 +319,10 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 | `npm run build:server` | 打包服务端为单文件 `apps/server/dist/server.mjs` |
 | `npm run typecheck` | 两个 workspace 的类型检查 |
 | `npm run start` | 以 tsx 启动服务端（无 watch） |
+| `npm test` | 运行单元测试 + 集成测试（Vitest） |
+| `npm run test:server` / `test:web` | 只跑服务端 / Web 测试 |
+| `npm run test:coverage` | 覆盖率报告（`coverage/`） |
+| `npm run test:types` | 测试代码类型检查 |
 
 部署到服务器（systemd、更新、SSH 隧道）见 [docs/deploy.md](docs/deploy.md)。
 

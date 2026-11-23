@@ -14,12 +14,23 @@
     "mobile:dev": "npm --workspace @dream/mobile run dev",
     "mobile:build": "npm --workspace @dream/mobile run build",
     "mobile:sync": "npm --workspace @dream/mobile exec cap sync",
-    "version:check": "node scripts/check-versions.mjs"
+    "version:check": "node scripts/check-versions.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:server": "vitest run --project server",
+    "test:web": "vitest run --project web",
+    "test:integration": "vitest run --project server tests/integration",
+    "test:coverage": "vitest run --coverage",
+    "test:types": "tsc -p tests/tsconfig.json --noEmit"
   },
   "workspaces": [
     "apps/*"
   ],
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@vitest/coverage-v8": "^5.1.1",
+    "esbuild": "^0.28.2",
+    "fake-indexeddb": "^6.2.8",
+    "jsdom": "^31.0.1",
+    "vitest": "^5.1.1"
   }
 }

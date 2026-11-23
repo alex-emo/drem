@@ -1,0 +1,25 @@
+{
+  "extends": "../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "baseUrl": "..",
+    "paths": {
+      "@web/*": [
+        "apps/web/src/*"
+      ]
+    }
+  },
+  "include": [
+    "./**/*.ts",
+    "../apps/server/src/**/*.ts",
+    "../apps/web/src/**/*.ts"
+  ],
+  "exclude": [
+    "e2e"
+  ]
+}
