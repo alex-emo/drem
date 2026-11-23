@@ -126,7 +126,9 @@ function isRetryableNetworkError(error: unknown): boolean {
   return (
     message.includes('failed to fetch') ||
     message.includes('load failed') ||
-    message.includes('network')
+    message.includes('network') ||
+    message.includes('input stream') ||
+    message.includes('stream closed')
   )
 }
 
@@ -190,18 +192,20 @@ export async function* streamDreamMessage(
     response = await post(prepared)
   } catch (error) {
     if (signal.aborted) throw error
-    const trimmed = trimMessagesForRetry(prepared)
-    if (!isRetryableNetworkError(error) || trimmed.length >= prepared.length) {
+    if (!isRetryableNetworkError(error)) {
       console.warn('[dream] chat network failed', error)
       throw new ApiError('network', '网络连接失败，请检查网络后重试。')
     }
-    console.warn('请求上下文过大，已自动丢弃较早消息并重试', {
-      before: prepared.length,
-      after: trimmed.length,
-      reason: (error as Error)?.message,
-    })
+    const trimmed = trimMessagesForRetry(prepared)
+    const retryMessages = trimmed.length < prepared.length ? trimmed : prepared
+    console.warn(
+      retryMessages.length < prepared.length
+        ? '请求上下文过大，已自动丢弃较早消息并重试'
+        : '流式连接中断，未产生输出，自动重试一次',
+      { before: prepared.length, after: retryMessages.length, reason: (error as Error)?.message },
+    )
     try {
-      response = await post(trimmed)
+      response = await post(retryMessages)
     } catch (retryError) {
       if (signal.aborted) throw retryError
       throw new ApiError('network', retryError instanceof Error ? retryError.message : String(retryError))

@@ -316,7 +316,9 @@ function isRetryableNetworkError(error: unknown): boolean {
   return (
     message.includes("failed to fetch") ||
     message.includes("load failed") ||
-    message.includes("network")
+    message.includes("network") ||
+    message.includes("input stream") ||
+    message.includes("stream closed")
   );
 }
 
@@ -357,13 +359,14 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   } catch (error) {
     if (received || !isRetryableNetworkError(error)) throw error;
     const trimmed = trimMessagesForRetry(prepared);
-    if (trimmed.length >= prepared.length) throw error;
-    console.warn("请求上下文过大，已自动丢弃较早消息并重试", {
-      before: prepared.length,
-      after: trimmed.length,
-      reason: (error as Error)?.message,
-    });
-    await streamChatOnce({ ...tracked, messages: trimmed });
+    const retryMessages = trimmed.length < prepared.length ? trimmed : prepared;
+    console.warn(
+      retryMessages.length < prepared.length
+        ? "请求上下文过大，已自动丢弃较早消息并重试"
+        : "流式连接中断，未产生输出，自动重试一次",
+      { before: prepared.length, after: retryMessages.length, reason: (error as Error)?.message },
+    );
+    await streamChatOnce({ ...tracked, messages: retryMessages });
   }
 }
 
