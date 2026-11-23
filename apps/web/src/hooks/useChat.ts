@@ -537,10 +537,13 @@ export function useChat() {
           if (error instanceof ChatApiError && error.status === 401) {
             window.dispatchEvent(new CustomEvent("dream:unauthorized"));
           }
+          const rawFailure = (error as Error).message || "生成失败，请稍后重试";
           const failure =
             error instanceof ChatApiError && error.code === "CONTENT_FILTERED"
               ? "这段对话触发了模型的内容安全策略，暂时无法继续。请修改最近几条消息，或新建一个会话再试。"
-              : (error as Error).message || "生成失败，请稍后重试";
+              : /input stream|stream closed|network|load failed|failed to fetch/i.test(rawFailure)
+                ? "0x0001 网络连接中断，请重试。"
+                : rawFailure;
           const meta =
             error instanceof ChatApiError
               ? { code: error.code, requestId: error.requestId }
