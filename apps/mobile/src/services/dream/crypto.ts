@@ -75,3 +75,13 @@ export const decryptBytes = async (iv: string, data: string): Promise<Uint8Array
   )
   return new Uint8Array(plain)
 }
+
+export const decryptRawBytes = async (iv: string, bytes: Uint8Array): Promise<Uint8Array> => {
+  const key = await loadKey()
+  const plain = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: fromBase64(iv) as unknown as BufferSource },
+    key,
+    bytes as unknown as BufferSource,
+  )
+  return new Uint8Array(plain)
+}

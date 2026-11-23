@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import { getSessionKey, setSessionKey, decryptBytes, encryptBytes, hasSessionKey } from "./crypto";
+import { getSessionKey, setSessionKey, decryptBytes, decryptRawBytes, encryptBytes, hasSessionKey } from "./crypto";
 import {
   clearLocalChats,
   deleteConversationData,
@@ -14,10 +14,15 @@ import {
 import type { Conversation, Message } from "./types";
 
 interface BackupPayload {
-  payload: string;
+  payload?: string;
   updatedAt: string;
   size: number;
+  iv?: string;
+  version?: number;
+  legacy?: boolean;
 }
+
+export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
 
 export interface CloudBackupInfo {
   key: string;
@@ -62,10 +67,6 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
-function encodePayload(iv: string, data: string): string {
-  return `dream1.${iv}.${data}`;
-}
-
 function decodePayload(payload: string): { iv: string; data: string } {
   const [tag, iv, data] = payload.split(".");
   if (tag !== "dream1" || !iv || !data) throw new Error("云端备份格式不正确。");
@@ -73,7 +74,48 @@ function decodePayload(payload: string): { iv: string; data: string } {
 }
 
 export async function fetchCloudInfo(): Promise<CloudBackupInfo> {
-  return api<CloudBackupInfo>("/api/v1/backup");
+  try {
+    return await api<CloudBackupInfo>("/api/v1/backup/meta");
+  } catch {
+    // 兼容尚未部署流式接口的旧服务端。
+    return api<CloudBackupInfo>("/api/v1/backup");
+  }
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function fetchBackupStream(info: CloudBackupInfo): Promise<{ iv: string; bytes: Uint8Array }> {
+  if (info.backup?.payload) {
+    const { iv, data } = decodePayload(info.backup.payload);
+    return { iv, bytes: await decryptBytes({ iv, data }) };
+  }
+  if (info.backup?.legacy) {
+    const legacy = await api<CloudBackupInfo>("/api/v1/backup");
+    if (!legacy.backup?.payload) throw new Error("云端备份格式不正确。");
+    const { iv, data } = decodePayload(legacy.backup.payload);
+    return { iv, bytes: await decryptBytes({ iv, data }) };
+  }
+  const iv = info.backup?.iv;
+  if (!iv) throw new Error("云端备份格式不正确。");
+  const token = getToken();
+  const response = await fetch("/api/v1/backup/stream", {
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    throw new Error(data?.error?.message ?? `云端备份下载失败（${response.status}）`);
+  }
+  return { iv, bytes: await decryptRawBytes(iv, new Uint8Array(await response.arrayBuffer())) };
+}
+
+async function readBackup(info: CloudBackupInfo): Promise<BackupData> {
+  const { bytes } = await fetchBackupStream(info);
+  return JSON.parse(await gunzip(bytes)) as BackupData;
 }
 
 async function gzip(text: string): Promise<Uint8Array> {
@@ -136,25 +178,21 @@ export async function mergeBackup(data: BackupData): Promise<{ conversations: nu
 
 export async function pullCloudBackup(info: CloudBackupInfo): Promise<{ conversations: number; messages: number } | null> {
   if (!info.backup) return null;
-  const { iv, data } = decodePayload(info.backup.payload);
-  const bytes = await decryptBytes({ iv, data });
-  const parsed = JSON.parse(await gunzip(bytes)) as BackupData;
-  return mergeBackup(parsed);
+  return mergeBackup(await readBackup(info));
 }
 
 async function existingCloudSessions(): Promise<unknown[] | undefined> {
   try {
     const info = await fetchCloudInfo();
     if (!info.backup) return undefined;
-    const { iv, data } = decodePayload(info.backup.payload);
-    const parsed = JSON.parse(await gunzip(await decryptBytes({ iv, data }))) as BackupData & { sessions?: unknown[] };
+    const parsed = (await readBackup(info)) as BackupData & { sessions?: unknown[] };
     return parsed.sessions;
   } catch {
     return undefined;
   }
 }
 
-export async function pushCloudBackup(rawLimitBytes = 8_000_000): Promise<{ size: number; updatedAt: string }> {
+export async function pushCloudBackup(rawLimitBytes = MAX_BACKUP_BYTES): Promise<{ size: number; updatedAt: string }> {
   const [conversations, messages, tombstones, sessions] = await Promise.all([
     getAllConversations(),
     getAllMessages(),
@@ -179,11 +217,19 @@ export async function pushCloudBackup(rawLimitBytes = 8_000_000): Promise<{ size
   }
   const compressed = await gzip(json);
   const encrypted = await encryptBytes(compressed);
-  const body = JSON.stringify({ payload: encodePayload(encrypted.iv, encrypted.data) });
-  if (new TextEncoder().encode(body).byteLength > 11_800_000) {
-    throw new Error("云端备份编码后超过服务端 12 MB 上限；请手动导出并清理较早会话。");
+  const cipher = base64ToBytes(encrypted.data);
+  if (cipher.byteLength > MAX_BACKUP_BYTES) {
+    throw new Error(`云端备份加密后约 ${(cipher.byteLength / 1024 / 1024).toFixed(1)} MB，超过服务端 20 MB 上限；请手动导出并清理较早会话。`);
   }
-  return api<{ size: number; updatedAt: string }>("/api/v1/backup", { method: "PUT", body });
+  return api<{ size: number; updatedAt: string }>("/api/v1/backup/stream", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/octet-stream",
+      "x-backup-iv": encrypted.iv,
+      "x-backup-encoding": "gzip",
+    },
+    body: cipher as unknown as BodyInit,
+  });
 }
 
 export interface UnlockResult {
@@ -296,7 +342,7 @@ export async function maybePushCloudBackup(): Promise<void> {
   if (!rev || rev <= last) return;
   if (Date.now() - last < 5 * 60 * 1000) return;
   try {
-    await pushCloudBackup(6_000_000);
+    await pushCloudBackup();
     localStorage.setItem("dream-cloud-last-push", String(Date.now()));
   } catch (error) {
     // 即使失败也要让设置页/控制台可见，而不是静默丢备份。

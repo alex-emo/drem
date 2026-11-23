@@ -68,6 +68,7 @@ import {
 } from "./usage.js";
 import { listLogs, pushLog } from "./logs.js";
 import { getRelease } from "./release.js";
+import { MAX_BACKUP_BYTES, backupFilePath, deleteBackupFile, readBackupBytes, saveBackupStream } from "./backups.js"
 import { enforceRateLimit, type LimitRule } from "./rateLimit.js";
 
 type AppEnv = { Variables: { requestId: string; requestUser?: string } };
@@ -76,10 +77,10 @@ const app = new Hono<AppEnv>();
 
 // multipart 无法在 Hono 内部增量解析；先用 bodyLimit 流式计数，避免 chunked 上传绕过 10MiB 上限。
 const uploadBodyLimit = bodyLimit({
-  maxSize: MAX_FILE_BYTES + 1024 * 1024,
+  maxSize: MAX_FILE_BYTES + 512 * 1024,
   onError: (c) =>
     c.json(
-      errorBody(new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限"), c.get("requestId") ?? ""),
+      errorBody(new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 1 MiB 上限"), c.get("requestId") ?? ""),
       413,
     ),
 });
@@ -293,8 +294,8 @@ app.post("/anthropic/v1/files", uploadBodyLimit, async (c) => {
   const authorization = c.req.header("authorization") ?? `Bearer ${c.req.header("x-api-key") ?? ""}`;
   const { user } = requireUser(authorization);
   const declaredLength = Number(c.req.header("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_FILE_BYTES + 1024 * 1024) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_FILE_BYTES + 512 * 1024) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 1 MiB 上限");
   }
   const body = await c.req.parseBody();
   const entry = body["file"];
@@ -326,8 +327,8 @@ app.get("/api/v1/files", (c) => {
 app.post("/api/v1/files", uploadBodyLimit, async (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   const declared = Number(c.req.header("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES + 1024 * 1024) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
+  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES + 512 * 1024) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 1 MiB 上限");
   }
   const body = await c.req.parseBody();
   const entry = body["file"];
@@ -402,17 +403,105 @@ app.get("/api/v1/me", (c) => {
   return c.json({ user });
 });
 
-app.get("/api/v1/backup", (c) => {
+type BackupRow = {
+  payload?: string;
+  updated_at?: string;
+  size?: number;
+  path?: string | null;
+  iv?: string | null;
+  encoding?: string | null;
+};
+
+function getBackupRow(userId: string): BackupRow | undefined {
+  return db
+    .prepare("SELECT payload, updated_at, size, path, iv, encoding FROM chat_backups WHERE user_id = ?")
+    .get(userId) as BackupRow | undefined;
+}
+
+app.get("/api/v1/backup/meta", (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   const { key, legacyKey } = getBackupKey(user.id);
-  const row = db
-    .prepare("SELECT payload, updated_at, size FROM chat_backups WHERE user_id = ?")
-    .get(user.id) as { payload?: string; updated_at?: string; size?: number } | undefined;
+  const row = getBackupRow(user.id);
   return c.json({
     key,
     ...(legacyKey ? { legacyKey } : {}),
-    backup: row?.payload
-      ? { payload: row.payload, updatedAt: row.updated_at, size: row.size ?? row.payload.length }
+    backup:
+      row?.path && row.size
+        ? { size: row.size, updatedAt: row.updated_at, iv: row.iv, version: 2 }
+        : row?.payload
+          ? { size: row.size ?? row.payload.length, updatedAt: row.updated_at, legacy: true }
+          : null,
+  });
+});
+
+app.get("/api/v1/backup/stream", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const row = getBackupRow(user.id);
+  if (!row?.path || !row.size) {
+    throw new ApiError(404, "NOT_FOUND", "云端还没有流式备份");
+  }
+  return c.body(Readable.toWeb(createReadStream(row.path)) as unknown as ReadableStream, 200, {
+    "content-type": "application/octet-stream",
+    "content-length": String(row.size),
+    "x-backup-iv": row.iv ?? "",
+    "x-backup-encoding": row.encoding ?? "",
+    "cache-control": "no-store",
+  });
+});
+
+app.put("/api/v1/backup/stream", async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const contentType = c.req.header("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith("application/octet-stream")) {
+    throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "备份上传必须使用 application/octet-stream");
+  }
+  const iv = c.req.header("x-backup-iv") ?? "";
+  let ivBytes: Buffer;
+  try {
+    ivBytes = Buffer.from(iv, "base64");
+  } catch {
+    ivBytes = Buffer.alloc(0);
+  }
+  if (ivBytes.byteLength !== 12) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "备份 IV 不正确");
+  }
+  const declared = Number(c.req.header("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_BACKUP_BYTES) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", `云备份超过 ${MAX_BACKUP_BYTES / 1024 / 1024} MiB 上限`);
+  }
+  const saved = await saveBackupStream(user.id, c.req.raw.body, c.req.raw.signal);
+  const previous = getBackupRow(user.id);
+  const updatedAt = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO chat_backups (user_id, payload, updated_at, size, path, iv, encoding)
+     VALUES (?, '', ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       payload = '', updated_at = excluded.updated_at, size = excluded.size,
+       path = excluded.path, iv = excluded.iv, encoding = excluded.encoding`,
+  ).run(user.id, updatedAt, saved.size, backupFilePath(user.id), iv, c.req.header("x-backup-encoding") ?? "gzip");
+  if (previous?.path && previous.path !== saved.path) deleteBackupFile(previous.path);
+  clearBackupLegacy(user.id);
+  return c.json({ ok: true, updatedAt, size: saved.size });
+});
+
+// 兼容旧客户端：仍可读取/写入 base64 payload；新客户端走 /backup/meta + /backup/stream。
+app.get("/api/v1/backup", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const { key, legacyKey } = getBackupKey(user.id);
+  const row = getBackupRow(user.id);
+  let payload = row?.payload ?? "";
+  if (!payload && row?.path && row.iv) {
+    try {
+      payload = `dream1.${row.iv}.${readBackupBytes(row.path).toString("base64")}`;
+    } catch {
+      payload = "";
+    }
+  }
+  return c.json({
+    key,
+    ...(legacyKey ? { legacyKey } : {}),
+    backup: payload
+      ? { payload, updatedAt: row?.updated_at, size: row?.size ?? payload.length }
       : null,
   });
 });
@@ -422,14 +511,17 @@ app.put("/api/v1/backup", async (c) => {
   const body = (await readJsonBody(c)) as { payload?: unknown; updatedAt?: unknown };
   const payload = typeof body.payload === "string" ? body.payload : "";
   if (!payload) throw new ApiError(400, "INVALID_ARGUMENT", "payload 不能为空");
-  if (payload.length > 12 * 1024 * 1024) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "备份内容超过 12 MiB 上限");
+  if (payload.length > MAX_BACKUP_BYTES) {
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", `备份内容超过 ${MAX_BACKUP_BYTES / 1024 / 1024} MiB 上限`);
   }
+  const previous = getBackupRow(user.id);
   const updatedAt = new Date().toISOString();
   db.prepare(
-    `INSERT INTO chat_backups (user_id, payload, updated_at, size) VALUES (?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at, size = excluded.size`,
+    `INSERT INTO chat_backups (user_id, payload, updated_at, size, path, iv, encoding) VALUES (?, ?, ?, ?, NULL, NULL, NULL)
+     ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at, size = excluded.size,
+       path = NULL, iv = NULL, encoding = NULL`,
   ).run(user.id, payload, updatedAt, payload.length);
+  deleteBackupFile(previous?.path);
   clearBackupLegacy(user.id);
   return c.json({ ok: true, updatedAt, size: payload.length });
 });

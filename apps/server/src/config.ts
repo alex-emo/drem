@@ -68,6 +68,7 @@ export const config = {
   port: Number(process.env.PORT ?? 8787),
   appVersion: process.env.DREAM_APP_VERSION ?? "1.7.4",
   appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 27),
+  backupDir: process.env.DREAM_BACKUP_DIR ?? "data/backups",
   host: process.env.DREAM_HOST ?? "127.0.0.1",
   // 对外公开基址，用于生成 apkUrl；不能从请求 Host 头推导，避免 Host 头污染。
   publicOrigin: (process.env.DREAM_PUBLIC_ORIGIN ?? "https://dream.pum.org.cn").replace(/\/+$/, ""),

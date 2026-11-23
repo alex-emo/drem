@@ -79,3 +79,14 @@ export async function decryptBytes(payload: EncryptedText): Promise<Uint8Array> 
   );
   return new Uint8Array(plain);
 }
+
+/** 解密原始密文字节（流式备份下载使用，避免先 base64 再解码）。 */
+export async function decryptRawBytes(iv: string, bytes: Uint8Array): Promise<Uint8Array> {
+  const key = await aesKey();
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: fromBase64(iv) as unknown as BufferSource },
+    key,
+    bytes as unknown as BufferSource,
+  );
+  return new Uint8Array(plain);
+}

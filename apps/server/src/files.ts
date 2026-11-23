@@ -4,8 +4,8 @@ import { clipText, estimateTokens } from "./context.js";
 import { ApiError } from "./protocol.js";
 import { deleteFile, getFiles, listFiles, putFile, type FileRow } from "./db.js";
 
-/** 单文件字节上限 10 MiB；单文件文本上限 200 万字符。 */
-export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** 单文件字节上限 1 MiB；单文件文本上限 200 万字符。 */
+export const MAX_FILE_BYTES = 1 * 1024 * 1024;
 export const MAX_FILE_CHARS = 2_000_000;
 /** 一次对话可引用文件数 / 注入上下文的上限。 */
 export const MAX_CHAT_FILES = 8;
@@ -128,7 +128,7 @@ function toPublic(row: FileRow): PublicFile {
 export async function createTextFile(userId: string, name: string, bytes: Uint8Array): Promise<PublicFile> {
   if (bytes.byteLength === 0) throw unparsable("文件是空的");
   if (bytes.byteLength > MAX_FILE_BYTES) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限");
+    throw new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 1 MiB 上限");
   }
   const extension = extensionOf(name);
   if (extension === "docx") {

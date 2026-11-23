@@ -161,8 +161,9 @@ scripts/dev.mjs           # 同时启动 web + server 的开发脚本
 | `POST` | `/api/v1/files` | 上传纯文本文件（multipart，需 Bearer） |
 | `GET` | `/api/v1/files` | 当前用户的文件列表 |
 | `DELETE` | `/api/v1/files/:id` | 删除文件 |
-| `GET` | `/api/v1/backup` | 获取聊天记录备份密钥与云端备份（需 Bearer） |
-| `PUT` | `/api/v1/backup` | 上传加密后的聊天记录备份（需 Bearer） |
+| `GET` | `/api/v1/backup/meta` | 获取聊天记录备份密钥与云端备份元信息（需 Bearer） |
+| `PUT` | `/api/v1/backup/stream` | 流式上传加密备份，上限 20 MiB（需 Bearer） |
+| `GET` | `/api/v1/backup/stream` | 流式下载加密备份（需 Bearer） |
 | `GET` | `/api/v1/health` | 存活、模式、是否配置 Key、模型名 |
 | `GET` | `/api/v1/models` | 服务端配置的模型 |
 | `POST` | `/api/v1/chat` | 流式对话（SSE，需 Bearer） |
@@ -251,6 +252,8 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 - 登录后本地标题/正文/思考会用账号密钥 AES-GCM 加密，`title`/`content` 等明文字段置空；只有从服务端取到密钥并解锁后才可读。
 - 登录后自动从云端拉取加密备份，按 `updatedAt`（会话）/`createdAt`（消息）合并；本地写入后 2.5 秒触发一次上传，另有每 5 分钟兜底检查；数据变化时异步上传。
 - 首次登录且云端没有备份、本机有记录时，会弹窗询问是否上传；上传前 gzip 压缩再用账号密钥加密。
+- 云端备份加密后上限 **20 MiB**，服务端流式写入磁盘（`DREAM_BACKUP_DIR`，默认 `data/backups`），不把整份备份读进内存。
+- 单个上传文件上限 **1 MiB**（纯文本；docx 等文档解压后正文另有 20 MiB 上限保护）。
 - 服务端只保存密文与密钥，不保存可读聊天内容。密钥为 32 字节（64 位十六进制）随机串；旧账号登录时自动把 10 位旧密钥升级并重加密本地与云端记录。Android App 同样在本地加密并参与云端同步。
 - 浏览器持久化、自动备份到本机（下载/File System Access）也在「设置 → 数据管理」中，详见该页面。
 - `localStorage`：

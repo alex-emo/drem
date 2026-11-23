@@ -223,7 +223,7 @@ DELETE /api/v1/files/:id
 {"id":"file_xxx","name":"note.md","bytes":1234,"chars":900,"createdAt":"2026-11-21T...","preview":"..."}
 ```
 
-只接受纯文本；单文件 ≤ 10 MiB、文本 ≤ 200 万字符，二进制或无法识别编码返回 400。
+只接受纯文本；单文件 ≤ **1 MiB**、文本 ≤ 200 万字符，二进制或无法识别编码返回 400。
 
 ### 3.1 模型身份
 
@@ -460,27 +460,40 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 ## 10. 聊天记录云备份
 
-### `GET /api/v1/backup`
+备份为客户端 gzip 后 AES-GCM 加密的二进制内容，服务端只存储密文，无法解密。加密后硬上限 **20 MiB**。
 
-需 Bearer。返回账号密钥与云端备份（可能为 `null`）：
+### `GET /api/v1/backup/meta`
+
+需 Bearer。返回账号密钥与备份元信息，不返回备份正文：
 
 ```json
 {
   "key": "a23d69ec61",
-  "backup": { "payload": "base64(iv+ciphertext)", "updatedAt": "2026-11-22T07:23:00.000Z", "size": 10384 }
+  "backup": { "size": 10384, "updatedAt": "2026-11-22T07:23:00.000Z", "iv": "base64-iv", "version": 2 }
 }
 ```
 
-- `key` 为 32 字节（64 位十六进制）随机串，服务端每个用户一个，注册时生成；登录后直接分发。旧账号首次登录会返回 `legacyKey`（10 位）用于一次性重加密，客户端上传新备份后服务端清除旧密钥。
-- `payload` 为客户端 gzip 后的备份，再经 AES-GCM 加密并 base64；服务端无法解密内容。
+- `backup` 为 `null` 表示没有云端备份。
+- `legacy: true` 表示旧版 base64 payload 备份，需要回退到 `GET /api/v1/backup` 读取。
+- 旧账号首次登录会返回 `legacyKey`（10 位）用于一次性重加密。
 
-### `PUT /api/v1/backup`
+### `PUT /api/v1/backup/stream`
 
-需 Bearer。请求体 `{"payload":"..."}`；空值 400，payload 超过 12MiB 返回 413 `PAYLOAD_TOO_LARGE`；成功返回 `{ok:true,updatedAt,size}`，覆盖该用户旧备份。
+需 Bearer。`Content-Type: application/octet-stream`，请求体就是加密后的二进制密文；`X-Backup-IV` 为 12 字节 IV 的 base64，`X-Backup-Encoding` 为 `gzip`。
 
-客户端合并策略：会话按 `updatedAt`、消息按 `createdAt` 取新或补缺；上传前先压缩，失败不影响聊天。
+- 服务端流式写入磁盘，边写边限长；超过 20 MiB 返回 413 `PAYLOAD_TOO_LARGE` 并清理临时文件。
+- 客户端断开时服务端中止写入并清理。
+- 成功返回 `{ok:true,updatedAt,size}`。
 
-请求体上限由 8MiB 提升到 16MiB（含加密备份）。密钥为 256 bit（AES-GCM）。旧 10 hex 仅作为迁移兼容，迁移完成后不再返回。
+### `GET /api/v1/backup/stream`
+
+需 Bearer。返回 `application/octet-stream` 密文，响应头带 `X-Backup-IV`、`Content-Length` 与 `Cache-Control: no-store`。
+
+### 旧版 `GET/PUT /api/v1/backup`
+
+保留给旧客户端：`GET` 返回 `{key, backup:{payload,...}|null}`，`PUT` 接收 `{"payload":"dream1.iv.base64"}`。新客户端优先使用 `/backup/meta` 与 `/backup/stream`，遇到 `legacy:true` 时回退到旧接口。
+
+客户端合并策略：会话按 `updatedAt`、消息按 `createdAt` 取新或补缺；云备份失败会显示可见错误，不静默丢弃本地数据。
 
 ## 9. 发布通道与公告
 

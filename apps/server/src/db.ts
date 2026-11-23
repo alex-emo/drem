@@ -72,9 +72,20 @@ db.exec(`
     user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     payload    TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    size       INTEGER NOT NULL DEFAULT 0
+    size       INTEGER NOT NULL DEFAULT 0,
+    path       TEXT,
+    iv         TEXT,
+    encoding   TEXT
   );
 `);
+
+// 兼容旧库：流式备份落盘后，payload 可以为空，路径/iv/编码单独存。
+const backupColumns = db.prepare("PRAGMA table_info(chat_backups)").all() as Array<{ name: string }>;
+for (const column of ["path", "iv", "encoding"]) {
+  if (!backupColumns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE chat_backups ADD COLUMN ${column} TEXT`);
+  }
+}
 
 export interface SessionRow {
   id: string;

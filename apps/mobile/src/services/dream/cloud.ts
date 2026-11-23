@@ -1,5 +1,5 @@
 import { apiBase, getToken } from './auth.js'
-import { decryptBytes, encryptBytes, hasSessionKey, setSessionKey } from './crypto.js'
+import { decryptBytes, decryptRawBytes, encryptBytes, hasSessionKey, setSessionKey } from './crypto.js'
 import {
   loadAllSessions,
   loadSessionSummaries,
@@ -10,10 +10,15 @@ import { getVisibleMessages, normalizeSession } from '../chat/branches.js'
 import type { Message as AppMessage, Session } from '../chat/types.js'
 
 interface BackupPayload {
-  payload: string
+  payload?: string
   updatedAt: string
   size: number
+  iv?: string
+  version?: number
+  legacy?: boolean
 }
+
+const MAX_BACKUP_BYTES = 20 * 1024 * 1024
 
 interface CloudInfo {
   key: string
@@ -100,6 +105,42 @@ const decodePayload = (payload: string): { iv: string; data: string } => {
   const [tag, iv, data] = payload.split('.')
   if (tag !== 'dream1' || !iv || !data) throw new Error('云端备份格式不正确。')
   return { iv, data }
+}
+
+const base64ToBytes = (value: string): Uint8Array => {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+const fetchBackupStream = async (info: CloudInfo): Promise<{ iv: string; bytes: Uint8Array }> => {
+  if (info.backup?.payload) {
+    const { iv, data } = decodePayload(info.backup.payload)
+    return { iv, bytes: await decryptBytes(iv, data) }
+  }
+  if (info.backup?.legacy) {
+    const legacy = await api<CloudInfo>('/backup')
+    if (!legacy.backup?.payload) throw new Error('云端备份格式不正确。')
+    const { iv, data } = decodePayload(legacy.backup.payload)
+    return { iv, bytes: await decryptBytes(iv, data) }
+  }
+  const iv = info.backup?.iv
+  if (!iv) throw new Error('云端备份格式不正确。')
+  const token = getToken()
+  const response = await fetch(`${apiBase()}/backup/stream`, {
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  })
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null
+    throw new Error(data?.error?.message ?? `云端备份下载失败（${response.status}）`)
+  }
+  return { iv, bytes: await decryptRawBytes(iv, new Uint8Array(await response.arrayBuffer())) }
+}
+
+const readBackup = async (info: CloudInfo): Promise<BackupData> => {
+  const { bytes } = await fetchBackupStream(info)
+  return JSON.parse(await gunzip(bytes)) as BackupData
 }
 
 const assistantText = (message: Extract<AppMessage, { role: 'assistant' }>): string =>
@@ -200,8 +241,16 @@ const mergeSessions = async (incoming: Session[]): Promise<number> => {
   return merged
 }
 
+async function fetchAppCloudInfo(): Promise<CloudInfo> {
+  try {
+    return await api<CloudInfo>('/backup/meta')
+  } catch {
+    return api<CloudInfo>('/backup')
+  }
+}
+
 export async function unlockAppCloud(): Promise<AppCloudState> {
-  const info = await api<CloudInfo>('/backup')
+  const info = await fetchAppCloudInfo()
   let localSessions = 0
   let merged = 0
   if (info.legacyKey) {
@@ -211,8 +260,7 @@ export async function unlockAppCloud(): Promise<AppCloudState> {
     await migrateAppEncryption()
     if (info.backup) {
       try {
-        const { iv, data } = decodePayload(info.backup.payload)
-        const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+        const remote = await readBackup(info)
         merged = await mergeSessions(fromWeb(remote))
       } catch {
         // 旧备份损坏时放弃。
@@ -232,8 +280,7 @@ export async function unlockAppCloud(): Promise<AppCloudState> {
     await migrateAppEncryption()
     if (info.backup) {
       try {
-        const { iv, data } = decodePayload(info.backup.payload)
-        const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+        const remote = await readBackup(info)
         merged = await mergeSessions(fromWeb(remote))
       } catch {
         // 损坏或旧格式备份不阻断登录。
@@ -247,15 +294,10 @@ export async function pushAppCloud(): Promise<void> {
   if (!hasSessionKey()) return
   let tombstones: Array<{ id: string; deletedAt: number }> = []
   try {
-    const info = await api<CloudInfo>('/backup')
+    const info = await fetchAppCloudInfo()
     // 超大备份在低端 WebView 上加密/压缩会触发内存峰值，改为只拉取、不自动上传。
-    if (info.backup && info.backup.size > 6_000_000) {
-      console.warn('云端备份超过 6MB，已暂停自动上传以避免内存崩溃', { size: info.backup.size })
-      return
-    }
     if (info.backup && !info.legacyKey) {
-      const { iv, data } = decodePayload(info.backup.payload)
-      const remote = JSON.parse(await gunzip(await decryptBytes(iv, data))) as BackupData
+      const remote = await readBackup(info)
       tombstones = remote.tombstones ?? []
       await mergeSessions(fromWeb(remote))
     }
@@ -266,10 +308,19 @@ export async function pushAppCloud(): Promise<void> {
   const payload = await gzip(
     JSON.stringify({ ...toWeb(sessions), version: 2, tombstones }),
   )
-  const { iv, data } = await encryptBytes(payload)
-  await api('/backup', {
+  const encrypted = await encryptBytes(payload)
+  const cipher = base64ToBytes(encrypted.data)
+  if (cipher.byteLength > MAX_BACKUP_BYTES) {
+    throw new Error(`云端备份加密后约 ${(cipher.byteLength / 1024 / 1024).toFixed(1)} MB，超过 20 MB 上限；请清理较早会话。`)
+  }
+  await api('/backup/stream', {
     method: 'PUT',
-    body: JSON.stringify({ payload: `dream1.${iv}.${data}` }),
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-backup-iv': encrypted.iv,
+      'x-backup-encoding': 'gzip',
+    },
+    body: cipher as unknown as BodyInit,
   })
   localStorage.setItem('dream-app-last-push', String(Date.now()))
 }

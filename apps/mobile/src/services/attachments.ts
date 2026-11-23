@@ -10,9 +10,9 @@ export const ACCEPTED_EXTS = ACCEPT_FILE_EXTS
 /** 选择文件对话框的过滤条件 */
 export const ACCEPT = ACCEPTED_EXTS.map((ext) => `.${ext}`).join(',')
 /** 单文件大小上限与 Files API 一致 */
-export const MAX_SIZE_MB = 64
+export const MAX_SIZE_MB = 1
 /** 按 user_data 上传的文件（纯文本、代码、表格、电子书）原文件上限更小 */
-export const MAX_USER_DATA_SIZE_MB = 32
+export const MAX_USER_DATA_SIZE_MB = 1
 export const MAX_COUNT = 50
 /** 同时上传的文件数 */
 const MAX_CONCURRENT = 3

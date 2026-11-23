@@ -45,8 +45,8 @@ export default function Composer({ streaming, thinking, onToggleThinking, onSend
           setUploadError(`一次最多上传 ${MAX_FILES} 个文件`);
           break;
         }
-        if (file.size > 10 * 1024 * 1024) {
-          setUploadError(`「${file.name}」超过 10 MiB`);
+        if (file.size > 1 * 1024 * 1024) {
+          setUploadError(`「${file.name}」超过 1 MiB`);
           continue;
         }
         const uploaded = await uploadFile(file);
