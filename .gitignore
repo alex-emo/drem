@@ -44,3 +44,5 @@ apps/mobile/ios/App/App/public/
 apps/mobile/ios/App/App/capacitor.config.json
 
 .tools/
+
+.gh-config/
