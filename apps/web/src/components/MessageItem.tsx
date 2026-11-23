@@ -168,9 +168,6 @@ export default function MessageItem({
               </div>
             ) : null}
             <div className="bubble">{message.content}</div>
-            {message.excludeFromContext ? (
-              <div className="msg-blocked-note">已从后续上下文移除；重新编辑这条消息可恢复</div>
-            ) : null}
             <div className="msg-actions">
               <button
                 type="button"
