@@ -65,8 +65,15 @@ const readError = async (response: Response): Promise<ApiError> => {
   const text = await response.text().catch(() => '')
   let message = text || response.statusText || '请求失败'
   try {
-    const payload = JSON.parse(text) as { error?: { message?: string } }
-    if (payload?.error?.message) message = payload.error.message
+    const payload = JSON.parse(text) as {
+      error?: { message?: string; hex?: string; requestId?: string }
+    }
+    if (payload?.error?.message) {
+      const { hex, requestId } = payload.error
+      message = `${hex ?? '0x5001'} ${payload.error.message}${
+        requestId ? `（请求编号 ${requestId}）` : ''
+      }`
+    }
   } catch {
     // 非 JSON 响应直接使用原文
   }
@@ -115,7 +122,12 @@ function trimMessagesForRetry(messages: DreamMessage[]): DreamMessage[] {
 
 function isRetryableNetworkError(error: unknown): boolean {
   if (error instanceof ApiError) return error.kind === 'network' || error.status === 413
-  return /failed to fetch|load failed|network/i.test((error as Error)?.message ?? '')
+  const message = ((error as Error)?.message ?? '').toLowerCase()
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('load failed') ||
+    message.includes('network')
+  )
 }
 
 const clearStoredSession = () => {
@@ -180,7 +192,8 @@ export async function* streamDreamMessage(
     if (signal.aborted) throw error
     const trimmed = trimMessagesForRetry(prepared)
     if (!isRetryableNetworkError(error) || trimmed.length >= prepared.length) {
-      throw new ApiError('network', error instanceof Error ? error.message : String(error))
+      console.warn('[dream] chat network failed', error)
+      throw new ApiError('network', '网络连接失败，请检查网络后重试。')
     }
     console.warn('请求上下文过大，已自动丢弃较早消息并重试', {
       before: prepared.length,
@@ -381,8 +394,13 @@ export async function* streamDreamMessage(
       return
     }
     if (event === 'error') {
-      const error = payload.error as { message?: string } | undefined
-      throw new ApiError('stream', error?.message ?? '生成失败，请稍后重试')
+      const error = payload.error as
+        | { message?: string; hex?: string; requestId?: string }
+        | undefined
+      const message = `${error?.hex ?? '0x5001'} ${error?.message ?? '生成失败，请稍后重试'}${
+        error?.requestId ? `（请求编号 ${error.requestId}）` : ''
+      }`
+      throw new ApiError('stream', message)
     }
   }
 

@@ -26,7 +26,8 @@ db.exec(`
     token_hash   TEXT NOT NULL UNIQUE,
     device_id    TEXT,
     created_at   TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL
+    last_seen_at TEXT NOT NULL,
+    expires_at   TEXT
   );
 
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -57,6 +58,13 @@ if (!userColumns.some((column) => column.name === "backup_key")) {
 }
 if (!userColumns.some((column) => column.name === "backup_key_legacy")) {
   db.exec("ALTER TABLE users ADD COLUMN backup_key_legacy TEXT");
+}
+
+// 兼容旧库：会话过期时间。旧会话按创建时间顺延 30 天，避免升级时把所有人踢下线。
+const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+if (!sessionColumns.some((column) => column.name === "expires_at")) {
+  db.exec("ALTER TABLE sessions ADD COLUMN expires_at TEXT");
+  db.exec("UPDATE sessions SET expires_at = datetime(created_at, '+30 days') WHERE expires_at IS NULL");
 }
 
 db.exec(`

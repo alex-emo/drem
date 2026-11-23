@@ -34,16 +34,30 @@ export interface StreamChatOptions {
   onDone?: (done: ChatDone) => void;
 }
 
+const CLIENT_ERROR_HEX: Record<string, string> = {
+  NETWORK: "0x0001",
+  ABORTED: "0x0002",
+  TIMEOUT: "0x0005",
+  INVALID_RESPONSE: "0x0003",
+  NO_STREAM_SUPPORT: "0x0004",
+  HTTP_ERROR: "0x5000",
+  UNKNOWN: "0x5001",
+};
+
+/** 统一对外错误文案：0x 十六进制错误码 + 中文原因。 */
 export class ChatApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly hex: string;
   readonly requestId?: string;
 
-  constructor(message: string, status: number, code = "UNKNOWN", requestId?: string) {
-    super(message);
+  constructor(message: string, status: number, code = "UNKNOWN", requestId?: string, hex?: string) {
+    const ticket = requestId ? `（请求编号 ${requestId}）` : "";
+    super(`${hex ?? CLIENT_ERROR_HEX[code] ?? "0x5001"} ${message}${ticket}`);
     this.name = "ChatApiError";
     this.status = status;
     this.code = code;
+    this.hex = hex ?? CLIENT_ERROR_HEX[code] ?? "0x5001";
     this.requestId = requestId;
   }
 }
@@ -51,6 +65,7 @@ export class ChatApiError extends Error {
 interface ErrorBody {
   error?: {
     code?: string;
+    hex?: string;
     message?: string;
     requestId?: string;
   };
@@ -92,6 +107,11 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
         ...(init.headers ?? {}),
       },
     });
+  } catch (error) {
+    if ((error as Error)?.name === "AbortError") {
+      throw new ChatApiError("请求超时，请检查网络后重试。", 0, "TIMEOUT");
+    }
+    throw new ChatApiError("网络连接失败，请检查网络后重试。", 0, "NETWORK");
   } finally {
     window.clearTimeout(timer);
   }
@@ -103,6 +123,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
       response.status,
       data?.error?.code ?? "HTTP_ERROR",
       data?.error?.requestId,
+      data?.error?.hex,
     );
   }
 
@@ -181,6 +202,7 @@ export async function uploadFile(file: File): Promise<FileAttachment> {
       response.status,
       data?.error?.code ?? "UPLOAD_FAILED",
       data?.error?.requestId,
+      data?.error?.hex,
     );
   }
   return (await response.json()) as FileAttachment;
@@ -216,7 +238,12 @@ function isRetryableNetworkError(error: unknown): boolean {
     return error.status === 0 || error.status === 413 || error.code === "PAYLOAD_TOO_LARGE";
   }
   if (error instanceof TypeError) return true;
-  return /failed to fetch|load failed|network/i.test((error as Error)?.message ?? "");
+  const message = ((error as Error)?.message ?? "").toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("load failed") ||
+    message.includes("network")
+  );
 }
 
 export async function streamChat(options: StreamChatOptions): Promise<void> {
@@ -289,6 +316,7 @@ async function streamChatOnce(options: StreamChatOptions): Promise<void> {
       response.status,
       data?.error?.code ?? "HTTP_ERROR",
       data?.error?.requestId,
+      data?.error?.hex,
     );
   }
 
@@ -359,7 +387,7 @@ async function streamChatOnce(options: StreamChatOptions): Promise<void> {
         return true;
       }
       case "error": {
-        const error = (data as { error?: { code?: string; message?: string; requestId?: string } })
+        const error = (data as { error?: { code?: string; hex?: string; message?: string; requestId?: string } })
           .error;
         throw new ChatApiError(
           error?.message ?? "生成失败，请稍后重试",
@@ -453,13 +481,19 @@ export async function importArchiveFromUrl(
   });
   if (!response.ok) {
     let message = `导入失败（HTTP ${response.status}）`;
+    let hex: string | undefined;
+    let requestId: string | undefined;
     try {
-      const payload = (await response.json()) as { error?: { message?: string } };
+      const payload = (await response.json()) as {
+        error?: { message?: string; hex?: string; requestId?: string };
+      };
       if (payload.error?.message) message = payload.error.message;
+      hex = payload.error?.hex;
+      requestId = payload.error?.requestId;
     } catch {
       // ignore
     }
-    throw new ChatApiError(message, response.status, "IMPORT_FAILED");
+    throw new ChatApiError(message, response.status, "IMPORT_FAILED", requestId, hex);
   }
   if (!response.body) throw new ChatApiError("导入响应为空", 502, "IMPORT_FAILED");
 
@@ -478,6 +512,9 @@ export async function importArchiveFromUrl(
       messages?: Message[];
       stats?: ArchiveImportResult;
       message?: string;
+      hex?: string;
+      requestId?: string;
+      status?: number;
     };
     try {
       payload = JSON.parse(line) as typeof payload;
@@ -495,7 +532,13 @@ export async function importArchiveFromUrl(
     } else if (payload.type === "done" && payload.stats) {
       finalStats = payload.stats;
     } else if (payload.type === "error") {
-      throw new ChatApiError(payload.message ?? "导入过程中发生错误", 502, "IMPORT_FAILED");
+      throw new ChatApiError(
+        payload.message ?? "导入过程中发生错误",
+        payload.status ?? 502,
+        "IMPORT_FAILED",
+        payload.requestId,
+        payload.hex,
+      );
     }
   };
 

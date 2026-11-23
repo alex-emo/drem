@@ -85,20 +85,31 @@ function AuthedShell({ user, onLogout }: { user: AuthUser; onLogout: () => void 
 
   useEffect(() => {
     let alive = true;
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("同步超时，请检查网络后重试。")), 45_000),
-    );
-    void Promise.race([unlockAccount(user.id), timeout])
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      controller.abort();
+    }, 45_000);
+    void unlockAccount(user.id, controller.signal)
       .then((cloud) => {
         if (alive) setState({ kind: "ready", cloud });
       })
       .catch((error: unknown) => {
         if (alive) {
-          setState({ kind: "error", message: error instanceof Error ? error.message : "无法获取聊天记录密钥。" });
+          setState({
+            kind: "error",
+            message: controller.signal.aborted
+              ? "同步超时，请检查网络后重试。"
+              : error instanceof Error
+                ? error.message
+                : "无法获取聊天记录密钥。",
+          });
         }
-      });
+      })
+      .finally(() => window.clearTimeout(timer));
     return () => {
       alive = false;
+      controller.abort();
+      window.clearTimeout(timer);
     };
   }, []);
 

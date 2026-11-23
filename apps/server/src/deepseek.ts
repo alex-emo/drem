@@ -128,19 +128,39 @@ function extractErrorDetail(raw: string): string {
   return raw.slice(0, 500) || "上游未返回错误详情";
 }
 
-/** 上游上下文超限：不同供应商的 400 文案不一致，统一映射为 413，客户端会裁剪后重试。 */
+const CONTEXT_LENGTH_MARKERS = [
+  "context length",
+  "context_length",
+  "maximum context",
+  "too many tokens",
+  "input is too long",
+  "token limit",
+  "上下文过长",
+  "上下文超限",
+  "上下文长度",
+  "超出长度",
+  "超出上限",
+];
+
+/** 上游上下文超限：按错误文案里的固定标记判断，不使用正则。 */
 export function isContextLengthError(detail: string): boolean {
-  return /context length|context_length|maximum context|too many tokens|input is too long|token limit|超出.{0,6}(?:长度|上限)|上下文.{0,6}(?:过长|超限|上限)/i.test(
-    detail,
-  );
+  const text = detail.toLowerCase();
+  return CONTEXT_LENGTH_MARKERS.some((marker) => text.includes(marker.toLowerCase()));
 }
+
+const CONTENT_FILTER_MARKERS = [
+  "datainspectionfailed",
+  "inappropriate content",
+  "content inspection",
+  "content filter",
+  "安全策略",
+];
 
 /** 上游内容安全拦截：Qwen 以 400 DataInspectionFailed 返回，需要区别于普通参数错误。 */
 function isContentFilterError(status: number, detail: string): boolean {
-  return (
-    status === 400 &&
-    /DataInspectionFailed|inappropriate content|content (?:inspection|filter)|安全策略/i.test(detail)
-  );
+  if (status !== 400) return false;
+  const text = detail.toLowerCase();
+  return CONTENT_FILTER_MARKERS.some((marker) => text.includes(marker));
 }
 
 /** 把上游 HTTP 状态映射为 Dream 的错误码。 */

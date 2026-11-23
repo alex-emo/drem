@@ -253,6 +253,8 @@ export type FileObject = {
 export type ApiErrorBody = {
   error: {
     message: string
+    hex?: string
+    requestId?: string
     type?: string
     param?: string | null
     code?: string | null

@@ -1,4 +1,4 @@
-import { PassThrough, Readable } from "node:stream";
+import { PassThrough, Readable, Transform } from "node:stream";
 import { once } from "node:events";
 import unzipper from "unzipper";
 
@@ -202,12 +202,34 @@ export interface ArchiveImportOptions {
   url: string;
   skipIds: Set<string>;
   write: (payload: unknown) => Promise<void>;
+  /** 客户端断开时取消下载，避免后台继续拉取大文件。 */
+  signal?: AbortSignal;
 }
 
-export async function streamArchiveImport({ url, skipIds, write }: ArchiveImportOptions): Promise<ArchiveStats> {
+const MAX_REDIRECTS = 5;
+
+async function fetchArchive(target: URL, signal: AbortSignal): Promise<Response> {
+  let current = target;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const response = await fetch(current, { signal, redirect: "manual" });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new ArchiveImportError("下载地址重定向缺少 Location。", 502);
+      // 每一跳都重新校验域名，不能只校验第一次请求，否则可被重定向到内网。
+      current = validateArchiveUrl(new URL(location, current).toString());
+      continue;
+    }
+    return response;
+  }
+  throw new ArchiveImportError("下载地址重定向次数过多。", 502);
+}
+
+export async function streamArchiveImport({ url, skipIds, write, signal }: ArchiveImportOptions): Promise<ArchiveStats> {
   const target = validateArchiveUrl(url);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+  const onClientAbort = () => controller.abort();
+  signal?.addEventListener("abort", onClientAbort, { once: true });
 
   const stats: ArchiveStats = {
     conversations: 0,
@@ -219,9 +241,8 @@ export async function streamArchiveImport({ url, skipIds, write }: ArchiveImport
   };
 
   try {
-    const response = await fetch(target, { signal: controller.signal, redirect: "follow" });
+    const response = await fetchArchive(target, controller.signal);
     if (!response.ok) throw new ArchiveImportError(`下载导出文件失败：HTTP ${response.status}`, 502);
-    if (!response.url.startsWith("https://")) throw new ArchiveImportError("下载重定向到了非 https 地址。", 502);
     const length = Number(response.headers.get("content-length") ?? "0");
     stats.bytes = length;
     if (length > MAX_ARCHIVE_BYTES) {
@@ -229,9 +250,20 @@ export async function streamArchiveImport({ url, skipIds, write }: ArchiveImport
     }
     if (!response.body) throw new ArchiveImportError("导出文件下载失败。", 502);
 
-    const zip = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream).pipe(
-      unzipper.Parse({ forceStream: true }),
-    );
+    // 不信任 Content-Length：按实际读取的字节累计，超限立即中断下载与解压。
+    const source = Readable.fromWeb(response.body as import("node:stream/web").ReadableStream);
+    const counter = new Transform({
+      transform(chunk, _encoding, callback) {
+        stats.bytes += chunk.length;
+        if (stats.bytes > MAX_ARCHIVE_BYTES) {
+          callback(new ArchiveImportError("导出文件超过 300MB 上限。", 413));
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+    source.on("error", (error) => counter.destroy(error));
+    const zip = source.pipe(counter).pipe(unzipper.Parse({ forceStream: true }));
     let manifestChecked = false;
 
     for await (const entry of zip as unknown as AsyncIterable<unzipper.Entry>) {
@@ -290,6 +322,7 @@ export async function streamArchiveImport({ url, skipIds, write }: ArchiveImport
     return stats;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onClientAbort);
   }
 }
 

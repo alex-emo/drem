@@ -69,6 +69,8 @@ export const config = {
   appVersion: process.env.DREAM_APP_VERSION ?? "1.7.4",
   appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 27),
   host: process.env.DREAM_HOST ?? "127.0.0.1",
+  // 对外公开基址，用于生成 apkUrl；不能从请求 Host 头推导，避免 Host 头污染。
+  publicOrigin: (process.env.DREAM_PUBLIC_ORIGIN ?? "https://dream.pum.org.cn").replace(/\/+$/, ""),
   provider,
   providerLabel: provider === "qwen" ? "Qwen" : "DeepSeek",
   keyEnv: provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS",

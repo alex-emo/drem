@@ -43,15 +43,18 @@ Authorization: Bearer <access_token>
 {
   "error": {
     "code": "INVALID_ARGUMENT",
-    "message": "messages 不能为空",
+    "hex": "0x1001",
+    "message": "请求内容不正确，请检查后重试。",
     "requestId": "req_9f1c...",
     "details": [{ "field": "messages", "reason": "required" }]
   }
 }
 ```
 
-- `message` 面向用户/开发者可读，可直接展示。
+- 客户端统一展示为 `hex + 空格 + message`，例如 `0x1001 请求内容不正确，请检查后重试。`；便于用户描述问题。
+- `message` 来自固定错误目录，不拼接上游原始报错，也不暴露供应商、计费/余额信息。
 - `code` 稳定可编程判断；客户端不要匹配 `message` 文案。
+- `requestId` 同时写入服务端日志与后台错误记录；用户报错时提供 `hex` + `requestId` 即可定位原始上游错误。
 - `details` 可选，字段级定位。
 - HTTP 状态码与 `code` 的对应关系固定，见下表。
 
@@ -63,7 +66,7 @@ Authorization: Bearer <access_token>
 | 403 | `FORBIDDEN` | 无权限（M1） |
 | 404 | `NOT_FOUND` | 路径不存在 |
 | 405 | `METHOD_NOT_ALLOWED` | 方法不允许 |
-| 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 8 MiB |
+| 413 | `PAYLOAD_TOO_LARGE` | 请求体超过 16 MiB，或上下文超过模型上限 |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Content-Type` 不是 `application/json` |
 | 429 | `RATE_LIMITED` | 触发限流（M1） |
 | 500 | `INTERNAL` | 服务端内部错误 |
@@ -157,7 +160,7 @@ data: {"requestId":"req_demo_001","finishReason":"stop","createdAt":"2026-11-18T
 | `delta` | 0+ | `delta` | 正文增量 |
 | `refusal` | 0–1 | `requestId`, `model`, `message` | 内容安全拒绝；出现时随后必有 `done`（`finishReason:"content_filter"`），无 `delta` |
 | `done` | 1 | `requestId`, `finishReason`, `createdAt` | 终止事件；`finishReason`: `stop` / `length` / `content_filter` / `unknown` |
-| `error` | 0–1 | `error: { code, message, requestId }` | 流建立后发生错误；出现即代表本次生成失败，且之后不再有 `done` |
+| `error` | 0–1 | `error: { code, hex, message, requestId }` | 流建立后发生错误；出现即代表本次生成失败，且之后不再有 `done`；文案为固定中文目录，不含上游原文 |
 
 SSE 编码规则：
 

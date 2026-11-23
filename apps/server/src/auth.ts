@@ -40,13 +40,27 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LAST_SEEN_THROTTLE_MS = 60 * 1000;
+
 function createSession(userId: string, deviceId: string | null): string {
   const token = randomBytes(32).toString("base64url");
-  const now = new Date().toISOString();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
+  // 单设备：新登录会让该账号此前的会话全部失效，避免同一账号多端并行。
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
   db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, device_id, created_at, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(`sess_${randomUUID()}`, userId, hashToken(token), deviceId, now, now);
+    `INSERT INTO sessions (id, user_id, token_hash, device_id, created_at, last_seen_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `sess_${randomUUID()}`,
+    userId,
+    hashToken(token),
+    deviceId,
+    now.toISOString(),
+    now.toISOString(),
+    expiresAt,
+  );
   return token;
 }
 
@@ -88,7 +102,7 @@ function parseCredentials(input: unknown, allowDisplayName: boolean): Credential
   return { username, password, displayName: displayName || undefined, deviceId };
 }
 
-export function registerUser(input: unknown): AuthResult {
+export async function registerUser(input: unknown): Promise<AuthResult> {
   const { username, password, displayName, deviceId } = parseCredentials(input, true);
 
   const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(username);
@@ -100,7 +114,7 @@ export function registerUser(input: unknown): AuthResult {
     id: `user_${randomUUID()}`,
     username,
     display_name: displayName ?? null,
-    password_hash: hashPassword(password),
+    password_hash: await hashPassword(password),
     created_at: new Date().toISOString(),
   };
   const backupKey = randomBytes(32).toString("hex");
@@ -117,13 +131,13 @@ export function registerUser(input: unknown): AuthResult {
   return { token: createSession(user.id, deviceId), user: toPublic(user) };
 }
 
-export function loginUser(input: unknown): AuthResult {
+export async function loginUser(input: unknown): Promise<AuthResult> {
   const { username, password, deviceId } = parseCredentials(input, false);
   const row = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as
     | UserRow
     | undefined;
 
-  if (!row || !verifyPassword(password, row.password_hash)) {
+  if (!row || !(await verifyPassword(password, row.password_hash))) {
     throw new ApiError(401, "INVALID_CREDENTIALS", "用户名或密码不正确");
   }
   if (row.disabled) {
@@ -148,23 +162,37 @@ export function requireUser(authorization: string | undefined): {
 
   const row = db
     .prepare(
-      `SELECT u.*, s.id AS session_id FROM sessions s
+      `SELECT u.*, s.id AS session_id, s.expires_at AS session_expires_at, s.last_seen_at AS session_last_seen_at
+       FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ?`,
     )
-    .get(hashToken(token)) as (UserRow & { session_id: string }) | undefined;
+    .get(hashToken(token)) as
+    | (UserRow & {
+        session_id: string;
+        session_expires_at: string | null;
+        session_last_seen_at: string;
+      })
+    | undefined;
 
   if (!row) {
     throw new ApiError(401, "UNAUTHORIZED", "登录已失效，请重新登录");
+  }
+  if (row.session_expires_at && Date.parse(row.session_expires_at) <= Date.now()) {
+    db.prepare("DELETE FROM sessions WHERE id = ?").run(row.session_id);
+    throw new ApiError(401, "UNAUTHORIZED", "登录已过期，请重新登录");
   }
   if (row.disabled) {
     throw new ApiError(403, "ACCOUNT_DISABLED", "账号已被管理员禁用");
   }
 
-  db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(
-    new Date().toISOString(),
-    row.session_id,
-  );
+  // last_seen_at 不需要每个请求都写；60 秒节流足以支撑活跃统计，避免同步 SQLite 写放大。
+  if (Date.now() - Date.parse(row.session_last_seen_at) > LAST_SEEN_THROTTLE_MS) {
+    db.prepare("UPDATE sessions SET last_seen_at = ? WHERE id = ?").run(
+      new Date().toISOString(),
+      row.session_id,
+    );
+  }
 
   return { user: toPublic(row), sessionId: row.session_id };
 }
@@ -202,13 +230,13 @@ export function adminSetUserVerified(id: string, verified: boolean): PublicUser 
   return toPublic({ ...row, verified: verified ? 1 : 0 });
 }
 
-export function adminResetPassword(id: string, password: string): void {
+export async function adminResetPassword(id: string, password: string): Promise<void> {
   if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
     throw new ApiError(400, "INVALID_ARGUMENT", `密码长度需为 ${PASSWORD_MIN}–${PASSWORD_MAX} 位`);
   }
   const row = db.prepare("SELECT id FROM users WHERE id = ?").get(id) as { id: string } | undefined;
   if (!row) throw new ApiError(404, "NOT_FOUND", "用户不存在");
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), id);
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(await hashPassword(password), id);
   db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
 }
 

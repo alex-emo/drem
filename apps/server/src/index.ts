@@ -7,12 +7,14 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { config } from "./config.js";
 import { keyPool } from "./keys.js";
 import {
   COMPRESS_MESSAGE_THRESHOLD,
   COMPRESS_TOKEN_THRESHOLD,
+  CONTEXT_TOKEN_LIMIT,
   compressContext,
   needsCompression,
 } from "./context.js";
@@ -48,6 +50,8 @@ import { DEFAULT_IDENTITY_PROMPT, DEFAULT_TEMPERATURE, getModelSettings, updateM
 import {
   API_VERSION,
   ApiError,
+  errorHex,
+  userErrorMessage,
   MAX_BODY_BYTES,
   MAX_BODY_MIB,
   SERVER_VERSION,
@@ -69,6 +73,16 @@ import { enforceRateLimit, type LimitRule } from "./rateLimit.js";
 type AppEnv = { Variables: { requestId: string; requestUser?: string } };
 
 const app = new Hono<AppEnv>();
+
+// multipart 无法在 Hono 内部增量解析；先用 bodyLimit 流式计数，避免 chunked 上传绕过 10MiB 上限。
+const uploadBodyLimit = bodyLimit({
+  maxSize: MAX_FILE_BYTES + 1024 * 1024,
+  onError: (c) =>
+    c.json(
+      errorBody(new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 10 MiB 上限"), c.get("requestId") ?? ""),
+      413,
+    ),
+});
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._-]{8,64}$/;
 
@@ -200,10 +214,27 @@ async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
     throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "只支持 gzip 编码的请求体");
   }
 
-  let bytes = Buffer.from(await c.req.arrayBuffer());
-  if (bytes.byteLength > MAX_BODY_BYTES) {
-    throw new ApiError(413, "PAYLOAD_TOO_LARGE", `请求体超过 ${MAX_BODY_MIB} MiB 上限`);
+  // 不能先 arrayBuffer() 再检查大小：chunked 请求没有 Content-Length，
+  // 那样会把任意大的请求先读进内存。这里按流累计字节，超限立即取消读取。
+  const reader = c.req.raw.body?.getReader();
+  if (!reader) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "请求体为空");
   }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new ApiError(413, "PAYLOAD_TOO_LARGE", `请求体超过 ${MAX_BODY_MIB} MiB 上限`);
+    }
+    chunks.push(value);
+  }
+
+  let bytes = Buffer.concat(chunks, total);
   if (encoding === "gzip") {
     const before = bytes.byteLength;
     try {
@@ -248,6 +279,7 @@ app.get("/api/v1/health", (c) => {
     context: {
       compressAfterMessages: COMPRESS_MESSAGE_THRESHOLD,
       compressAfterTokens: COMPRESS_TOKEN_THRESHOLD,
+      tokenLimit: CONTEXT_TOKEN_LIMIT,
     },
     features: {
       files: true,
@@ -257,7 +289,7 @@ app.get("/api/v1/health", (c) => {
 });
 
 // 官方 chat-demo 的附件上传路径是 /anthropic/v1/files；移动 App 直接复用它的上传逻辑。
-app.post("/anthropic/v1/files", async (c) => {
+app.post("/anthropic/v1/files", uploadBodyLimit, async (c) => {
   const authorization = c.req.header("authorization") ?? `Bearer ${c.req.header("x-api-key") ?? ""}`;
   const { user } = requireUser(authorization);
   const declaredLength = Number(c.req.header("content-length") ?? "0");
@@ -269,7 +301,7 @@ app.post("/anthropic/v1/files", async (c) => {
   if (!entry || typeof entry === "string" || typeof entry.arrayBuffer !== "function") {
     throw new ApiError(400, "INVALID_ARGUMENT", "缺少 file 字段");
   }
-  const created = createTextFile(user.id, entry.name || "未命名文本", new Uint8Array(await entry.arrayBuffer()));
+  const created = await createTextFile(user.id, entry.name || "未命名文本", new Uint8Array(await entry.arrayBuffer()));
   return c.json({
     id: created.id,
     type: "file",
@@ -291,7 +323,7 @@ app.get("/api/v1/files", (c) => {
   return c.json({ files: listUserFiles(user.id) });
 });
 
-app.post("/api/v1/files", async (c) => {
+app.post("/api/v1/files", uploadBodyLimit, async (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   const declared = Number(c.req.header("content-length") ?? "0");
   if (Number.isFinite(declared) && declared > MAX_FILE_BYTES + 1024 * 1024) {
@@ -303,7 +335,7 @@ app.post("/api/v1/files", async (c) => {
     throw new ApiError(400, "INVALID_ARGUMENT", "缺少 file 字段");
   }
   const bytes = new Uint8Array(await entry.arrayBuffer());
-  return c.json(createTextFile(user.id, entry.name || "未命名文本", bytes), 201);
+  return c.json(await createTextFile(user.id, entry.name || "未命名文本", bytes), 201);
 });
 
 app.delete("/api/v1/files/:id", (c) => {
@@ -315,11 +347,13 @@ app.delete("/api/v1/files/:id", (c) => {
 });
 
 const releaseInfo = async (c: Context<AppEnv>) => {
-  const proto = c.req.header("x-forwarded-proto") ?? new URL(c.req.url).protocol.replace(":", "");
-  const host = c.req.header("host") ?? new URL(c.req.url).host;
-  const release = await getRelease(`${proto}://${host}`);
+  const release = await getRelease(config.publicOrigin);
   c.header("cache-control", "no-store, no-cache, must-revalidate");
-  return c.json(release ?? { error: { code: "NOT_FOUND", message: "安装包尚未上传" } });
+  if (!release) {
+    const requestId = c.get("requestId") ?? "";
+    return c.json(errorBody(new ApiError(404, "NOT_FOUND", "安装包尚未上传"), requestId), 404);
+  }
+  return c.json(release);
 };
 
 app.get("/api/v1/version", (c) => releaseInfo(c));
@@ -350,12 +384,12 @@ app.get("/api/v1/models", (c) =>
 
 app.post("/api/v1/auth/register", async (c) => {
   const body = await readJsonBody(c);
-  return c.json(registerUser(body), 201);
+  return c.json(await registerUser(body), 201);
 });
 
 app.post("/api/v1/auth/login", async (c) => {
   const body = await readJsonBody(c);
-  return c.json(loginUser(body));
+  return c.json(await loginUser(body));
 });
 
 app.post("/api/v1/auth/logout", (c) => {
@@ -503,7 +537,7 @@ app.post("/api/v1/admin/users/:id/password", async (c) => {
   if (typeof body.password !== "string") {
     throw new ApiError(400, "INVALID_ARGUMENT", "password 必须是字符串");
   }
-  adminResetPassword(c.req.param("id"), body.password);
+  await adminResetPassword(c.req.param("id"), body.password);
   return c.json({ ok: true });
 });
 
@@ -527,12 +561,20 @@ app.post("/api/v1/import/archive", async (c) => {
   const { pass, write } = archiveStream();
   void (async () => {
     try {
-      const stats = await streamArchiveImport({ url: url.toString(), skipIds, write });
+      const stats = await streamArchiveImport({ url: url.toString(), skipIds, write, signal: c.req.raw.signal });
       await write({ type: "done", stats });
     } catch (error) {
-      const message = error instanceof ArchiveImportError ? error.message : "导入过程中发生错误。";
+      const status = error instanceof ArchiveImportError ? error.status : 500;
+      const code = status === 413 ? "PAYLOAD_TOO_LARGE" : status === 400 ? "INVALID_ARGUMENT" : "INTERNAL";
+      console.warn(`[dream-server] archive import failed: ${error instanceof Error ? error.message : String(error)}`);
       try {
-        await write({ type: "error", message, status: error instanceof ArchiveImportError ? error.status : 500 });
+        await write({
+          type: "error",
+          code,
+          hex: errorHex(code),
+          message: userErrorMessage(code),
+          status,
+        });
       } catch {
         // 客户端已断开时忽略
       }
@@ -620,7 +662,7 @@ app.post("/api/v1/chat", async (c) => {
     });
     effective = { ...parsedWithFiles, messages: compressed.messages };
     console.log(
-      `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ~${compressed.estimatedTokens} tokens, ${compressed.segments} segments (${compressed.cached} cached) in ${Date.now() - startedAt}ms`,
+      `[dream-server] ${requestId} context compressed: ${compressed.originalMessages} -> ${compressed.messages.length} messages, ~${compressed.estimatedTokens} tokens, ${compressed.segments} segments (${compressed.cached} cached, ${compressed.clippedMessages} clipped, summary ~${compressed.summaryTokens} tokens) in ${Date.now() - startedAt}ms`,
     );
   }
 
@@ -739,16 +781,7 @@ app.notFound((c) => {
   const requestId = c.get("requestId") ?? "req_unknown";
   c.header("x-request-id", requestId);
   c.header("x-api-version", API_VERSION);
-  return c.json(
-    {
-      error: {
-        code: "NOT_FOUND" as const,
-        message: "接口不存在",
-        requestId,
-      },
-    },
-    404,
-  );
+  return c.json(errorBody(new ApiError(404, "NOT_FOUND", "接口不存在"), requestId), 404);
 });
 
 function isClientAbort(err: unknown): boolean {
@@ -812,6 +845,8 @@ app.onError((err, c) => {
       username: username ?? undefined,
       message: `${err.code}: ${err.message}`,
     });
+    // 原始错误只写日志与后台 error_events，便于按 requestId 排查；返回给客户端的仍是固定中文目录。
+    console.warn(`[dream-server] ${requestId} ${err.code}: ${err.message}`);
     if (shouldRecordError(err.status, err.code)) {
       recordError({
         requestId,

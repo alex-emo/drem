@@ -3,7 +3,7 @@ import { isContextLengthError } from "./deepseek.js";
 import { withDreamIdentity } from "./identity.js";
 import { getModelSettings } from "./settings.js";
 import { cooldownForStatus, isRetryableStatus, keyPool, type PooledKey } from "./keys.js";
-import { ApiError, sseEncode } from "./protocol.js";
+import { ApiError, errorHex, sseEncode, userErrorMessage } from "./protocol.js";
 import { redactOutput } from "./stream.js";
 import { normalizeUsage, type TokenUsage } from "./usage.js";
 
@@ -228,8 +228,18 @@ export async function openSearchStream(
         } catch (error) {
           if (!closed) {
             closed = true;
-            const message = (error as Error).name === "AbortError" ? "联网搜索超时或被取消" : `联网搜索失败：${(error as Error).message}`;
-            streamController.enqueue(sseEncode("error", { code: "UPSTREAM_ERROR", message, requestId: meta.requestId }));
+            const aborted = (error as Error).name === "AbortError";
+            console.warn(
+              `[dream-server] ${meta.requestId} search stream failed: ${(error as Error).message}`,
+            );
+            streamController.enqueue(
+              sseEncode("error", {
+                code: "UPSTREAM_ERROR",
+                hex: errorHex("UPSTREAM_ERROR"),
+                message: aborted ? "联网搜索已取消。" : userErrorMessage("UPSTREAM_ERROR"),
+                requestId: meta.requestId,
+              }),
+            );
             streamController.close();
           }
         } finally {

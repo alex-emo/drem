@@ -1,4 +1,4 @@
-import { REFUSAL_MESSAGE, sseEncode } from "./protocol.js";
+import { REFUSAL_MESSAGE, errorHex, sseEncode, userErrorMessage } from "./protocol.js";
 import { normalizeUsage, type TokenUsage } from "./usage.js";
 
 export interface ChatStreamMeta {
@@ -126,7 +126,8 @@ export function dreamChatStream(
           finish("error", {
             error: {
               code: "STREAM_TIMEOUT",
-              message: "生成超时，请稍后重试。",
+              hex: errorHex("STREAM_TIMEOUT"),
+              message: userErrorMessage("STREAM_TIMEOUT"),
               requestId: meta.requestId,
             },
           });
@@ -304,7 +305,8 @@ export function dreamChatStream(
         finish("error", {
           error: {
             code: "UPSTREAM_ERROR",
-            message: "生成过程中连接中断，请稍后重试。",
+            hex: errorHex("UPSTREAM_ERROR"),
+            message: userErrorMessage("UPSTREAM_ERROR"),
             requestId: meta.requestId,
           },
         });

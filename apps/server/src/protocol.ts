@@ -52,9 +52,70 @@ export class ApiError extends Error {
   }
 }
 
+export const ERROR_HEX_CODES: Record<ApiErrorCode | "STREAM_TIMEOUT", string> = {
+  INVALID_ARGUMENT: "0x1001",
+  UNSUPPORTED_MEDIA_TYPE: "0x1002",
+  PAYLOAD_TOO_LARGE: "0x1003",
+  CONTENT_FILTERED: "0x1004",
+  UNAUTHORIZED: "0x2001",
+  INVALID_CREDENTIALS: "0x2002",
+  USERNAME_TAKEN: "0x2003",
+  ACCOUNT_DISABLED: "0x2004",
+  ACCOUNT_UNVERIFIED: "0x2005",
+  SESSION_REVOKED: "0x2006",
+  FORBIDDEN: "0x2007",
+  NOT_FOUND: "0x3001",
+  METHOD_NOT_ALLOWED: "0x3002",
+  RATE_LIMITED: "0x3003",
+  UPSTREAM_AUTH_FAILED: "0x4001",
+  UPSTREAM_ERROR: "0x4002",
+  UPSTREAM_NOT_CONFIGURED: "0x4003",
+  UPSTREAM_TIMEOUT: "0x4004",
+  REQUEST_ABORTED: "0x4005",
+  INTERNAL: "0x5001",
+  STREAM_TIMEOUT: "0x5002",
+};
+
+/**
+ * 对外错误文案目录：按错误码返回固定中文，不拼接上游原始报错。
+ * 上游细节只写入服务端日志 / error_events，供排查，不返回给客户端。
+ */
+export const USER_ERROR_MESSAGES: Record<ApiErrorCode | "STREAM_TIMEOUT", string> = {
+  INVALID_ARGUMENT: "请求内容不正确，请检查后重试。",
+  UNSUPPORTED_MEDIA_TYPE: "不支持这种文件类型。",
+  PAYLOAD_TOO_LARGE: "内容过长，请精简后重试。",
+  CONTENT_FILTERED: "这个话题暂时无法回答，请换一个话题。",
+  UNAUTHORIZED: "登录已失效，请重新登录。",
+  INVALID_CREDENTIALS: "用户名或密码不正确。",
+  USERNAME_TAKEN: "这个用户名已被使用。",
+  ACCOUNT_DISABLED: "账号暂时不可用，请联系管理员。",
+  ACCOUNT_UNVERIFIED: "账号暂时不可用，请联系管理员。",
+  SESSION_REVOKED: "账号已在其他设备登录，请重新登录。",
+  FORBIDDEN: "没有权限执行这个操作。",
+  NOT_FOUND: "请求的内容不存在。",
+  METHOD_NOT_ALLOWED: "请求方式不正确。",
+  RATE_LIMITED: "操作过于频繁，请稍后再试。",
+  UPSTREAM_AUTH_FAILED: "模型服务暂时不可用，请稍后重试。",
+  UPSTREAM_ERROR: "模型服务暂时不可用，请稍后重试。",
+  UPSTREAM_NOT_CONFIGURED: "模型服务尚未配置，请联系管理员。",
+  UPSTREAM_TIMEOUT: "响应超时，请稍后重试。",
+  REQUEST_ABORTED: "请求已取消。",
+  INTERNAL: "服务内部错误，请稍后重试。",
+  STREAM_TIMEOUT: "生成超时，请稍后重试。",
+};
+
+export function errorHex(code: ApiErrorCode | "STREAM_TIMEOUT"): string {
+  return ERROR_HEX_CODES[code] ?? "0x5001";
+}
+
+export function userErrorMessage(code: ApiErrorCode | "STREAM_TIMEOUT"): string {
+  return USER_ERROR_MESSAGES[code] ?? USER_ERROR_MESSAGES.INTERNAL;
+}
+
 export interface ApiErrorBody {
   error: {
     code: ApiErrorCode;
+    hex: string;
     message: string;
     requestId: string;
     details?: ApiErrorDetail[];
@@ -65,7 +126,9 @@ export function errorBody(error: ApiError, requestId: string): ApiErrorBody {
   return {
     error: {
       code: error.code,
-      message: error.message,
+      hex: errorHex(error.code),
+      // 只返回目录里的固定中文；原始 error.message 仅用于日志/后台排查。
+      message: userErrorMessage(error.code),
       requestId,
       ...(error.details && error.details.length > 0 ? { details: error.details } : {}),
     },

@@ -48,6 +48,9 @@ const isErrorBody = (value: unknown): value is ApiErrorBody =>
   'error' in value &&
   typeof (value as ApiErrorBody).error?.message === 'string'
 
+const withErrorContext = (message: string, hex?: string, requestId?: string): string =>
+  `${hex ?? '0x5001'} ${message}${requestId ? `（请求编号 ${requestId}）` : ''}`
+
 const readErrorResponse = async (
   response: Response,
   kind: 'http' | 'protocol' = 'http',
@@ -58,7 +61,7 @@ const readErrorResponse = async (
   try {
     const body: unknown = JSON.parse(text)
     if (isErrorBody(body)) {
-      message = body.error.message
+      message = withErrorContext(body.error.message, body.error.hex, body.error.requestId)
     }
   } catch {
     // 非 JSON 响应体直接展示原文
@@ -74,7 +77,8 @@ export const request = async (url: string, init: RequestInit): Promise<Response>
     if (init.signal?.aborted) {
       throw error
     }
-    throw new ApiError('network', error instanceof Error ? error.message : String(error))
+    console.warn('[dream] network request failed', error)
+    throw new ApiError('network', '网络连接失败，请检查网络后重试。')
   }
   if (!response.ok) {
     throw await readErrorResponse(response)

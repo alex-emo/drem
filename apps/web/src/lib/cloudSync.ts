@@ -203,14 +203,28 @@ async function rekeyLocalData(oldKey: string, newKey: string): Promise<void> {
   await importConversationData(conversations, messages);
 }
 
-export async function unlockAccount(userId: string): Promise<UnlockResult> {
+export async function unlockAccount(userId: string, signal?: AbortSignal): Promise<UnlockResult> {
+  const ensureActive = (): void => {
+    if (signal?.aborted) {
+      throw new DOMException("同步已取消", "AbortError");
+    }
+  };
+  ensureActive();
   const owner = localStorage.getItem("dream-local-owner");
   if (owner && owner !== userId) {
-    // 同一浏览器切换账号：旧账号的记录用旧密钥加密，新账号不可读，先清空（云端仍有备份）。
+    // 同一浏览器切换账号：旧账号记录用旧密钥加密，新账号不可读。云端有备份，但本地清空不可逆，必须先确认。
+    const confirmed = window.confirm(
+      "切换到其他账号会从这台设备移除当前账号的本地聊天记录。云端备份不会被删除，重新登录后可以恢复。继续吗？",
+    );
+    if (!confirmed) {
+      throw new Error("已取消切换账号，未删除本地记录。");
+    }
+    ensureActive();
     await clearLocalChats();
   }
   localStorage.setItem("dream-local-owner", userId);
   const info = await fetchCloudInfo();
+  ensureActive();
   const storedKey = localStorage.getItem("dream-encryption-key");
   const needsLegacyMigration = Boolean(info.legacyKey) && storedKey !== info.key;
   let merged: { conversations: number; messages: number } | null = null;
@@ -222,6 +236,7 @@ export async function unlockAccount(userId: string): Promise<UnlockResult> {
       await migrateLocalEncryption();
       localConversations = (await getAllConversations()).length;
     } catch {
+      ensureActive();
       // 本地可能是旧密钥且已无法解密，清空后从旧云端备份恢复。
       await clearLocalChats();
       localConversations = 0;
@@ -231,6 +246,7 @@ export async function unlockAccount(userId: string): Promise<UnlockResult> {
     } catch {
       // 旧备份可能不存在或已损坏，不阻断升级。
     }
+    ensureActive();
     await rekeyLocalData(info.legacyKey!, info.key);
     setSessionKey(info.key);
     try {
@@ -240,6 +256,7 @@ export async function unlockAccount(userId: string): Promise<UnlockResult> {
       // 下次登录继续尝试覆盖旧备份。
     }
   } else {
+    ensureActive();
     setSessionKey(info.key);
     try {
       await migrateLocalEncryption();

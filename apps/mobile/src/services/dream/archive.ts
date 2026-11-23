@@ -135,7 +135,8 @@ export async function importArchiveFromUrl(
     } else if (payload.type === 'done' && payload.stats) {
       final = payload.stats
     } else if (payload.type === 'error') {
-      throw new ArchiveImportError(payload.message ?? '导入过程中发生错误')
+      const hex = (payload as { hex?: string }).hex ?? '0x5001'
+      throw new ArchiveImportError(`${hex} ${payload.message ?? '导入过程中发生错误'}`)
     }
   }
 
