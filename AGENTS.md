@@ -2,7 +2,7 @@
 
 > 面向接手本项目的编码 AI / Agent。开始改代码前必须先读完本文件，再读 `README.md`、`docs/deploy.md`、`docs/api.md`、`docs/mobile.md`、`tests/README.md` 和最近 20 条 `git log`。
 >
-> 最后更新：2026-11-23 · 线上 `1.7.5 / versionCode 28` · 默认分支 `master`
+> 最后更新：2026-11-23 · 线上 `1.7.6 / versionCode 29` · 默认分支 `master`
 
 ---
 
