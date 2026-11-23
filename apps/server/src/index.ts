@@ -595,12 +595,23 @@ app.get("/api/v1/backup/meta", (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   const { key, legacyKey } = getBackupKey(user.id);
   const row = getBackupRow(user.id);
+  // 小备份直接随 meta 返回，省掉一次跨境 RTT；大备份仍走 stream。
+  const inlinePayload =
+    row?.path && row.iv && row.size > 0 && row.size <= 1024 * 1024
+      ? `dream1.${row.iv}.${readBackupBytes(row.path).toString("base64")}`
+      : null;
   return c.json({
     key,
     ...(legacyKey ? { legacyKey } : {}),
     backup:
       row?.path && row.size
-        ? { size: row.size, updatedAt: row.updated_at, iv: row.iv, version: 2 }
+        ? {
+            size: row.size,
+            updatedAt: row.updated_at,
+            iv: row.iv,
+            version: 2,
+            ...(inlinePayload ? { payload: inlinePayload } : {}),
+          }
         : row?.payload
           ? { size: row.size ?? row.payload.length, updatedAt: row.updated_at, legacy: true }
           : null,
