@@ -639,7 +639,11 @@ export const regenerateReply = (sessionId: string, messageId?: string) => {
   const index =
     messageId === undefined ? path.length - 1 : path.findIndex((m) => m.id === messageId)
   const question = path[index - 1]
-  if (question?.role !== 'user' || path[index]?.role !== 'assistant') {
+  if (
+    question?.role !== 'user' ||
+    question.excludeFromContext ||
+    path[index]?.role !== 'assistant'
+  ) {
     return
   }
   const history = path.slice(0, index - 1)
@@ -1043,6 +1047,17 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        if (reply.stopReason === 'refusal') {
+          updateSession(sessionId, (session) => ({
+            ...session,
+            messages: session.messages.map((message) =>
+              message.id === request.question.id
+                ? { ...message, excludeFromContext: true as const }
+                : message
+            ),
+          }))
+          persist(sessionId)
+        }
         break
       } catch (error) {
         if (controller.signal.aborted) {

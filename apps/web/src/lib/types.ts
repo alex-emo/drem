@@ -49,6 +49,8 @@ export interface Message {
   content: string;
   reasoning?: string;
   status: MessageStatus;
+  /** 因内容安全被拦截后从后续上下文移除；重新编辑会生成新消息。 */
+  excludeFromContext?: boolean;
   error?: string;
   /** 服务端错误码与请求编号，便于用户报障时定位日志。 */
   errorCode?: string;

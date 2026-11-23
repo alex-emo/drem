@@ -309,7 +309,11 @@ function trimMessagesForRetry(messages: ApiChatMessage[]): ApiChatMessage[] {
 
 function isRetryableNetworkError(error: unknown): boolean {
   if (error instanceof ChatApiError) {
-    return error.status === 0 || error.status === 413 || error.code === "PAYLOAD_TOO_LARGE";
+    return (
+      error.status === 413 ||
+      error.code === "PAYLOAD_TOO_LARGE" ||
+      (error.status === 0 && (error.code === "NETWORK" || error.code === "TIMEOUT"))
+    );
   }
   if (error instanceof TypeError) return true;
   const message = ((error as Error)?.message ?? "").toLowerCase();

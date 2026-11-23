@@ -115,6 +115,9 @@ export const UserMessage = memo(function UserMessage({
       ) : (
         <>
           {message.content ? <div className={styles.bubble}>{message.content}</div> : null}
+          {message.excludeFromContext ? (
+            <div className={styles.blockedNote}>已从后续上下文移除；重新编辑这条消息可恢复</div>
+          ) : null}
           <div className={styles.bottom}>
             <div className={clsx(styles.actions, isLast && styles.alwaysShow)}>
               {message.content ? <CopyButton text={message.content} /> : null}

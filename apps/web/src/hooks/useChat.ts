@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatApiError, importArchiveFromUrl, streamChat, warmContext } from "../lib/api";
+import { historyFor } from "../lib/history";
 import {
   buildVersions,
   getVisibleMessages,
@@ -57,17 +58,6 @@ function inheritedFiles(messages: Message[]): FileAttachment[] {
   return Array.from(seen.values()).slice(-8);
 }
 
-function historyFor(messages: Message[]) {
-  return messages
-    .filter(
-      (message) =>
-        message.role === "user" ||
-        (message.role === "assistant" &&
-          (message.status === "done" || message.status === "refused") &&
-          message.content.trim().length > 0),
-    )
-    .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }));
-}
 
 export function useChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -351,7 +341,7 @@ export function useChat() {
       conversation: Conversation,
       assistantMessage: Message,
       history: { role: "user" | "assistant"; content: string }[],
-      options: { files?: FileAttachment[]; webSearch?: boolean } = {},
+      options: { files?: FileAttachment[]; webSearch?: boolean; questionId?: string } = {},
     ) => {
       setStreaming(true);
       streamingRef.current = true;
@@ -359,6 +349,32 @@ export function useChat() {
       const controller = new AbortController();
       abortRef.current = controller;
       const acc = { content: "", reasoning: "", sources: [] as SearchSource[] };
+      const markBlocked = async (): Promise<void> => {
+        const questionId = options.questionId;
+        if (!questionId) return;
+        const nextAll = allMessagesRef.current.map((message) =>
+          message.id === questionId || message.id === assistantMessage.id
+            ? { ...message, excludeFromContext: true }
+            : message,
+        );
+        allMessagesRef.current = nextAll;
+        setAllMessages(nextAll);
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === questionId || message.id === assistantMessage.id
+              ? { ...message, excludeFromContext: true }
+              : message,
+          ),
+        );
+        const question = nextAll.find((message) => message.id === questionId);
+        const answer = nextAll.find((message) => message.id === assistantMessage.id);
+        try {
+          if (question) await putMessage(question);
+          if (answer) await putMessage(answer);
+        } catch (error) {
+          console.error("记录内容拦截状态失败", error);
+        }
+      };
       let settled = false;
       let refused = false;
       let lastActivityAt = Date.now();
@@ -527,6 +543,7 @@ export function useChat() {
         ensureTimer();
         if (pending) await drainPromise;
         if (timer !== null) window.clearInterval(timer);
+        if (refused) await markBlocked();
         await finish(refused ? "refused" : "done");
       } catch (error) {
         if (timer !== null) window.clearInterval(timer);
@@ -536,6 +553,9 @@ export function useChat() {
         } else {
           if (error instanceof ChatApiError && error.status === 401) {
             window.dispatchEvent(new CustomEvent("dream:unauthorized"));
+          }
+          if (error instanceof ChatApiError && error.code === "CONTENT_FILTERED") {
+            await markBlocked();
           }
           const rawFailure = (error as Error).message || "生成失败，请稍后重试";
           const failure =
@@ -637,6 +657,7 @@ export function useChat() {
       await runReply(conversation as Conversation, assistantMessage, history, {
         ...options,
         files: requestFiles,
+        questionId: userMessage.id,
       });
     },
     [runReply],
@@ -704,7 +725,7 @@ export function useChat() {
       await putConversation({ ...conversation, rootMessageId: rootId, updatedAt: now });
 
       const history = [...historyFor(before), { role: "user" as const, content: text }];
-      await runReply(conversation, assistantMessage, history, { files: previous.files });
+      await runReply(conversation, assistantMessage, history, { files: previous.files, questionId: userMessage.id });
       return true;
     },
     [runReply],
@@ -721,6 +742,8 @@ export function useChat() {
       const index = visible.findIndex((message) => message.id === assistantMessageId);
       const target = visible[index];
       if (!target || target.role !== "assistant" || !target.parentId) return;
+      const question = allMessagesRef.current.find((message) => message.id === target.parentId);
+      if (question?.excludeFromContext) return;
 
       const all = allMessagesRef.current;
       const path: Message[] = [];
@@ -757,6 +780,7 @@ export function useChat() {
       await putMessage(newAssistant);
 
       await runReply(conversation, newAssistant, historyFor(path), {
+        questionId: target.parentId,
         files: target.files,
         webSearch: target.webSearch,
       });

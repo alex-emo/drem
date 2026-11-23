@@ -36,6 +36,8 @@ export type UserMessage = MessageBranch & {
   id: string
   role: 'user'
   content: string
+  /** 因内容安全被拦截后从后续上下文移除；重新编辑会生成新消息。 */
+  excludeFromContext?: boolean
   files: FileAttachment[]
   createdAt: number
 }

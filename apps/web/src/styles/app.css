@@ -2372,3 +2372,9 @@ body,
   width: min(760px, 100%); max-height: 80vh; overflow: auto; border-radius: 14px;
   border: 1px solid var(--border); background: var(--sidebar); padding: 16px;
 }
+
+.msg-blocked-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+}
