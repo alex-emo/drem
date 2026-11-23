@@ -613,7 +613,7 @@ app.get("/api/v1/backup/meta", (c) => {
             ...(inlinePayload ? { payload: inlinePayload } : {}),
           }
         : row?.payload
-          ? { size: row.size ?? row.payload.length, updatedAt: row.updated_at, legacy: true }
+          ? { size: row.size ?? row.payload.length, updatedAt: row.updated_at, legacy: true, payload: row.payload }
           : null,
   });
 });
