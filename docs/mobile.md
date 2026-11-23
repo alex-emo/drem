@@ -54,6 +54,18 @@ npx cap open ios
 
 在 Xcode 中选择签名 Team 后 Archive 即可。本 Linux 环境只能生成工程，无法签名构建。
 
+### iOS Codex 同步包
+
+每次 Android 发版后，同步生成 iOS 源码包，结构与本仓库 `apps/mobile` 一致（排除 `android/`），并附带已构建的 `dist/` 与 `ios/App/App/public`：
+
+```bash
+# 产物
+release/Dream-iOS-<版本>.zip
+release/Dream-iOS-<版本>.zip.sha256
+```
+
+当前：`release/Dream-iOS-1.7.3.zip`（`MARKETING_VERSION=1.7.3`、`CURRENT_PROJECT_VERSION=26`、Bundle ID `cn.pum.dream`）。包内 `CODEX_SYNC.md` 是给 Codex 的验收清单，`BUILDING_IOS.md` 是 Mac 构建/排错说明。
+
 ## 分发下载
 
 网页端登录页与侧边栏提供「下载 Android App」入口，指向：
