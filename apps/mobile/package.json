@@ -1,6 +1,6 @@
 {
   "name": "@dream/mobile",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "Dream 移动端：基于官方 MIT chat-demo 的 UI 基座，接入 Dream 服务端。",
   "license": "MIT",
   "private": true,
@@ -35,7 +35,8 @@
     "zustand": "4.4.7",
     "@capacitor/core": "^8.6.2",
     "@capacitor/android": "^8.6.2",
-    "@capacitor/ios": "^8.6.2"
+    "@capacitor/ios": "^8.6.2",
+    "@capacitor/keyboard": "^8.0.6"
   },
   "devDependencies": {
     "@rspack/cli": "2.0.2",

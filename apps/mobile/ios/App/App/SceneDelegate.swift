@@ -8,6 +8,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
+        // 键盘弹出/收起时露出的原生底色跟随系统深浅色，避免 WebView 外出现黑边或白边。
+        window?.backgroundColor = .systemBackground
         window?.rootViewController = CAPBridgeViewController()
         window?.makeKeyAndVisible()
 

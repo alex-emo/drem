@@ -25,11 +25,15 @@ export type ApiErrorCode =
   | "UNSUPPORTED_MEDIA_TYPE"
   | "RATE_LIMITED"
   | "CONTENT_FILTERED"
+  | "ASR_AUDIO_TOO_LARGE"
+  | "ASR_AUDIO_INVALID"
   | "INTERNAL"
   | "UPSTREAM_AUTH_FAILED"
   | "UPSTREAM_ERROR"
   | "UPSTREAM_NOT_CONFIGURED"
   | "UPSTREAM_TIMEOUT"
+  | "ASR_NOT_CONFIGURED"
+  | "ASR_UNAVAILABLE"
   | "REQUEST_ABORTED";
 
 export interface ApiErrorDetail {
@@ -57,6 +61,8 @@ export const ERROR_HEX_CODES: Record<ApiErrorCode | "STREAM_TIMEOUT", string> = 
   UNSUPPORTED_MEDIA_TYPE: "0x1002",
   PAYLOAD_TOO_LARGE: "0x1003",
   CONTENT_FILTERED: "0x1004",
+  ASR_AUDIO_TOO_LARGE: "0x1005",
+  ASR_AUDIO_INVALID: "0x1006",
   UNAUTHORIZED: "0x2001",
   INVALID_CREDENTIALS: "0x2002",
   USERNAME_TAKEN: "0x2003",
@@ -72,6 +78,8 @@ export const ERROR_HEX_CODES: Record<ApiErrorCode | "STREAM_TIMEOUT", string> = 
   UPSTREAM_NOT_CONFIGURED: "0x4003",
   UPSTREAM_TIMEOUT: "0x4004",
   REQUEST_ABORTED: "0x4005",
+  ASR_NOT_CONFIGURED: "0x4006",
+  ASR_UNAVAILABLE: "0x4007",
   INTERNAL: "0x5001",
   STREAM_TIMEOUT: "0x5002",
 };
@@ -85,6 +93,8 @@ export const USER_ERROR_MESSAGES: Record<ApiErrorCode | "STREAM_TIMEOUT", string
   UNSUPPORTED_MEDIA_TYPE: "不支持这种文件类型。",
   PAYLOAD_TOO_LARGE: "内容过长，请精简后重试。",
   CONTENT_FILTERED: "这个话题暂时无法回答，请换一个话题。",
+  ASR_AUDIO_TOO_LARGE: "录音过长或文件过大，请缩短后重试。",
+  ASR_AUDIO_INVALID: "录音格式无法识别，请重新录制后重试。",
   UNAUTHORIZED: "登录已失效，请重新登录。",
   INVALID_CREDENTIALS: "用户名或密码不正确。",
   USERNAME_TAKEN: "这个用户名已被使用。",
@@ -100,6 +110,8 @@ export const USER_ERROR_MESSAGES: Record<ApiErrorCode | "STREAM_TIMEOUT", string
   UPSTREAM_NOT_CONFIGURED: "模型服务尚未配置，请联系管理员。",
   UPSTREAM_TIMEOUT: "响应超时，请稍后重试。",
   REQUEST_ABORTED: "请求已取消。",
+  ASR_NOT_CONFIGURED: "服务端语音识别未配置，请联系管理员。",
+  ASR_UNAVAILABLE: "语音识别服务暂时不可用，请稍后重试。",
   INTERNAL: "服务内部错误，请稍后重试。",
   STREAM_TIMEOUT: "生成超时，请稍后重试。",
 };

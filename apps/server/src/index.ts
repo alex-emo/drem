@@ -10,7 +10,7 @@ import { logger } from "hono/logger";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { config } from "./config.js";
-import { keyPool } from "./keys.js";
+import { keyPool, asrKeyPool } from "./keys.js";
 import {
   COMPRESS_MESSAGE_THRESHOLD,
   COMPRESS_TOKEN_THRESHOLD,
@@ -42,6 +42,7 @@ import {
 } from "./db.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
 import { createTextFile, deleteUserFile, expandFiles, listUserFiles, MAX_FILE_BYTES } from "./files.js";
+import { inspectWav, MAX_ASR_AUDIO_BYTES, transcribeAudio } from "./asr.js";
 import { openSearchStream } from "./search.js";
 import { fetchSharedChat } from "./share.js";
 import { archiveStream, streamArchiveImport, validateArchiveUrl, ArchiveImportError } from "./archiveImport.js";
@@ -81,6 +82,21 @@ const uploadBodyLimit = bodyLimit({
   onError: (c) =>
     c.json(
       errorBody(new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 1 MiB 上限"), c.get("requestId") ?? ""),
+      413,
+    ),
+});
+
+// 录音请求体按字节流式限长；multipart 额外留 64 KiB 边界/表单开销，真实音频仍由 inspectWav 卡 1 MiB。
+const asrBodyLimit = bodyLimit({
+  maxSize: MAX_ASR_AUDIO_BYTES + 64 * 1024,
+  onError: (c) =>
+    c.json(
+      errorBody(
+        new ApiError(413, "ASR_AUDIO_TOO_LARGE", "录音文件超过 1 MiB 上限", [
+          { field: "file", reason: "size" },
+        ]),
+        c.get("requestId") ?? "",
+      ),
       413,
     ),
 });
@@ -199,6 +215,18 @@ app.use("/api/v1/import/archive", async (c, next) => {
   await next();
 });
 
+app.use("/api/v1/tools/asr", async (c, next) => {
+  const rule: LimitRule = {
+    name: "asr",
+    limit: config.rateLimit.asr,
+    windowMs: MINUTE,
+    blockMs: 5 * MINUTE,
+  };
+  const limited = enforceRateLimit(c, rule);
+  if (limited) return limited;
+  await next();
+});
+
 async function readJsonBody(c: Context<AppEnv>): Promise<unknown> {
   const contentType = c.req.header("content-type") ?? "";
   if (contentType && !/^application\/(?:[\w.+-]+\+)?json\b/i.test(contentType)) {
@@ -285,6 +313,7 @@ app.get("/api/v1/health", (c) => {
     features: {
       files: true,
       webSearch: config.provider === "qwen",
+      speech: asrKeyPool.total > 0,
     },
   });
 });
@@ -322,6 +351,34 @@ app.delete("/anthropic/v1/files/:id", (c) => {
 app.get("/api/v1/files", (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   return c.json({ files: listUserFiles(user.id) });
+});
+
+/** 语音识别：支持原始 WAV 字节，也兼容 multipart 的 file 字段；统一转成 base64 调上游。 */
+app.post("/api/v1/tools/asr", asrBodyLimit, async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  c.set("requestUser", user.username);
+
+  const contentType = (c.req.header("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  let bytes: Uint8Array;
+  if (contentType === "multipart/form-data") {
+    const body = await c.req.parseBody();
+    const entry = body["file"];
+    if (!entry || typeof entry === "string" || typeof entry.arrayBuffer !== "function") {
+      throw new ApiError(400, "ASR_AUDIO_INVALID", "缺少录音文件", [{ field: "file", reason: "missing" }]);
+    }
+    bytes = new Uint8Array(await entry.arrayBuffer());
+  } else if (["audio/wav", "audio/x-wav", "audio/wave", "application/octet-stream"].includes(contentType)) {
+    bytes = new Uint8Array(await c.req.arrayBuffer());
+  } else {
+    throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "语音识别只接受 WAV 音频");
+  }
+
+  const info = inspectWav(bytes);
+  const text = await transcribeAudio(bytes, c.req.raw.signal);
+  return c.json({
+    text,
+    durationSeconds: Math.round(info.durationSeconds * 100) / 100,
+  });
 });
 
 app.post("/api/v1/files", uploadBodyLimit, async (c) => {

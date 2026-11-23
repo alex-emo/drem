@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { BrandMark } from '../base/BrandMark.js'
 import { Button } from '../base/Button.js'
 import { login, register, setSession, type DreamSession } from '../../services/dream/auth.js'
 import { setApiKey } from '../../services/settings.js'
@@ -42,7 +43,7 @@ export const LoginScreen = ({ onSuccess }: Props) => {
     <div className={styles.page}>
       <form className={styles.card} onSubmit={submit}>
         <div className={styles.brand}>
-          <span className={styles.logo}>D</span>
+          <span className={styles.logo}><BrandMark /></span>
           <span className={styles.name}>Dream</span>
         </div>
         <p className={styles.subtitle}>

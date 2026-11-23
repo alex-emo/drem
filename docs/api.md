@@ -225,6 +225,31 @@ DELETE /api/v1/files/:id
 
 只接受纯文本；单文件 ≤ **1 MiB**、文本 ≤ 200 万字符，二进制或无法识别编码返回 400。
 
+### 语音识别接口
+
+```http
+POST /api/v1/tools/asr
+Authorization: Bearer <Dream session token>
+Content-Type: audio/wav          # 也可 multipart/form-data，字段名 file
+```
+
+请求体是 16 kHz、单声道、16-bit PCM 的 WAV 原始字节；multipart 方式字段名必须为 `file`。单次 ≤ **1 MiB**、≤ **120 秒**（1 MiB 实际约 32 秒，客户端在 30 秒自动结束）。成功响应：
+
+```json
+{"text":"识别出的文字","durationSeconds":12.3}
+```
+
+服务端先校验 WAV 头，再以同步方式调用上游语音识别；上游 Key 只在服务端读取，响应中不包含厂商信息。未配置 Key 时返回 `503 ASR_NOT_CONFIGURED`，用户端会看到「服务端语音识别未配置，请联系管理员。」而不是静默失败。
+
+| 错误码 | HTTP | 含义 |
+| --- | --- | --- |
+| `ASR_AUDIO_TOO_LARGE` | 413 | 录音超过 1 MiB / 120 秒 |
+| `ASR_AUDIO_INVALID` | 400 | 不是 PCM 单声道 16 kHz WAV，或文件损坏 |
+| `ASR_NOT_CONFIGURED` | 503 | 服务端未配置语音识别 Key |
+| `ASR_UNAVAILABLE` | 502 | 上游暂时不可用 |
+| `UPSTREAM_TIMEOUT` | 504 | 上游超时 |
+| `RATE_LIMITED` | 429 | 触发每 IP 每分钟 30 次限制 |
+
 ### 3.1 模型身份
 
 服务端会在每次转发前注入固定的 system prompt，并移除客户端自带的冲突身份提示：
@@ -250,6 +275,11 @@ DELETE /api/v1/files/:id
   "models": {
     "default": "qwen3.7-flash",
     "reasoner": "qwen3.7-flash"
+  },
+  "features": {
+    "files": true,
+    "webSearch": true,
+    "speech": true
   }
 }
 ```
@@ -265,6 +295,7 @@ DELETE /api/v1/files/:id
 | `models.reasoner` | 深度思考模型（Qwen 下与 `default` 相同） |
 | `context.compressAfterMessages` | 超过多少条消息开始压缩历史（当前 400） |
 | `context.compressAfterTokens` | 估算 token 超过多少开始压缩历史（当前 60000） |
+| `features.speech` | 服务端是否配置了语音识别 Key（Key 永不下发） |
 
 客户端 UI 规则：`status=degraded && mock` 显示「演示模式」；`status=degraded && !hasApiKey` 显示「缺少 API Key」。
 

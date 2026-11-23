@@ -3,6 +3,7 @@ import { loginAccount, registerAccount } from "../lib/api";
 import { saveSession } from "../lib/auth";
 import { useDownloadUrl } from "../lib/download";
 import type { AuthUser } from "../lib/types";
+import { BrandMark } from "./BrandMark";
 import { DownloadIcon } from "./Icons";
 
 interface LoginScreenProps {
@@ -44,7 +45,7 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
     <div className="auth-screen">
       <form className="auth-card" onSubmit={submit}>
         <div className="auth-brand">
-          <span className="brand-logo">D</span>
+          <span className="brand-logo"><BrandMark /></span>
           <span className="auth-title">Dream</span>
         </div>
         <p className="auth-subtitle">

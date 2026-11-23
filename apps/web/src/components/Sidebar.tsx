@@ -1,5 +1,6 @@
 import { useDownloadUrl } from "../lib/download";
 import type { AuthUser, Conversation, Theme } from "../lib/types";
+import { BrandMark } from "./BrandMark";
 import {
   DownloadIcon,
   LogoutIcon,
@@ -45,7 +46,7 @@ export default function Sidebar({
     <aside className={`sidebar${open ? " open" : ""}`} aria-label="会话列表">
       <div className="sidebar-head">
         <div className="brand">
-          <span className="brand-logo">D</span>
+          <span className="brand-logo"><BrandMark /></span>
           <span className="brand-name">Dream</span>
         </div>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="收起边栏" title="收起边栏">

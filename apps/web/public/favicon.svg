@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="dream-x" x1="64" y1="0" x2="0" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#52b0ff" />
+      <stop offset="1" stop-color="#7bd0ff" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#ffffff" />
+  <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="none" stroke="#0f172a" stroke-opacity="0.12" />
+  <g transform="translate(13.8 13.8) scale(0.2275)">
+    <path fill="url(#dream-x)" d="M76 17L99 40L140 0L160 20L120 60L160 100L140 120L40 20L60 0Z" />
+    <path fill="url(#dream-x)" d="M84 143L61 120L20 160L0 140L40 100L0 60L20 40L120 140L100 160Z" />
+  </g>
+</svg>

@@ -46,6 +46,17 @@ const apiKeys =
     ? splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS)
     : splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS);
 
+// 语音识别固定使用 Qwen/DashScope Key；聊天供应商为 DeepSeek 时也允许单独配置 ASR Key。
+const qwenKeys = splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS);
+const asrKeys = splitKeys(
+  process.env.DREAM_ASR_API_KEY,
+  process.env.DREAM_ASR_API_KEYS,
+  qwenKeys.join(","),
+);
+const qwenBaseUrl = (
+  process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"
+).replace(/\/+$/, "");
+
 function splitList(...values: Array<string | undefined>): string[] {
   const out: string[] = [];
   for (const value of values) {
@@ -66,8 +77,8 @@ const model =
 
 export const config = {
   port: Number(process.env.PORT ?? 8787),
-  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.5",
-  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 28),
+  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.6",
+  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 29),
   backupDir: process.env.DREAM_BACKUP_DIR ?? "data/backups",
   host: process.env.DREAM_HOST ?? "127.0.0.1",
   // 对外公开基址，用于生成 apkUrl；不能从请求 Host 头推导，避免 Host 头污染。
@@ -85,6 +96,13 @@ export const config = {
   // Qwen 用同一模型 ID + enable_thinking 切换；DeepSeek 用独立 reasoner 模型。
   reasonerModel:
     provider === "qwen" ? model : (process.env.DREAM_REASONER_MODEL ?? "deepseek-reasoner"),
+  asrKeys,
+  // 语音识别独立配置；默认复用 Qwen/DashScope 兼容端点与 Key，不额外引入厂商 SDK。
+  asr: {
+    baseUrl: (process.env.DREAM_ASR_BASE_URL ?? qwenBaseUrl).replace(/\/+$/, ""),
+    model: process.env.DREAM_ASR_MODEL ?? "qwen3-asr-flash",
+    timeoutMs: Number(process.env.DREAM_ASR_TIMEOUT_MS ?? 30000),
+  },
   mock: process.env.DREAM_MOCK === "1" || process.env.DREAM_MOCK === "true",
   dbPath: process.env.DREAM_DB_PATH ?? "data/dream.db",
   webDir: process.env.DREAM_WEB_DIR ?? "web",
@@ -95,6 +113,7 @@ export const config = {
     register: Number(process.env.DREAM_RL_REGISTER ?? 12), // 每 IP 每小时注册数
     login: Number(process.env.DREAM_RL_LOGIN ?? 60), // 每 IP 每 15 分钟登录尝试
     chat: Number(process.env.DREAM_RL_CHAT ?? 120), // 每 IP 每分钟聊天请求
+    asr: Number(process.env.DREAM_RL_ASR ?? 30), // 每 IP 每分钟语音识别请求
     global: Number(process.env.DREAM_RL_GLOBAL ?? 1200), // 每 IP 每分钟全部 /api 请求
     archive: Number(process.env.DREAM_RL_ARCHIVE ?? 12), // 每 IP 每小时导入
   },

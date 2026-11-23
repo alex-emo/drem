@@ -2,29 +2,31 @@ import { ApiError, API_ORIGIN, request } from './client.js'
 
 /**
  * 语音接口：
- * - ASR：POST /v1/tools/asr，multipart 上传 WAV / Ogg Opus，一次返回全文
- * - TTS：POST /v1/tools/tts，返回音频字节流（产出首帧后即返回 200）
+ * - ASR：POST /api/v1/tools/asr，上传 16 kHz 单声道 16-bit WAV 原始字节，一次返回全文
+ * - TTS：POST /v1/tools/tts，返回音频字节流（服务端尚未实现，调用会失败）
  * 鉴权都用 Authorization: Bearer。
  */
 const TOOLS_BASE_URL = `${API_ORIGIN}/v1/tools`
+const ASR_URL = `${API_ORIGIN}/api/v1/tools/asr`
 
 export type TtsVoice = 'stella' | 'tide'
 
 /** TTS 输出的裸 PCM 参数：24kHz、单声道、16-bit 小端 */
 export const TTS_SAMPLE_RATE = 24000
 
-/** 语音识别：audio 为 WAV（单声道 16-bit PCM）或 Ogg Opus，时长不超过 120 秒、大小不超过 8 MiB */
+/** 语音识别：WAV（单声道 16-bit PCM，16 kHz），时长不超过 120 秒、大小不超过 1 MiB */
 export const transcribe = async (
   apiKey: string,
   audio: Blob,
   signal?: AbortSignal
 ): Promise<string> => {
-  const form = new FormData()
-  form.append('file', audio, 'recording.wav')
-  const response = await request(`${TOOLS_BASE_URL}/asr`, {
+  const response = await request(ASR_URL, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': audio.type || 'audio/wav',
+    },
+    body: audio,
     signal,
   })
   const raw = await response.text()

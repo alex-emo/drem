@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getToken, clearSession } from "../lib/auth";
 import { formatBytes } from "../lib/storage";
+import { BrandMark } from "./BrandMark";
 
 interface AdminStats {
   generatedAt: string;
@@ -509,7 +510,7 @@ export default function AdminPage() {
     return (
       <div className="admin-shell">
         <header className="admin-head">
-          <div className="admin-brand"><span className="brand-logo">D</span><span>Dream 后台</span></div>
+          <div className="admin-brand"><span className="brand-logo"><BrandMark /></span><span>Dream 后台</span></div>
         </header>
         <main className="admin-main">
           <div className="admin-error">
@@ -831,7 +832,7 @@ export default function AdminPage() {
       <header className="admin-head">
         <div className="admin-head-left">
           <button type="button" className="admin-drawer-toggle" onClick={() => setDrawerOpen((value) => !value)} aria-label="切换后台导航">☰</button>
-          <div className="admin-brand"><span className="brand-logo">D</span><span>Dream 后台</span></div>
+          <div className="admin-brand"><span className="brand-logo"><BrandMark /></span><span>Dream 后台</span></div>
           <span className="admin-head-page">{PAGE_TITLES[page]}</span>
         </div>
         <div className="admin-actions">

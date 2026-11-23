@@ -1,6 +1,9 @@
 :root {
   --message-list-max-width: 840px;
   --message-list-padding-horizontal: 44px;
+  /* iOS 用 env()，Android 由 Capacitor SystemBars 注入 --safe-area-inset-*。 */
+  --app-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --app-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 @media (max-width: 1023px) {

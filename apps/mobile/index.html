@@ -5,10 +5,46 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#ffffff" />
     <title>Dream</title>
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var isIOS = false;
+        try {
+          isIOS =
+            (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'ios') ||
+            /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        } catch (error) {}
+        // 只在 iOS 启用 viewport-fit=cover，让 env(safe-area-inset-*) 生效；
+        // Android 继续由 Capacitor SystemBars 的原生 padding 处理，避免布局回归。
+        if (isIOS) {
+          var viewport = document.querySelector('meta[name="viewport"]');
+          if (viewport) viewport.setAttribute('content', 'width=device-width,initial-scale=1,viewport-fit=cover');
+        }
+        var preference = null;
+        try {
+          preference = localStorage.getItem('chat-demo:theme-preference');
+        } catch (error) {}
+        var dark =
+          preference === 'dark' ||
+          (preference !== 'light' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) {
+          root.setAttribute('data-boot-dark', '');
+          var themeColor = document.querySelector('meta[name="theme-color"]');
+          if (themeColor) themeColor.setAttribute('content', '#000000');
+        }
+      })();
+    </script>
     <style>
-      #boot { position: fixed; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #151517; color: #f9fafb; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; z-index: 9999; }
-      #boot .logo { width: 46px; height: 46px; border-radius: 13px; background: #5686fe; display: grid; place-items: center; font-weight: 700; font-size: 24px; }
-      #boot p { margin: 0; color: #adb2b8; font-size: 13px; line-height: 1.7; max-width: 300px; text-align: center; }
+      #boot { position: fixed; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom); background: #ffffff; color: #1f2328; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; z-index: 9999; }
+      #boot .logo { box-sizing: border-box; width: 46px; height: 46px; padding: 6px; border-radius: 13px; background: #ffffff; display: grid; place-items: center; box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08); }
+      #boot .logo svg { display: block; width: 100%; height: 100%; }
+      #boot p { margin: 0; color: #6b7280; font-size: 13px; line-height: 1.7; max-width: 300px; text-align: center; }
+      html[data-boot-dark] { color-scheme: dark; }
+      html[data-boot-dark] #boot { background: #000000; color: #f2f2f7; }
+      html[data-boot-dark] #boot p { color: #8e8e93; }
       #boot button { padding: 9px 22px; border: 0; border-radius: 20px; background: #5686fe; color: #fff; font-size: 14px; }
     </style>
   </head>
@@ -16,21 +52,28 @@
     <script type="module" src="/src/main.tsx"></script>
     <div id="root"></div>
     <div id="boot">
-      <div class="logo">D</div>
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 160 160" focusable="false">
+          <defs><linearGradient id="boot-dream-x" x1="160" y1="0" x2="0" y2="160" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#52b0ff"/><stop offset="1" stop-color="#7bd0ff"/></linearGradient></defs>
+          <path fill="url(#boot-dream-x)" d="M76 17L99 40L140 0L160 20L120 60L160 100L140 120L40 20L60 0Z"/>
+          <path fill="url(#boot-dream-x)" d="M84 143L61 120L20 160L0 140L40 100L0 60L20 40L120 140L100 160Z"/>
+        </svg>
+      </div>
       <p>正在加载 Dream…</p>
     </div>
     <script>
       (function () {
+        var logo = '<div class="logo" aria-hidden="true"><svg viewBox="0 0 160 160" focusable="false"><defs><linearGradient id="boot-dream-x" x1="160" y1="0" x2="0" y2="160" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#52b0ff"/><stop offset="1" stop-color="#7bd0ff"/></linearGradient></defs><path fill="url(#boot-dream-x)" d="M76 17L99 40L140 0L160 20L120 60L160 100L140 120L40 20L60 0Z"/><path fill="url(#boot-dream-x)" d="M84 143L61 120L20 160L0 140L40 100L0 60L20 40L120 140L100 160Z"/></svg></div>';
         var timer = setTimeout(function () {
           if (window.__dreamBooted) return;
           var boot = document.getElementById('boot');
           if (!boot) return;
-          boot.innerHTML = '<div class="logo">D</div><h1 style="font-size:18px;margin:6px 0">页面加载超时</h1><p>请检查网络后重试；如果反复失败，可能是系统 WebView 过旧，请在应用商店更新「Android System WebView」。</p><button onclick="location.reload()">重新加载</button>';
+          boot.innerHTML = logo + '<h1 style="font-size:18px;margin:6px 0">页面加载超时</h1><p>请检查网络后重试；如果反复失败，可能是系统 WebView 过旧，请在应用商店更新系统 WebView 或重新安装 Dream。</p><button onclick="location.reload()">重新加载</button>';
         }, 15000);
         window.addEventListener('error', function () {
           if (window.__dreamBooted) return;
           var boot = document.getElementById('boot');
-          if (boot) boot.innerHTML = '<div class="logo">D</div><h1 style="font-size:18px;margin:6px 0">页面加载出错</h1><p>请尝试重新加载。若持续失败，请更新系统 WebView 或联系支持。</p><button onclick="location.reload()">重新加载</button>';
+          if (boot) boot.innerHTML = logo + '<h1 style="font-size:18px;margin:6px 0">页面加载出错</h1><p>请尝试重新加载。若持续失败，请更新系统 WebView 或联系支持。</p><button onclick="location.reload()">重新加载</button>';
           clearTimeout(timer);
         }, true);
       })();

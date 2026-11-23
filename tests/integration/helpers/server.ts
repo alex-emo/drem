@@ -60,6 +60,7 @@ export async function startTestServer(extraEnv: Record<string, string> = {}): Pr
     DREAM_RL_REGISTER: "1000",
     DREAM_RL_LOGIN: "1000",
     DREAM_RL_CHAT: "1000",
+    DREAM_RL_ASR: "1000",
     DREAM_RL_GLOBAL: "100000",
     DREAM_RL_ARCHIVE: "1000",
     PORT: String(port),

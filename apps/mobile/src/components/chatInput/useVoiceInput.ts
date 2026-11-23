@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TranslationMessage } from '../../i18n/index.js'
+import { ApiError } from '../../services/api/client.js'
 import { transcribe } from '../../services/api/speech.js'
 import { startRecording, type Recording } from '../../services/speech/recorder.js'
 import { useSettings } from '../../services/settings.js'
 import { showToast } from '../base/toastState.js'
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing'
+
+/** 16 kHz 单声道 16-bit WAV 约 32 KB/s，30 秒约 960 KB，留出 1 MiB 上限余量。 */
+const MAX_UPLOAD_SECONDS = 30
 
 /**
  * 录音依赖 getUserMedia，只在安全上下文可用（HTTPS、localhost、file://）。
@@ -25,9 +29,20 @@ const describeRecordingError = (error: unknown): TranslationMessage => {
   return { key: 'voiceInputFailed' }
 }
 
+/** 服务端错误的固定中文直接展示给用户；404 兼容尚未升级的服务端。 */
+const describeTranscribeError = (error: unknown): string | TranslationMessage => {
+  if (error instanceof ApiError && error.kind === 'http') {
+    if (error.status === 404) {
+      return '服务端语音识别未配置，请联系管理员。'
+    }
+    return error.message
+  }
+  return { key: 'voiceInputFailed' }
+}
+
 /**
  * 语音输入（oneshot）：点击开始录音，再次点击结束并转写，结果交给 onText 填入输入框。
- * 转写中再次点击取消。录满 120 秒自动结束。
+ * 转写中再次点击取消。录满 30 秒自动结束并转写（受 1 MiB 上传上限约束）。
  */
 export const useVoiceInput = (onText: (text: string) => void) => {
   const [status, setStatus] = useState<VoiceInputStatus>('idle')
@@ -84,9 +99,9 @@ export const useVoiceInput = (onText: (text: string) => void) => {
       } else {
         showToast({ key: 'voiceInputEmpty' })
       }
-    } catch {
+    } catch (error) {
       if (operationRef.current === operation && !controller?.signal.aborted) {
-        showToast({ key: 'voiceInputFailed' })
+        showToast(describeTranscribeError(error))
       }
     } finally {
       if (operationRef.current === operation) {
@@ -142,6 +157,18 @@ export const useVoiceInput = (onText: (text: string) => void) => {
     }, 500)
     return () => clearInterval(timer)
   }, [status])
+
+  // 服务端按 1 MiB 限长；录音是 32 KB/s，30 秒自动结束并转写，避免上传被 413。
+  useEffect(() => {
+    if (status !== 'recording') {
+      return
+    }
+    const timer = setTimeout(() => {
+      showToast({ key: 'voiceInputLimitReached' })
+      void finish()
+    }, MAX_UPLOAD_SECONDS * 1000)
+    return () => clearTimeout(timer)
+  }, [status, finish])
 
   useEffect(() => cancelOperation, [cancelOperation])
 

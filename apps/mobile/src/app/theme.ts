@@ -1,3 +1,5 @@
+import { Capacitor, SystemBarType, SystemBars, SystemBarsStyle } from '@capacitor/core'
+import { Keyboard, KeyboardStyle } from '@capacitor/keyboard'
 import { useSyncExternalStore } from 'react'
 import { useSettings, type ThemePreference } from '../services/settings.js'
 
@@ -28,6 +30,27 @@ const syncPageBackground = () => {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', backgroundColor)
 }
 
+/** iOS/Android 状态栏图标与 App 主题保持一致（深色 = 浅色图标）。 */
+const syncNativeStatusBar = (theme: Theme) => {
+  if (!Capacitor.isNativePlatform()) {
+    return
+  }
+  void SystemBars.setStyle({
+    style: theme === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+    bar: SystemBarType.StatusBar,
+  }).catch(() => undefined)
+}
+
+/** iOS 键盘外观跟随 App 主题，而不是跟随系统深浅色。 */
+const syncNativeKeyboardStyle = (theme: Theme) => {
+  if (Capacitor.getPlatform() !== 'ios') {
+    return
+  }
+  void Keyboard.setStyle({
+    style: theme === 'dark' ? KeyboardStyle.Dark : KeyboardStyle.Light,
+  }).catch(() => undefined)
+}
+
 /** 同步页面主题、根画布背景和支持 theme-color 的浏览器栏。 */
 const applyTheme = (theme: Theme) => {
   const body = document.body
@@ -41,6 +64,8 @@ const applyTheme = (theme: Theme) => {
     body.removeAttribute('data-ds-dark-theme')
   }
   document.documentElement.style.colorScheme = theme
+  syncNativeStatusBar(theme)
+  syncNativeKeyboardStyle(theme)
   // 首次背景色同步在样式表加载完成后执行，适配 WebKit 的 defer 脚本执行顺序。
   if (document.readyState === 'complete') {
     syncPageBackground()

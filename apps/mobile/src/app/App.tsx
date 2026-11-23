@@ -15,6 +15,7 @@ import { SessionView } from '../components/session/SessionView.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { LoginScreen } from '../components/auth/LoginScreen.js'
+import { BrandMark } from '../components/base/BrandMark.js'
 import { maybePushAppCloud, pushAppCloud, unlockAppCloud, type AppCloudState } from '../services/dream/cloud.js'
 import { clearSession, getToken } from '../services/dream/auth.js'
 import { setApiKey } from '../services/settings.js'
@@ -238,7 +239,7 @@ export const App = () => {
   if (authed && cloudPhase === 'loading') {
     return (
       <div className={styles.loadingScreen}>
-        <div className={styles.loadingLogo}>D</div>
+        <div className={styles.loadingLogo}><BrandMark /></div>
         <div className={styles.loadingText}>正在解密聊天记录…</div>
       </div>
     )
