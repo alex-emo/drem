@@ -42,3 +42,5 @@ apps/mobile/android/app/src/main/assets/public/
 apps/mobile/android/app/src/main/assets/capacitor.config.json
 apps/mobile/ios/App/App/public/
 apps/mobile/ios/App/App/capacitor.config.json
+
+.tools/
