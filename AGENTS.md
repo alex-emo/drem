@@ -6,6 +6,71 @@
 
 ---
 
+## 0. 项目地址与提交方式
+
+- 线上地址：https://dream.pum.org.cn
+- GitHub：https://github.com/alex-emo/drem
+- 默认分支：`master`
+- 本地仓库：`/home/alex/doc/code/project/dream`
+
+首次接手先确认：
+
+```bash
+git remote -v
+git status --short
+git log --oneline -5
+```
+
+应该看到：
+
+```text
+origin  https://github.com/alex-emo/drem.git (fetch)
+origin  https://github.com/alex-emo/drem.git (push)
+```
+
+### 0.1 认证（不要用账号密码）
+
+GitHub 已不支持密码 push，必须用 **OAuth / PAT / SSH**。
+
+推荐 `gh` OAuth：
+
+```bash
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git
+```
+
+如果本机 `~/.config` 只读，使用工作区配置：
+
+```bash
+GH_CONFIG_DIR="$PWD/.gh-config" gh auth login --hostname github.com --git-protocol https --web
+GH_CONFIG_DIR="$PWD/.gh-config" gh auth setup-git
+```
+
+或使用 fine-grained PAT：只授权 `alex-emo/drem` 的 **Contents: Read and write**，放在被 gitignore 的本地文件中，不要写进 remote URL、代码或聊天。
+
+### 0.2 提交与推送
+
+```bash
+git add <files>
+git commit -m "type(scope): summary"
+git push origin master
+```
+
+- commit 类型：`feat` / `fix` / `docs` / `test` / `chore` / `build` / `refactor` / `perf`
+- 一个 commit 只做一件事；不要把无关格式化、依赖升级、功能改动混在一起
+- push 前必须确认 `git status` 没有 `.env`、`.deploy/`、`.gh-config/`、数据库、token
+- 推送后确认：
+
+```bash
+git log -1 --oneline
+git ls-remote origin master
+```
+
+- 网络无法直连 GitHub 时，可使用本机已配置的 `gh-proxy` 或等价代理推送；**token 只能放在临时命令/凭据 helper 中，不能写入 `.git/config`**
+- 不要 force push、不要重写 `master` 历史，除非用户明确要求并确认影响
+
+---
+
 ## 1. 项目是什么
 
 Dream 是一个尽量贴近 DeepSeek C 端体验的聊天客户端：
