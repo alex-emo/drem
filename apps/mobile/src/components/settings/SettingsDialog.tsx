@@ -36,6 +36,7 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { getUser, logout, type DreamUser } from '../../services/dream/auth.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { FeedbackPanel } from './FeedbackPanel.js'
 import styles from './Settings.module.css'
 
 /**
@@ -54,6 +55,7 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     icon: <IconSettingsOutline16 />,
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
+  { value: 'feedback', label: 'settingDialogAsideFeedbackOptionLabel', icon: <IconDataOutline16 /> },
 ]
 
 const SettingsContent = () => {
@@ -133,7 +135,7 @@ const SettingsContent = () => {
               <TtsVoiceSetting />
               <LocationSetting />
             </>
-          ) : (
+          ) : section === 'data' ? (
             <>
               <AccountSection />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
@@ -156,6 +158,8 @@ const SettingsContent = () => {
                 }
               />
             </>
+          ) : (
+            <FeedbackPanel />
           )}
         </div>
       </Modal>

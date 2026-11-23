@@ -47,8 +47,7 @@ function createSession(userId: string, deviceId: string | null): string {
   const token = randomBytes(32).toString("base64url");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
-  // 单设备：新登录会让该账号此前的会话全部失效，避免同一账号多端并行。
-  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+  // 多设备：每个设备保留独立会话，互不踢出；过期会话由 requireUser 清理。
   db.prepare(
     `INSERT INTO sessions (id, user_id, token_hash, device_id, created_at, last_seen_at, expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,

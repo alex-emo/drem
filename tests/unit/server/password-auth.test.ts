@@ -81,11 +81,11 @@ describe("账号注册 / 登录", () => {
     });
   });
 
-  it("单设备登录会作废旧 token", async () => {
-    const { user } = await createTestUser("single");
+  it("多设备登录时每个 token 都有效", async () => {
+    const { user } = await createTestUser("multi");
     const first = await loginUser({ username: user.username, password: "password123" });
     const second = await loginUser({ username: user.username, password: "password123" });
-    expect(() => requireUser(`Bearer ${first.token}`)).toThrowError(/失效|登录/);
+    expect(requireUser(`Bearer ${first.token}`).user.id).toBe(user.id);
     expect(requireUser(`Bearer ${second.token}`).user.id).toBe(user.id);
   });
 });

@@ -24,6 +24,19 @@ export default function LoginScreen({ onAuthenticated }: LoginScreenProps) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
+    const name = username.trim();
+    if (!name || !password) {
+      setError("请输入用户名和密码");
+      return;
+    }
+    if (mode === "register" && (name.length < 3 || name.length > 32)) {
+      setError("用户名需为 3–32 位字母、数字、下划线或中文");
+      return;
+    }
+    if (mode === "register" && password.length < 8) {
+      setError("密码至少 8 位");
+      return;
+    }
     setBusy(true);
     setError(null);
 

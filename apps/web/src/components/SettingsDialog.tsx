@@ -4,8 +4,9 @@ import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
 import { downloadBackup, restoreBackup } from "../lib/backup";
 import type { HealthState, Theme } from "../lib/types";
 import { CloseIcon, DatabaseIcon, SettingsIcon } from "./Icons";
+import FeedbackSection from "./FeedbackSection";
 
-type Tab = "general" | "data";
+type Tab = "general" | "data" | "feedback";
 
 type ImportState =
   | { kind: "idle" }
@@ -218,6 +219,14 @@ export default function SettingsDialog({
               <DatabaseIcon size={16} />
               <span>数据管理</span>
             </button>
+            <button
+              type="button"
+              className={`settings-tab${tab === "feedback" ? " active" : ""}`}
+              onClick={() => setTab("feedback")}
+            >
+              <SettingsIcon size={16} />
+              <span>反馈与报错</span>
+            </button>
           </nav>
 
           <div className="settings-pane">
@@ -277,7 +286,7 @@ export default function SettingsDialog({
                   <p className="settings-note">{serverState(health)}</p>
                 </section>
               </>
-            ) : (
+            ) : tab === "data" ? (
               <>
               <section className="settings-section">
                 <h3>备份与恢复</h3>
@@ -447,7 +456,8 @@ export default function SettingsDialog({
                 ) : null}
               </section>
               </>
-            )}
+            ) : null}
+            {tab === "feedback" ? <FeedbackSection /> : null}
           </div>
         </div>
       </div>

@@ -208,6 +208,79 @@ export async function uploadFile(file: File): Promise<FileAttachment> {
   return (await response.json()) as FileAttachment;
 }
 
+export interface FeedbackReport {
+  id: number;
+  username: string;
+  platform: "web" | "app";
+  os: string;
+  osVersion: string;
+  appVersion: string;
+  description: string;
+  reproducible: "always" | "sometimes" | "once" | "unknown";
+  hasScreenshot: boolean;
+  adminReply: string | null;
+  repliedBy: string | null;
+  repliedAt: string | null;
+  status: "open" | "replied" | "closed";
+  createdAt: string;
+}
+
+export async function submitFeedback(input: {
+  platform: "web" | "app";
+  os: string;
+  osVersion: string;
+  appVersion: string;
+  description: string;
+  reproducible: FeedbackReport["reproducible"];
+  screenshot?: File | null;
+}): Promise<FeedbackReport> {
+  const form = new FormData();
+  form.set("platform", input.platform);
+  form.set("os", input.os);
+  form.set("osVersion", input.osVersion);
+  form.set("appVersion", input.appVersion);
+  form.set("description", input.description);
+  form.set("reproducible", input.reproducible);
+  if (input.screenshot) form.set("screenshot", input.screenshot, input.screenshot.name || "screenshot.png");
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 30_000);
+  let response: Response;
+  try {
+    response = await fetch("/api/v1/feedback", {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+      headers: { accept: "application/json", ...authHeaders() },
+    });
+  } catch (error) {
+    if ((error as Error)?.name === "AbortError") {
+      throw new ChatApiError("请求超时，请检查网络后重试。", 0, "TIMEOUT");
+    }
+    throw new ChatApiError("网络连接失败，请检查网络后重试。", 0, "NETWORK");
+  } finally {
+    window.clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as ErrorBody | null;
+    throw new ChatApiError(
+      data?.error?.message ?? `请求失败（HTTP ${response.status}）`,
+      response.status,
+      data?.error?.code ?? "HTTP_ERROR",
+      data?.error?.requestId,
+      data?.error?.hex,
+    );
+  }
+  const payload = (await response.json()) as { report: FeedbackReport };
+  return payload.report;
+}
+
+export async function fetchMyFeedback(): Promise<FeedbackReport[]> {
+  const data = await requestJson<{ reports: FeedbackReport[] }>("/api/v1/feedback");
+  return data.reports;
+}
+
 export async function deleteFile(id: string): Promise<void> {
   await fetch(`/api/v1/files/${encodeURIComponent(id)}`, {
     method: "DELETE",

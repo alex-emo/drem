@@ -33,13 +33,27 @@ import {
   clearBackupLegacy,
 } from "./auth.js";
 import {
+  countFeedbackForAdmin,
   createAnnouncement,
+  createFeedbackReport,
   db,
   deleteAnnouncement,
+  getFeedbackReport,
   latestAnnouncement,
   listAnnouncements,
+  listFeedbackByUser,
+  listFeedbackForAdmin,
+  replyFeedbackReport,
   updateAnnouncement,
+  type FeedbackReproducible,
+  type FeedbackStatus,
 } from "./db.js";
+import {
+  feedbackScreenshotMime,
+  MAX_FEEDBACK_SCREENSHOT_BYTES,
+  readFeedbackScreenshot,
+  saveFeedbackScreenshot,
+} from "./feedback.js";
 import { parseChatRequest, openChatStream } from "./deepseek.js";
 import { createTextFile, deleteUserFile, expandFiles, listUserFiles, MAX_FILE_BYTES } from "./files.js";
 import { inspectWav, MAX_ASR_AUDIO_BYTES, transcribeAudio } from "./asr.js";
@@ -82,6 +96,16 @@ const uploadBodyLimit = bodyLimit({
   onError: (c) =>
     c.json(
       errorBody(new ApiError(413, "PAYLOAD_TOO_LARGE", "文件超过 1 MiB 上限"), c.get("requestId") ?? ""),
+      413,
+    ),
+});
+
+// 反馈截图：限制 5 MiB，multipart 额外留 256 KiB 边界/表单开销。
+const feedbackBodyLimit = bodyLimit({
+  maxSize: MAX_FEEDBACK_SCREENSHOT_BYTES + 256 * 1024,
+  onError: (c) =>
+    c.json(
+      errorBody(new ApiError(413, "PAYLOAD_TOO_LARGE", "截图超过 5 MiB 上限"), c.get("requestId") ?? ""),
       413,
     ),
 });
@@ -404,6 +428,104 @@ app.delete("/api/v1/files/:id", (c) => {
   return c.json({ ok: true });
 });
 
+const REPRODUCIBLE_VALUES: readonly FeedbackReproducible[] = ["always", "sometimes", "once", "unknown"];
+const FEEDBACK_STATUS_VALUES: readonly FeedbackStatus[] = ["open", "replied", "closed"];
+
+const formText = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+const feedbackPublic = (row: ReturnType<typeof getFeedbackReport>) => {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    platform: row.platform,
+    os: row.os,
+    osVersion: row.os_version,
+    appVersion: row.app_version,
+    description: row.description,
+    reproducible: row.reproducible,
+    hasScreenshot: Boolean(row.screenshot_path),
+    adminReply: row.admin_reply,
+    repliedBy: row.replied_by,
+    repliedAt: row.replied_at,
+    status: row.status,
+    createdAt: row.created_at,
+  };
+};
+
+app.post("/api/v1/feedback", feedbackBodyLimit, async (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const body = await c.req.parseBody();
+  const platform = formText(body["platform"]);
+  const os = formText(body["os"]).slice(0, 60);
+  const osVersion = formText(body["osVersion"]).slice(0, 80);
+  const appVersion = formText(body["appVersion"]).slice(0, 40);
+  const description = formText(body["description"]);
+  const reproducible = formText(body["reproducible"]) as FeedbackReproducible;
+
+  if (platform !== "web" && platform !== "app") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "platform 必须为 web 或 app");
+  }
+  if (!os) throw new ApiError(400, "INVALID_ARGUMENT", "缺少操作系统");
+  if (description.length < 5 || description.length > 4000) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "问题描述需为 5–4000 字");
+  }
+  if (!REPRODUCIBLE_VALUES.includes(reproducible)) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "reproducible 参数不正确");
+  }
+
+  let screenshotPath: string | null = null;
+  let screenshotMime: string | null = null;
+  const rawScreenshot = body["screenshot"];
+  if (rawScreenshot && typeof rawScreenshot !== "string" && typeof rawScreenshot.arrayBuffer === "function") {
+    const mime = rawScreenshot.type || "image/png";
+    if (!["image/png", "image/jpeg", "image/webp"].includes(mime)) {
+      throw new ApiError(400, "INVALID_ARGUMENT", "截图只支持 PNG/JPEG/WebP");
+    }
+    if (rawScreenshot.size > MAX_FEEDBACK_SCREENSHOT_BYTES) {
+      throw new ApiError(413, "PAYLOAD_TOO_LARGE", "截图超过 5 MiB 上限");
+    }
+    const bytes = new Uint8Array(await rawScreenshot.arrayBuffer());
+    screenshotPath = saveFeedbackScreenshot(bytes, mime);
+    screenshotMime = mime;
+  }
+
+  const report = createFeedbackReport({
+    userId: user.id,
+    username: user.username,
+    platform,
+    os,
+    osVersion,
+    appVersion,
+    description,
+    reproducible,
+    screenshotPath,
+    screenshotMime,
+  });
+  return c.json({ report: feedbackPublic(report) }, 201);
+});
+
+app.get("/api/v1/feedback", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  return c.json({ reports: listFeedbackByUser(user.id).map(feedbackPublic) });
+});
+
+app.get("/api/v1/feedback/:id/screenshot", (c) => {
+  const { user } = requireUser(c.req.header("authorization"));
+  const report = getFeedbackReport(Number(c.req.param("id")));
+  if (!report || report.user_id !== user.id || !report.screenshot_path) {
+    throw new ApiError(404, "NOT_FOUND", "截图不存在");
+  }
+  const bytes = readFeedbackScreenshot(report.screenshot_path);
+  if (!bytes) throw new ApiError(404, "NOT_FOUND", "截图不存在");
+  return new Response(bytes, {
+    headers: {
+      "content-type": report.screenshot_mime ?? feedbackScreenshotMime(report.screenshot_path),
+      "cache-control": "private, no-store",
+    },
+  });
+});
+
 const releaseInfo = async (c: Context<AppEnv>) => {
   const release = await getRelease(config.publicOrigin);
   c.header("cache-control", "no-store, no-cache, must-revalidate");
@@ -661,6 +783,49 @@ app.delete("/api/v1/admin/announcements/:id", (c) => {
   if (!Number.isInteger(id) || id <= 0) throw new ApiError(400, "INVALID_ARGUMENT", "无效的公告编号");
   if (!deleteAnnouncement(id)) throw new ApiError(404, "NOT_FOUND", "公告不存在");
   return c.json({ ok: true });
+});
+
+app.get("/api/v1/admin/feedback", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const limit = Number(c.req.query("limit") ?? "50");
+  const offset = Number(c.req.query("offset") ?? "0");
+  return c.json({
+    total: countFeedbackForAdmin(),
+    reports: listFeedbackForAdmin(limit, offset).map(feedbackPublic),
+  });
+});
+
+app.get("/api/v1/admin/feedback/:id/screenshot", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const report = getFeedbackReport(Number(c.req.param("id")));
+  if (!report || !report.screenshot_path) throw new ApiError(404, "NOT_FOUND", "截图不存在");
+  const bytes = readFeedbackScreenshot(report.screenshot_path);
+  if (!bytes) throw new ApiError(404, "NOT_FOUND", "截图不存在");
+  return new Response(bytes, {
+    headers: {
+      "content-type": report.screenshot_mime ?? feedbackScreenshotMime(report.screenshot_path),
+      "cache-control": "private, no-store",
+    },
+  });
+});
+
+app.patch("/api/v1/admin/feedback/:id", async (c) => {
+  const admin = requireAdmin(c.req.header("authorization"));
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id) || id <= 0) throw new ApiError(400, "INVALID_ARGUMENT", "无效的反馈编号");
+  const body = (await readJsonBody(c)) as { reply?: unknown; status?: unknown };
+  const reply = typeof body.reply === "string" ? body.reply.trim() : "";
+  const status = typeof body.status === "string" ? (body.status as FeedbackStatus) : "replied";
+  if (reply.length > 4000) throw new ApiError(400, "INVALID_ARGUMENT", "回复不能超过 4000 字");
+  if (!FEEDBACK_STATUS_VALUES.includes(status)) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "status 参数不正确");
+  }
+  if (!reply && status === "replied") {
+    throw new ApiError(400, "INVALID_ARGUMENT", "回复内容不能为空");
+  }
+  const updated = replyFeedbackReport(id, reply, admin.username, status);
+  if (!updated) throw new ApiError(404, "NOT_FOUND", "反馈不存在");
+  return c.json({ report: feedbackPublic(updated) });
 });
 
 app.patch("/api/v1/admin/users/:id", async (c) => {

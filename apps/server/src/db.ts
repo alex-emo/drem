@@ -285,6 +285,28 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS feedback_reports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT,
+    username        TEXT NOT NULL,
+    platform        TEXT NOT NULL,
+    os              TEXT NOT NULL,
+    os_version      TEXT NOT NULL DEFAULT '',
+    app_version     TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL,
+    reproducible    TEXT NOT NULL DEFAULT 'unknown',
+    screenshot_path TEXT,
+    screenshot_mime TEXT,
+    admin_reply     TEXT,
+    replied_by      TEXT,
+    replied_at      TEXT,
+    status          TEXT NOT NULL DEFAULT 'open',
+    created_at      TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_reports(created_at);
+  CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_reports(user_id, created_at);
 `);
 
 export function listAnnouncements(): AnnouncementRow[] {
@@ -335,4 +357,106 @@ export function setAppSetting(key: string, value: string): void {
     `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
   ).run(key, value, new Date().toISOString());
+}
+
+export type FeedbackStatus = "open" | "replied" | "closed";
+export type FeedbackReproducible = "always" | "sometimes" | "once" | "unknown";
+
+export interface FeedbackReportRow {
+  id: number;
+  user_id: string | null;
+  username: string;
+  platform: string;
+  os: string;
+  os_version: string;
+  app_version: string;
+  description: string;
+  reproducible: FeedbackReproducible;
+  screenshot_path: string | null;
+  screenshot_mime: string | null;
+  admin_reply: string | null;
+  replied_by: string | null;
+  replied_at: string | null;
+  status: FeedbackStatus;
+  created_at: string;
+}
+
+export interface FeedbackReportInput {
+  userId: string;
+  username: string;
+  platform: string;
+  os: string;
+  osVersion: string;
+  appVersion: string;
+  description: string;
+  reproducible: FeedbackReproducible;
+  screenshotPath?: string | null;
+  screenshotMime?: string | null;
+}
+
+export function createFeedbackReport(input: FeedbackReportInput): FeedbackReportRow {
+  const result = db
+    .prepare(
+      `INSERT INTO feedback_reports
+        (user_id, username, platform, os, os_version, app_version, description, reproducible,
+         screenshot_path, screenshot_mime, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
+    )
+    .run(
+      input.userId,
+      input.username,
+      input.platform,
+      input.os,
+      input.osVersion,
+      input.appVersion,
+      input.description,
+      input.reproducible,
+      input.screenshotPath ?? null,
+      input.screenshotMime ?? null,
+      new Date().toISOString(),
+    );
+  return getFeedbackReport(Number(result.lastInsertRowid)) as FeedbackReportRow;
+}
+
+export function getFeedbackReport(id: number): FeedbackReportRow | undefined {
+  return db.prepare("SELECT * FROM feedback_reports WHERE id = ?").get(id) as
+    | FeedbackReportRow
+    | undefined;
+}
+
+export function listFeedbackByUser(userId: string, limit = 50): FeedbackReportRow[] {
+  const safe = Math.max(1, Math.min(100, Math.trunc(limit)));
+  return db
+    .prepare("SELECT * FROM feedback_reports WHERE user_id = ? ORDER BY id DESC LIMIT ?")
+    .all(userId, safe) as unknown as FeedbackReportRow[];
+}
+
+export function listFeedbackForAdmin(limit = 50, offset = 0): FeedbackReportRow[] {
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const safeOffset = Math.max(0, Math.trunc(offset));
+  return db
+    .prepare("SELECT * FROM feedback_reports ORDER BY id DESC LIMIT ? OFFSET ?")
+    .all(safeLimit, safeOffset) as unknown as FeedbackReportRow[];
+}
+
+export function countFeedbackForAdmin(): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM feedback_reports").get() as { n: number };
+  return row.n;
+}
+
+export function replyFeedbackReport(
+  id: number,
+  reply: string,
+  admin: string,
+  status: FeedbackStatus,
+): FeedbackReportRow | null {
+  const result = db
+    .prepare(
+      `UPDATE feedback_reports
+       SET admin_reply = ?, replied_by = ?, replied_at = ?, status = ?
+       WHERE id = ?`,
+    )
+    .run(reply, admin, new Date().toISOString(), status, id);
+  if (result.changes === 0) return null;
+  return getFeedbackReport(id) ?? null;
 }

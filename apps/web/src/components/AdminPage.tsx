@@ -94,9 +94,25 @@ interface LogEntry {
   message?: string;
 }
 
-type Page = "overview" | "users" | "keys" | "moderation" | "errors" | "logs" | "model";
+type Page = "overview" | "users" | "keys" | "moderation" | "errors" | "logs" | "model" | "feedback";
 type ModelSettings = { temperature: number; identityPrompt: string; updatedAt: string | null };
 type Announcement = { id: number; title: string; body: string; active: number; created_at: string; updated_at: string };
+type FeedbackReport = {
+  id: number;
+  username: string;
+  platform: "web" | "app";
+  os: string;
+  osVersion: string;
+  appVersion: string;
+  description: string;
+  reproducible: "always" | "sometimes" | "once" | "unknown";
+  hasScreenshot: boolean;
+  adminReply: string | null;
+  repliedBy: string | null;
+  repliedAt: string | null;
+  status: "open" | "replied" | "closed";
+  createdAt: string;
+};
 type SortDirection = "asc" | "desc";
 
 const PAGE_TITLES: Record<Page, string> = {
@@ -107,6 +123,7 @@ const PAGE_TITLES: Record<Page, string> = {
   errors: "错误记录",
   logs: "请求日志",
   model: "模型设置",
+  feedback: "用户反馈",
 };
 
 const number = (value: number) => value.toLocaleString("zh-CN");
@@ -235,6 +252,10 @@ export default function AdminPage() {
   const [modelTemp, setModelTemp] = useState("0.7");
   const [modelPrompt, setModelPrompt] = useState("");
   const [modelBusy, setModelBusy] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackReport[]>([]);
+  const [feedbackTotal, setFeedbackTotal] = useState(0);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackReplies, setFeedbackReplies] = useState<Record<number, string>>({});
 
   const token = getToken();
   const currentUserId = useMemo(() => {
@@ -298,13 +319,64 @@ export default function AdminPage() {
     }
   }, [token]);
 
+  const loadFeedback = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch("/api/v1/admin/feedback?limit=100", {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) return;
+      const payload = (await response.json()) as { total: number; reports: FeedbackReport[] };
+      setFeedback(payload.reports);
+      setFeedbackTotal(payload.total);
+      setFeedbackReplies((current) => {
+        const next = { ...current };
+        for (const report of payload.reports) {
+          if (!(report.id in next)) next[report.id] = report.adminReply ?? "";
+        }
+        return next;
+      });
+    } catch {
+      // 反馈列表失败不阻塞后台其他页面。
+    }
+  }, [token]);
+
   useEffect(() => {
     document.title = "Dream 后台";
   }, []);
 
   useEffect(() => {
     if (page === "model") void loadModelSettings();
-  }, [page, loadModelSettings]);
+    if (page === "feedback") void loadFeedback();
+  }, [page, loadModelSettings, loadFeedback]);
+
+  const replyToFeedback = useCallback(
+    async (report: FeedbackReport) => {
+      if (!token) return;
+      const reply = (feedbackReplies[report.id] ?? "").trim();
+      if (!reply) {
+        setNotice("回复内容不能为空");
+        return;
+      }
+      setFeedbackBusy(true);
+      try {
+        const response = await fetch(`/api/v1/admin/feedback/${report.id}`, {
+          method: "PATCH",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ reply, status: "replied" }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+        if (!response.ok) throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
+        setNotice("回复已发送，用户会在设置里看到");
+        await loadFeedback();
+      } catch (err) {
+        setNotice(`回复失败：${(err as Error).message}`);
+      } finally {
+        setFeedbackBusy(false);
+      }
+    },
+    [feedbackReplies, loadFeedback, token],
+  );
 
   const saveModelSettings = useCallback(async () => {
     if (!token) return;
@@ -857,12 +929,13 @@ export default function AdminPage() {
       <div className="admin-layout">
         <aside className={`admin-sidebar ${drawerOpen ? "open" : ""}`}>
           <nav className="admin-nav">
-            {(["overview", "users", "keys", "moderation", "errors", "logs", "model"] as Page[]).map((item) => (
+            {(["overview", "users", "keys", "moderation", "errors", "logs", "model", "feedback"] as Page[]).map((item) => (
               <button key={item} type="button" className={`admin-nav-item ${page === item ? "active" : ""}`} onClick={() => resetSort(item)}>
                 <span>{PAGE_TITLES[item]}</span>
                 {item === "users" ? <em>{totals.users}</em> : null}
                 {item === "moderation" ? <em>{totals.moderationEvents}</em> : null}
                 {item === "errors" ? <em>{totals.errorEvents}</em> : null}
+                {item === "feedback" ? <em>{feedbackTotal}</em> : null}
               </button>
             ))}
           </nav>
@@ -898,6 +971,60 @@ export default function AdminPage() {
                   <button type="button" className="admin-btn" disabled={modelBusy || !modelDefaults} onClick={() => { if (!modelDefaults) return; setModelTemp(String(modelDefaults.temperature)); setModelPrompt(modelDefaults.identityPrompt); }}>恢复默认</button>
                   {modelSettings?.updatedAt ? <span className="admin-muted">上次更新 {formatTime(modelSettings.updatedAt)}</span> : null}
                 </div>
+              </div>
+            </section>
+          ) : page === "feedback" ? (
+            <section className="admin-panel admin-page-panel">
+              <div className="admin-panel-head">
+                <div>
+                  <h2>用户反馈</h2>
+                  <span className="admin-muted">共 {feedbackTotal} 条，展示最近 100 条</span>
+                </div>
+                <button type="button" className="admin-btn" onClick={() => void loadFeedback()}>刷新</button>
+              </div>
+              <div className="admin-feedback-list">
+                {feedback.length === 0 ? <p className="admin-muted">还没有用户反馈。</p> : null}
+                {feedback.map((report) => (
+                  <article key={report.id} className="admin-feedback-item">
+                    <header>
+                      <div>
+                        <strong>{report.username}</strong>
+                        <span className="admin-muted">
+                          {report.platform === "app" ? "App" : "网页端"} · {report.os}
+                          {report.osVersion ? ` ${report.osVersion}` : ""} · v{report.appVersion || "未知"} ·{" "}
+                          {report.reproducible === "always" ? "必现" : report.reproducible === "sometimes" ? "偶尔" : report.reproducible === "once" ? "仅一次" : "不确定"}
+                        </span>
+                      </div>
+                      <span className={`admin-badge ${report.status === "replied" ? "ok" : report.status === "closed" ? "" : "warn"}`}>
+                        {report.status === "replied" ? "已回复" : report.status === "closed" ? "已关闭" : "待处理"}
+                      </span>
+                      <span className="admin-muted">{formatTime(report.createdAt)}</span>
+                    </header>
+                    <p className="admin-feedback-desc">{report.description}</p>
+                    {report.hasScreenshot ? (
+                      <a className="admin-btn" href={`/api/v1/admin/feedback/${report.id}/screenshot`} target="_blank" rel="noreferrer">查看截图</a>
+                    ) : null}
+                    {report.adminReply ? (
+                      <div className="admin-feedback-reply">
+                        <strong>已回复（{report.repliedBy ?? "管理员"} · {formatTime(report.repliedAt)}）</strong>
+                        <p>{report.adminReply}</p>
+                      </div>
+                    ) : null}
+                    <div className="admin-feedback-actions">
+                      <textarea
+                        className="admin-input admin-textarea"
+                        rows={3}
+                        maxLength={4000}
+                        placeholder="回复用户，会显示在用户的设置 → 反馈与报错里"
+                        value={feedbackReplies[report.id] ?? ""}
+                        onChange={(event) => setFeedbackReplies((current) => ({ ...current, [report.id]: event.target.value }))}
+                      />
+                      <button type="button" className="admin-btn primary" disabled={feedbackBusy} onClick={() => void replyToFeedback(report)}>
+                        {feedbackBusy ? "发送中…" : "发送回复"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
           ) : page === "overview" ? (
