@@ -1,0 +1,54 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build web and sync iOS
+        working-directory: apps/mobile
+        env:
+          DREAM_API_ORIGIN: https://dream.pum.org.cn
+        run: |
+          npm run build:web
+          npx cap sync ios
+      - name: Build unsigned app
+        working-directory: apps/mobile/ios/App
+        run: |
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+      - name: Package IPA
+        run: |
+          APP="apps/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app"
+          test -d "$APP"
+          rm -rf Payload Dream-iOS-unsigned.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry Dream-iOS-unsigned.ipa Payload
+          shasum -a 256 Dream-iOS-unsigned.ipa > Dream-iOS-unsigned.ipa.sha256
+          ls -lh Dream-iOS-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dream-iOS-unsigned
+          path: |
+            Dream-iOS-unsigned.ipa
+            Dream-iOS-unsigned.ipa.sha256
