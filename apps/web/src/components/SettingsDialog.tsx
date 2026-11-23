@@ -3,6 +3,7 @@ import type { ImportOutcome } from "../hooks/useChat";
 import { ImportError, parseDeepSeekArchive } from "../lib/importArchive";
 import { downloadBackup, restoreBackup } from "../lib/backup";
 import type { HealthState, Theme } from "../lib/types";
+import { getStoredUser } from "../lib/auth";
 import { CloseIcon, DatabaseIcon, SettingsIcon } from "./Icons";
 import FeedbackSection from "./FeedbackSection";
 
@@ -279,6 +280,14 @@ export default function SettingsDialog({
                   <p className="settings-note">
                     对话记录会缓存在当前浏览器；登录后会加密同步到你的账号，换设备登录可恢复。
                   </p>
+                </section>
+
+                <section className="settings-section">
+                  <h3>客户编号</h3>
+                  <p className="settings-note">
+                    {getStoredUser()?.customerNo || "登录后生成"}
+                  </p>
+                  <p className="settings-note">向客服反馈时提供此编号，便于定位账号。</p>
                 </section>
 
                 <section className="settings-section">

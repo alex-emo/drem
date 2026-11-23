@@ -94,6 +94,7 @@ export interface AuthUser {
   username: string;
   displayName: string | null;
   createdAt: string;
+  customerNo?: string;
   isAdmin?: boolean;
 }
 

@@ -321,13 +321,11 @@ app.get("/api/v1/health", (c) => {
     serverVersion: SERVER_VERSION,
     serverTime: new Date().toISOString(),
     mock: config.mock,
-    provider: config.provider,
-    providerLabel: config.providerLabel,
     hasApiKey,
     keys,
     models: {
-      default: config.model,
-      reasoner: config.reasonerModel,
+      default: "dream",
+      reasoner: "dream-thinking",
     },
     context: {
       compressAfterMessages: COMPRESS_MESSAGE_THRESHOLD,
@@ -551,14 +549,10 @@ app.get("/api/v1/announcement", (c) => {
 
 app.get("/api/v1/models", (c) =>
   c.json({
-    data:
-      config.provider === "qwen"
-        ? [{ id: config.model, thinking: "auto", default: true }]
-        : [
-            { id: config.model, thinking: false, default: true },
-            { id: config.reasonerModel, thinking: true, default: false },
-          ],
-    provider: config.provider,
+    data: [
+      { id: "dream", thinking: false, default: true },
+      { id: "dream-thinking", thinking: true, default: false },
+    ],
   }),
 );
 
@@ -852,6 +846,32 @@ app.post("/api/v1/admin/users/:id/password", async (c) => {
     throw new ApiError(400, "INVALID_ARGUMENT", "password 必须是字符串");
   }
   await adminResetPassword(c.req.param("id"), body.password);
+  return c.json({ ok: true });
+});
+
+app.get("/api/v1/admin/users/:id/devices", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  const rows = db
+    .prepare(
+      "SELECT id, device_id, device_name, platform, created_at, last_seen_at, expires_at FROM sessions WHERE user_id = ? ORDER BY last_seen_at DESC",
+    )
+    .all(c.req.param("id")) as Array<Record<string, unknown>>;
+  return c.json({
+    devices: rows.map((row) => ({
+      id: String(row.id),
+      deviceId: row.device_id ? String(row.device_id) : null,
+      deviceName: row.device_name ? String(row.device_name) : null,
+      platform: row.platform ? String(row.platform) : null,
+      createdAt: String(row.created_at),
+      lastSeenAt: String(row.last_seen_at),
+      expiresAt: row.expires_at ? String(row.expires_at) : null,
+    })),
+  });
+});
+
+app.delete("/api/v1/admin/sessions/:id", (c) => {
+  requireAdmin(c.req.header("authorization"));
+  db.prepare("DELETE FROM sessions WHERE id = ?").run(c.req.param("id"));
   return c.json({ ok: true });
 });
 

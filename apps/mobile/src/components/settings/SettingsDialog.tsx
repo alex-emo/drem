@@ -558,6 +558,7 @@ const AccountSection = () => {
     <div className={styles.account}>
       <div>
         <div className={styles.accountName}>{user?.username ?? '未登录'}</div>
+        <div className={styles.accountHint}>客户编号：{user?.customerNo || '登录后生成'}</div>
         <div className={styles.accountHint}>聊天记录保存在本机，账号只用于调用 Dream 服务端。</div>
       </div>
       <Button

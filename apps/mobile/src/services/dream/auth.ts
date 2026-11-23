@@ -5,6 +5,7 @@ export type DreamUser = {
   username: string
   displayName: string | null
   createdAt: string
+  customerNo?: string
   isAdmin?: boolean
 }
 
@@ -99,11 +100,29 @@ const postJson = async (path: string, body: unknown): Promise<DreamSession> => {
   return { token: payload.token, user: payload.user }
 }
 
+function devicePayload(): { deviceId: string; deviceName: string; platform: string } {
+  const key = 'dream-device-id'
+  let id = ''
+  try {
+    id = localStorage.getItem(key) ?? ''
+    if (!id) {
+      id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      localStorage.setItem(key, id)
+    }
+  } catch {
+    id = 'unknown-device'
+  }
+  const platform = /Android/i.test(navigator.userAgent) ? 'android' : /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'web'
+  return { deviceId: id, deviceName: navigator.userAgent.slice(0, 80), platform }
+}
+
 export const login = (username: string, password: string): Promise<DreamSession> =>
-  postJson('/auth/login', { username, password })
+  postJson('/auth/login', { username, password, ...devicePayload() })
 
 export const register = (username: string, password: string): Promise<DreamSession> =>
-  postJson('/auth/register', { username, password })
+  postJson('/auth/register', { username, password, ...devicePayload() })
 
 export const fetchMe = async (token: string): Promise<DreamUser> => {
   const response = await fetch(`${apiBase()}/me`, {

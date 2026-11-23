@@ -22,8 +22,9 @@ describe("健康检查与元信息", () => {
       apiVersion: "v1",
       serverVersion: "0.2.0",
       mock: true,
-      provider: "deepseek",
     });
+    expect(response.body.provider).toBeUndefined();
+    expect(response.body.providerLabel).toBeUndefined();
     expect(response.body.context).toMatchObject({
       compressAfterMessages: 400,
       compressAfterTokens: 60_000,
@@ -44,8 +45,10 @@ describe("健康检查与元信息", () => {
   it("GET /api/v1/models 返回默认与思考模型", async () => {
     const response = await client.get("/api/v1/models");
     expect(response.status).toBe(200);
-    expect(response.body.provider).toBe("deepseek");
+    expect(response.body.provider).toBeUndefined();
     expect(response.body.data).toHaveLength(2);
+    expect(response.body.data[0].id).toBe("dream");
+    expect(response.body.data[1].id).toBe("dream-thinking");
     expect(response.body.data[0]).toMatchObject({ thinking: false, default: true });
     expect(response.body.data[1]).toMatchObject({ thinking: true, default: false });
   });

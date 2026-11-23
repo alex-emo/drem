@@ -32,6 +32,7 @@ interface AdminStats {
     id: string;
     username: string;
     displayName: string | null;
+    customerNo: string;
     disabled: boolean;
     verified: boolean;
     createdAt: string;
@@ -96,6 +97,16 @@ interface LogEntry {
 
 type Page = "overview" | "users" | "keys" | "moderation" | "errors" | "logs" | "model" | "feedback";
 type ModelSettings = { temperature: number; identityPrompt: string; updatedAt: string | null };
+interface DeviceSession {
+  id: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  platform: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string | null;
+}
+
 type Announcement = { id: number; title: string; body: string; active: number; created_at: string; updated_at: string };
 type FeedbackReport = {
   id: number;
@@ -223,6 +234,7 @@ function Pager({
           下一页
         </button>
       </div>
+
     </div>
   );
 }
@@ -256,6 +268,8 @@ export default function AdminPage() {
   const [feedbackTotal, setFeedbackTotal] = useState(0);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [feedbackReplies, setFeedbackReplies] = useState<Record<number, string>>({});
+  const [devicePanel, setDevicePanel] = useState<{ userId: string; username: string; items: DeviceSession[] } | null>(null);
+  const [deviceBusy, setDeviceBusy] = useState(false);
 
   const token = getToken();
   const currentUserId = useMemo(() => {
@@ -265,6 +279,43 @@ export default function AdminPage() {
       return null;
     }
   }, []);
+
+  const openDevices = async (userId: string, username: string) => {
+    if (!token) return;
+    setDeviceBusy(true);
+    try {
+      const response = await fetch(`/api/v1/admin/users/${userId}/devices`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = (await response.json()) as { devices: DeviceSession[] };
+      setDevicePanel({ userId, username, items: payload.devices });
+    } catch (err) {
+      setNotice(`设备列表加载失败：${(err as Error).message}`);
+    } finally {
+      setDeviceBusy(false);
+    }
+  };
+
+  const revokeDevice = async (sessionId: string) => {
+    if (!token) return;
+    setDeviceBusy(true);
+    try {
+      const response = await fetch(`/api/v1/admin/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setDevicePanel((current) =>
+        current ? { ...current, items: current.items.filter((item) => item.id !== sessionId) } : current,
+      );
+      setNotice("已下线该设备");
+    } catch (err) {
+      setNotice(`下线失败：${(err as Error).message}`);
+    } finally {
+      setDeviceBusy(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!token) {
@@ -447,7 +498,7 @@ export default function AdminPage() {
 
   const users = useMemo(() => {
     if (!stats) return [];
-    const filtered = stats.users.filter((user) => matches(search, user.username, user.displayName, user.id));
+    const filtered = stats.users.filter((user) => matches(search, user.username, user.displayName, user.id, user.customerNo));
     return sortRows(
       filtered,
       (user) =>
@@ -650,7 +701,7 @@ export default function AdminPage() {
       return (
         <>
           <div className="admin-toolbar">
-            <input className="admin-input" placeholder="搜索用户名 / ID" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <input className="admin-input" placeholder="搜索用户名 / 客户编号 / ID" value={search} onChange={(event) => setSearch(event.target.value)} />
             <select className="admin-select" value={`${sort}:${direction}`} onChange={(event) => {
               const [nextSort, nextDirection] = event.target.value.split(":");
               setSort(nextSort);
@@ -670,6 +721,7 @@ export default function AdminPage() {
               <thead>
                 <tr>
                   <th><SortButton label="用户" column="username" sort={sort} direction={direction} onSort={onSort} /></th>
+                  <th>客户编号</th>
                   <th>角色</th>
                   <th>状态</th>
                   <th>验证</th>
@@ -692,6 +744,7 @@ export default function AdminPage() {
                       <div className="admin-user">{user.username}</div>
                       {user.displayName ? <div className="admin-sub">{user.displayName}</div> : null}
                     </td>
+                    <td className="admin-mono">{user.customerNo || "—"}</td>
                     <td>{user.isAdmin ? <span className="admin-tag">管理员</span> : "用户"}</td>
                     <td>{user.disabled ? <span className="admin-tag bad">已禁用</span> : <span className="admin-tag ok">正常</span>}</td>
                     <td>{user.verified ? <span className="admin-tag ok">已验证</span> : <span className="admin-tag bad">未验证</span>}</td>
@@ -711,6 +764,14 @@ export default function AdminPage() {
                           onClick={() => void act(`/api/v1/admin/users/${user.id}`, "PATCH", { verified: !user.verified }, user.verified ? `已取消 ${user.username} 的验证` : `已验证 ${user.username}`)}
                         >
                           {user.verified ? "取消验证" : "标记验证"}
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-btn tiny"
+                          disabled={deviceBusy}
+                          onClick={() => void openDevices(user.id, user.username)}
+                        >
+                          设备
                         </button>
                         <button
                           type="button"
@@ -1140,6 +1201,33 @@ export default function AdminPage() {
           )}
         </main>
       </div>
+      {devicePanel ? (
+        <div className="admin-device-overlay" role="dialog" aria-modal="true">
+          <div className="admin-device-modal">
+            <div className="admin-panel-head">
+              <h2>{devicePanel.username} 的设备</h2>
+              <button type="button" className="admin-btn tiny" onClick={() => setDevicePanel(null)}>关闭</button>
+            </div>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead><tr><th>设备</th><th>平台</th><th>最近使用</th><th>登录时间</th><th>操作</th></tr></thead>
+                <tbody>
+                  {devicePanel.items.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.deviceName || item.deviceId || "未知设备"}</td>
+                      <td>{item.platform || "—"}</td>
+                      <td>{formatTime(item.lastSeenAt)}</td>
+                      <td>{formatTime(item.createdAt)}</td>
+                      <td><button type="button" className="admin-btn tiny danger" disabled={deviceBusy} onClick={() => void revokeDevice(item.id)}>下线</button></td>
+                    </tr>
+                  ))}
+                  {devicePanel.items.length === 0 ? <tr><td colSpan={5} className="admin-muted">暂无设备</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dream/mobile",
-  "version": "1.7.7",
+  "version": "1.7.8",
   "description": "Dream 移动端：基于官方 MIT chat-demo 的 UI 基座，接入 Dream 服务端。",
   "license": "MIT",
   "private": true,

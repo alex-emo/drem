@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { db, type UserRow } from "./db.js";
+import { db, newCustomerNo, type UserRow } from "./db.js";
 import { hashPassword, verifyPassword } from "./password.js";
 import { ApiError } from "./protocol.js";
 import { config } from "./config.js";
@@ -14,6 +14,7 @@ export interface PublicUser {
   username: string;
   displayName: string | null;
   createdAt: string;
+  customerNo: string;
   isAdmin: boolean;
 }
 
@@ -32,6 +33,7 @@ function toPublic(row: UserRow): PublicUser {
     username: row.username,
     displayName: row.display_name,
     createdAt: row.created_at,
+    customerNo: row.customer_no ?? "",
     isAdmin: isAdminUsername(row.username),
   };
 }
@@ -43,19 +45,26 @@ function hashToken(token: string): string {
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LAST_SEEN_THROTTLE_MS = 60 * 1000;
 
-function createSession(userId: string, deviceId: string | null): string {
+function createSession(
+  userId: string,
+  deviceId: string | null,
+  deviceName: string | null,
+  platform: string | null,
+): string {
   const token = randomBytes(32).toString("base64url");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
   // 多设备：每个设备保留独立会话，互不踢出；过期会话由 requireUser 清理。
   db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, device_id, created_at, last_seen_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, user_id, token_hash, device_id, device_name, platform, created_at, last_seen_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     `sess_${randomUUID()}`,
     userId,
     hashToken(token),
     deviceId,
+    deviceName,
+    platform,
     now.toISOString(),
     now.toISOString(),
     expiresAt,
@@ -68,6 +77,8 @@ interface Credentials {
   password: string;
   displayName?: string;
   deviceId: string | null;
+  deviceName: string | null;
+  platform: string | null;
 }
 
 function parseCredentials(input: unknown, allowDisplayName: boolean): Credentials {
@@ -98,11 +109,13 @@ function parseCredentials(input: unknown, allowDisplayName: boolean): Credential
   }
 
   const deviceId = typeof body.deviceId === "string" ? body.deviceId.slice(0, 128) : null;
-  return { username, password, displayName: displayName || undefined, deviceId };
+  const deviceName = typeof body.deviceName === "string" ? body.deviceName.slice(0, 80) : null;
+  const platform = typeof body.platform === "string" ? body.platform.slice(0, 32) : null;
+  return { username, password, displayName: displayName || undefined, deviceId, deviceName, platform };
 }
 
 export async function registerUser(input: unknown): Promise<AuthResult> {
-  const { username, password, displayName, deviceId } = parseCredentials(input, true);
+  const { username, password, displayName, deviceId, deviceName, platform } = parseCredentials(input, true);
 
   const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(username);
   if (existing) {
@@ -115,23 +128,32 @@ export async function registerUser(input: unknown): Promise<AuthResult> {
     display_name: displayName ?? null,
     password_hash: await hashPassword(password),
     created_at: new Date().toISOString(),
+    customer_no: newCustomerNo(),
   };
   const backupKey = randomBytes(32).toString("hex");
 
   try {
     db.prepare(
-      `INSERT INTO users (id, username, display_name, password_hash, created_at, backup_key)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(user.id, user.username, user.display_name, user.password_hash, user.created_at, backupKey);
+      `INSERT INTO users (id, username, display_name, password_hash, created_at, customer_no, backup_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      user.id,
+      user.username,
+      user.display_name,
+      user.password_hash,
+      user.created_at,
+      user.customer_no ?? "",
+      backupKey,
+    );
   } catch {
     throw new ApiError(409, "USERNAME_TAKEN", "这个用户名已经被注册");
   }
 
-  return { token: createSession(user.id, deviceId), user: toPublic(user) };
+  return { token: createSession(user.id, deviceId, deviceName, platform), user: toPublic(user) };
 }
 
 export async function loginUser(input: unknown): Promise<AuthResult> {
-  const { username, password, deviceId } = parseCredentials(input, false);
+  const { username, password, deviceId, deviceName, platform } = parseCredentials(input, false);
   const row = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as
     | UserRow
     | undefined;
@@ -143,7 +165,7 @@ export async function loginUser(input: unknown): Promise<AuthResult> {
     throw new ApiError(403, "ACCOUNT_DISABLED", "账号已被管理员禁用");
   }
 
-  return { token: createSession(row.id, deviceId), user: toPublic(row) };
+  return { token: createSession(row.id, deviceId, deviceName, platform), user: toPublic(row) };
 }
 
 export function requireUser(authorization: string | undefined): {

@@ -2361,3 +2361,14 @@ body,
 .admin-badge { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); font-size: 11px; color: var(--text-secondary); }
 .admin-badge.ok { color: #22a06b; border-color: rgba(34,160,107,.4); }
 .admin-badge.warn { color: #d99a2b; border-color: rgba(217,154,43,.4); }
+
+.admin-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text-2); }
+
+.admin-device-overlay {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55); padding: 24px;
+}
+.admin-device-modal {
+  width: min(760px, 100%); max-height: 80vh; overflow: auto; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--sidebar); padding: 16px;
+}

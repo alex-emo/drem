@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -17,7 +18,8 @@ db.exec(`
     username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
     display_name  TEXT,
     password_hash TEXT NOT NULL,
-    created_at    TEXT NOT NULL
+    created_at    TEXT NOT NULL,
+    customer_no   TEXT
   );
 
   CREATE TABLE IF NOT EXISTS sessions (
@@ -25,6 +27,8 @@ db.exec(`
     user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash   TEXT NOT NULL UNIQUE,
     device_id    TEXT,
+    device_name  TEXT,
+    platform     TEXT,
     created_at   TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
     expires_at   TEXT
@@ -39,6 +43,7 @@ export interface UserRow {
   display_name: string | null;
   password_hash: string;
   created_at: string;
+  customer_no?: string | null;
   disabled?: number;
   verified?: number;
   backup_key?: string | null;
@@ -59,9 +64,39 @@ if (!userColumns.some((column) => column.name === "backup_key")) {
 if (!userColumns.some((column) => column.name === "backup_key_legacy")) {
   db.exec("ALTER TABLE users ADD COLUMN backup_key_legacy TEXT");
 }
+if (!userColumns.some((column) => column.name === "customer_no")) {
+  db.exec("ALTER TABLE users ADD COLUMN customer_no TEXT");
+}
+
+const CUSTOMER_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+export function newCustomerNo(): string {
+  const bytes = randomBytes(10);
+  let value = "";
+  for (let i = 0; i < 8; i += 1) value += CUSTOMER_ALPHABET[bytes[i]! % CUSTOMER_ALPHABET.length];
+  return `DRM-${value}`;
+}
+
+// 为旧账号补发不可变的客户编号；客户编号只用于对外标识，不参与登录。
+const missingCustomers = db
+  .prepare("SELECT id FROM users WHERE customer_no IS NULL OR customer_no = ''")
+  .all() as Array<{ id: string }>;
+for (const row of missingCustomers) {
+  let customerNo = newCustomerNo();
+  while (db.prepare("SELECT 1 FROM users WHERE customer_no = ?").get(customerNo)) {
+    customerNo = newCustomerNo();
+  }
+  db.prepare("UPDATE users SET customer_no = ? WHERE id = ?").run(customerNo, row.id);
+}
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_customer_no ON users(customer_no)");
 
 // 兼容旧库：会话过期时间。旧会话按创建时间顺延 30 天，避免升级时把所有人踢下线。
 const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+if (!sessionColumns.some((column) => column.name === "device_name")) {
+  db.exec("ALTER TABLE sessions ADD COLUMN device_name TEXT");
+}
+if (!sessionColumns.some((column) => column.name === "platform")) {
+  db.exec("ALTER TABLE sessions ADD COLUMN platform TEXT");
+}
 if (!sessionColumns.some((column) => column.name === "expires_at")) {
   db.exec("ALTER TABLE sessions ADD COLUMN expires_at TEXT");
   db.exec("UPDATE sessions SET expires_at = datetime(created_at, '+30 days') WHERE expires_at IS NULL");
@@ -92,6 +127,8 @@ export interface SessionRow {
   user_id: string;
   token_hash: string;
   device_id: string | null;
+  device_name?: string | null;
+  platform?: string | null;
   created_at: string;
   last_seen_at: string;
 }

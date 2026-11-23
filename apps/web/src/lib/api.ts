@@ -1,4 +1,5 @@
 import { getToken } from "./auth";
+import { deviceName, getDeviceId } from "./device";
 import type { AuthResult, AuthUser, Conversation, FileAttachment, Message, SearchSource } from "./types";
 
 export interface ApiChatMessage {
@@ -137,7 +138,7 @@ export async function registerAccount(input: {
 }): Promise<AuthResult> {
   return requestJson<AuthResult>("/api/v1/auth/register", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, deviceId: getDeviceId(), deviceName: deviceName(), platform: "web" }),
   });
 }
 
@@ -147,7 +148,7 @@ export async function loginAccount(input: {
 }): Promise<AuthResult> {
   return requestJson<AuthResult>("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, deviceId: getDeviceId(), deviceName: deviceName(), platform: "web" }),
   });
 }
 
