@@ -1,23 +1,22 @@
 import type { SVGProps } from "react";
 
-/** Dream 品牌 X 标识；路径来自 Android adaptive icon 源图。装饰性图形，旁边始终有 Dream 文本。 */
+/** Dream 品牌标识：梦螺旋 + 星芒。抽象图形，不依赖字母。 */
 export function BrandMark(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 160 160" aria-hidden="true" focusable="false" {...props}>
+    <svg viewBox="200 200 640 640" aria-hidden="true" focusable="false" {...props}>
       <defs>
-        <linearGradient id="dream-brand-x" x1="160" y1="0" x2="0" y2="160" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#52b0ff" />
-          <stop offset="1" stopColor="#7bd0ff" />
+        <linearGradient id="dream-brand-mark" x1="240" y1="220" x2="780" y2="800" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#c4f8ff" />
+          <stop offset="0.42" stopColor="#69dcff" />
+          <stop offset="1" stopColor="#4f6bff" />
+        </linearGradient>
+        <linearGradient id="dream-brand-star" x1="470" y1="450" x2="610" y2="590" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#fff7d6" />
+          <stop offset="1" stopColor="#ffae36" />
         </linearGradient>
       </defs>
-      <path
-        fill="url(#dream-brand-x)"
-        d="M76 17L99 40L140 0L160 20L120 60L160 100L140 120L40 20L60 0Z"
-      />
-      <path
-        fill="url(#dream-brand-x)"
-        d="M84 143L61 120L20 160L0 140L40 100L0 60L20 40L120 140L100 160Z"
-      />
+      <path d="M575 245 C735 275 805 420 775 555 C740 710 570 790 430 735 C290 680 245 520 320 405 C395 290 545 270 640 350 C715 414 715 535 640 590" fill="none" stroke="url(#dream-brand-mark)" strokeWidth="92" strokeLinecap="round" />
+      <path fill="url(#dream-brand-star)" d="M520 442 C530 488 558 508 604 518 C558 528 530 548 520 594 C510 548 482 528 436 518 C482 508 510 488 520 442 Z" />
     </svg>
   );
 }
