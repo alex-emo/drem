@@ -214,7 +214,7 @@
 
 ### 6.1 技术选型建议（待你拍板）
 
-- **前端**：React 18 + TypeScript + Vite + zustand + idb，直接以官方 MIT chat-demo 为 UI 基座（保留 LICENSE 与版权声明），可最大化“像”。
+- **前端**：React 18 + TypeScript + Vite + zustand + idb，直接以官方 MIT chat-demo 为 UI 基座（上游 MIT 声明保留在 THIRD_PARTY_NOTICES.md），可最大化“像”。
 - **Android**：Capacitor 7 包同一套 Web 产物（最快），原生插件补录音权限、TTS、返回键、安全区；若你要求原生 UI 再评估 Flutter/Kotlin。
 - **服务端**：Node 22 + Hono（轻、SSE 友好）+ SQLite（better-sqlite3 / Drizzle）；部署在你自己的服务器，Nginx/Caddy 反代 + HTTPS。
 - **单体仓库**：pnpm workspace：`apps/web`、`apps/server`、`apps/android`、`packages/shared`（协议类型/内容块定义）。

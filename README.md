@@ -347,7 +347,9 @@ data: {"requestId":"req_...","finishReason":"stop","createdAt":"..."}
 
 ## License 与声明
 
-MIT（见 [LICENSE](LICENSE)）。本项目是非官方实现，仅用于学习与技术验证；DeepSeek 名称与商标归其所有者。界面尺寸、配色与文案参考 DeepSeek 官方 Web 端与 MIT 开源的 `chat-demo` 实测，以便保持体验一致。
+GNU GPL v3（见 [LICENSE](LICENSE)）。本项目是非官方实现，仅用于学习与技术验证；DeepSeek 名称与商标归其所有者。
+
+移动端 UI 基座来自 MIT 开源的 `chat-demo`，其原始 MIT 许可与版权声明保留在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)；Dream 自身新增/修改部分按 GPL v3 发布。
 
 ## 账号与公开访问（v0.3）
 
