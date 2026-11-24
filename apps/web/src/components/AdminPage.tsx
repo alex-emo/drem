@@ -268,6 +268,7 @@ export default function AdminPage() {
   const [feedbackTotal, setFeedbackTotal] = useState(0);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [feedbackReplies, setFeedbackReplies] = useState<Record<number, string>>({});
+  const [screenshotView, setScreenshotView] = useState<string | null>(null);
   const [devicePanel, setDevicePanel] = useState<{ userId: string; username: string; items: DeviceSession[] } | null>(null);
   const [deviceBusy, setDeviceBusy] = useState(false);
 
@@ -400,6 +401,26 @@ export default function AdminPage() {
     if (page === "model") void loadModelSettings();
     if (page === "feedback") void loadFeedback();
   }, [page, loadModelSettings, loadFeedback]);
+
+  const openFeedbackScreenshot = useCallback(
+    async (report: FeedbackReport) => {
+      if (!token) return;
+      try {
+        const response = await fetch(`/api/v1/admin/feedback/${report.id}/screenshot`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        setScreenshotView((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return URL.createObjectURL(blob);
+        });
+      } catch {
+        setNotice("截图加载失败，请重新登录后再试");
+      }
+    },
+    [token],
+  );
 
   const replyToFeedback = useCallback(
     async (report: FeedbackReport) => {
@@ -1063,7 +1084,7 @@ export default function AdminPage() {
                     </header>
                     <p className="admin-feedback-desc">{report.description}</p>
                     {report.hasScreenshot ? (
-                      <a className="admin-btn" href={`/api/v1/admin/feedback/${report.id}/screenshot`} target="_blank" rel="noreferrer">查看截图</a>
+                      <button type="button" className="admin-btn" onClick={() => void openFeedbackScreenshot(report)}>查看截图</button>
                     ) : null}
                     {report.adminReply ? (
                       <div className="admin-feedback-reply">
@@ -1201,6 +1222,13 @@ export default function AdminPage() {
           )}
         </main>
       </div>
+      {screenshotView ? (
+        <div className="admin-device-overlay" role="dialog" aria-modal="true" onClick={() => { URL.revokeObjectURL(screenshotView); setScreenshotView(null); }}>
+          <div className="admin-screenshot-modal" onClick={(event) => event.stopPropagation()}>
+            <img src={screenshotView} alt="用户反馈截图" />
+          </div>
+        </div>
+      ) : null}
       {devicePanel ? (
         <div className="admin-device-overlay" role="dialog" aria-modal="true">
           <div className="admin-device-modal">

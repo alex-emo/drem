@@ -2372,3 +2372,18 @@ body,
   width: min(760px, 100%); max-height: 80vh; overflow: auto; border-radius: 14px;
   border: 1px solid var(--border); background: var(--sidebar); padding: 16px;
 }
+
+.admin-screenshot-modal {
+  max-width: min(92vw, 1100px);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--layer-2);
+  padding: 8px;
+}
+
+.admin-screenshot-modal img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
