@@ -115,12 +115,13 @@ export const useVoiceInput = (onText: (text: string) => void) => {
       },
     })
     streamRef.current = stream
-    try {
-      await stream.ready
-      if (operationRef.current !== operation) {
-        stream.cancel()
-        return
+    void stream.ready.catch(() => {
+      if (operationRef.current === operation) {
+        cancelHold()
+        showToast({ key: 'voiceInputFailed' })
       }
+    })
+    try {
       const recording = await startRecording(
         () => {
           if (operationRef.current === operation) {

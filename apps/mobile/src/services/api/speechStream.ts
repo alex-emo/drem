@@ -55,6 +55,14 @@ export const openSpeechStream = (
   })
 
   let settled = false
+  const queued: Uint8Array[] = []
+  let queuedBytes = 0
+  const flush = () => {
+    while (queued.length > 0 && socket.readyState === WebSocket.OPEN) {
+      const chunk = queued.shift()
+      if (chunk) socket.send(chunk)
+    }
+  }
   const fail = (message: string, error = new Error(message)) => {
     if (settled) return
     settled = true
@@ -69,7 +77,8 @@ export const openSpeechStream = (
   }
 
   socket.onopen = () => {
-    // 服务端会在连接后立即向上游发起 run-task，ready 由服务端事件驱动。
+    // 连接建立前的音频先缓存，避免用户开始说话时丢字。
+    flush()
   }
   socket.onerror = () => {
     fail('语音识别连接失败，请稍后重试。')
@@ -119,11 +128,27 @@ export const openSpeechStream = (
     sendAudio: (chunk) => {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(chunk)
+        return
       }
+      if (socket.readyState !== WebSocket.CONNECTING) return
+      // 最多缓存 2 MiB；超出时直接断开，避免无限占用内存。
+      if (queuedBytes + chunk.byteLength > 2 * 1024 * 1024) {
+        fail('语音识别连接超时，请稍后重试。')
+        return
+      }
+      queued.push(chunk.slice())
+      queuedBytes += chunk.byteLength
     },
     finish: () => {
+      const sendFinish = () => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'finish' }))
+        }
+      }
       if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'finish' }))
+        sendFinish()
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener('open', sendFinish, { once: true })
       }
       return final.then((text) => text || finalText)
     },
