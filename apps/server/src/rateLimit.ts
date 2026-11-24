@@ -108,6 +108,11 @@ export function clientIp(c: Context): string {
 
 const limiter = new IpRateLimiter();
 
+/** 供 WebSocket upgrade 等非 Hono 场景复用同一计数桶。 */
+export function hitRateLimit(ip: string, rule: LimitRule): number {
+  return limiter.hit(ip, rule);
+}
+
 /** 命中限流时直接写 429 响应并返回 null；否则返回 undefined 继续。 */
 export function enforceRateLimit(c: Context, rule: LimitRule): Response | undefined {
   const ip = clientIp(c);

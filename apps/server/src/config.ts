@@ -102,6 +102,9 @@ export const config = {
   asr: {
     baseUrl: (process.env.DREAM_ASR_BASE_URL ?? qwenBaseUrl).replace(/\/+$/, ""),
     model: process.env.DREAM_ASR_MODEL ?? "qwen3-asr-flash",
+    realtimeUrl:
+      process.env.DREAM_ASR_REALTIME_URL ?? "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
+    realtimeModel: process.env.DREAM_ASR_REALTIME_MODEL ?? "paraformer-realtime-v2",
     timeoutMs: Number(process.env.DREAM_ASR_TIMEOUT_MS ?? 30000),
   },
   mock: process.env.DREAM_MOCK === "1" || process.env.DREAM_MOCK === "true",

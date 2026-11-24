@@ -330,3 +330,23 @@
     cursor: not-allowed;
   }
 }
+
+.voicePartial {
+  position: absolute;
+  left: 16px;
+  right: 12px;
+  bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+  pointer-events: none;
+
+  span {
+    flex-shrink: 0;
+    color: var(--dsw-alias-label-caption);
+  }
+}

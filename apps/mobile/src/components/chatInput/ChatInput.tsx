@@ -125,7 +125,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   })
 
   // 欢迎页导入后会话 ID 不变，不能依赖卸载取消语音；订阅开始事件也覆盖快速完成的导入。
-  const cancelVoice = voice.cancel
+  const cancelVoice = voice.cancelHold
   useEffect(
     () =>
       useChatStore.subscribe((state, previous) => {
@@ -137,7 +137,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   )
 
   // 移动端录音时用频谱替代输入框内容
-  const recording = voice.status === 'recording'
+  const recording = voice.status === 'preparing' || voice.status === 'recording'
 
   // 排队、上传中或上传失败的附件都留在输入框，全部上传成功后才能发送
   const canSend = !importingHistory && !streaming && !stalled && voice.status === 'idle' && draftReady
@@ -204,7 +204,15 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             }
           }}
         />
-        {recording && isMobile ? <Spectrum getAnalyser={voice.getAnalyser} /> : null}
+        {recording && isMobile ? (
+          <>
+            <Spectrum getAnalyser={voice.getAnalyser} />
+            <div className={styles.voicePartial}>
+              {voice.partial || t('voiceInputListening')}
+              <span>{t('voiceInputSlideCancel')}</span>
+            </div>
+          </>
+        ) : null}
         <div className={styles.mirror} aria-hidden>
           {`${text}\n`}
         </div>
@@ -241,15 +249,13 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           <VoiceButton
             status={voice.status}
             disabled={!voice.available}
-            seconds={voice.seconds}
-            onClick={() => {
-              if (
-                voice.status !== 'idle' ||
-                (!useChatStore.getState().importingHistory && ensureApiKey())
-              ) {
-                void voice.toggle()
+            onStart={() => {
+              if (!useChatStore.getState().importingHistory && ensureApiKey()) {
+                void voice.startHold()
               }
             }}
+            onEnd={() => void voice.endHold()}
+            onCancel={voice.cancelHold}
           />
           <IconButton
             size="m"

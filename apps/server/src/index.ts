@@ -3,6 +3,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { serve } from "@hono/node-server";
+import { attachRealtimeAsr } from "./realtimeAsr.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
@@ -1260,7 +1261,7 @@ app.onError((err, c) => {
   );
 });
 
-serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
+const httpServer = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
   console.log(`[dream-server] listening on http://${config.host}:${info.port}`);
   if (config.mock) {
     console.log("[dream-server] DREAM_MOCK=1，使用本地模拟流式响应（不会请求上游）");
@@ -1274,3 +1275,4 @@ serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => 
     );
   }
 });
+attachRealtimeAsr(httpServer);

@@ -489,6 +489,36 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 禁用用户后登录返回 403 `ACCOUNT_DISABLED`，已登录会话也会失效。
 
+## 9.1 语音识别 WebSocket
+
+`GET /api/v1/asr/ws` 升级为 WebSocket，用于边录边转写。
+
+握手时在 `Sec-WebSocket-Protocol` 传入两个子协议：
+
+```text
+dream.asr, <session token>
+```
+
+服务端回选 `dream.asr`。未登录、token 过期或超出语音限流时返回 401/429。
+
+客户端音频帧为二进制 **PCM 16 kHz / 单声道 / 16-bit little-endian**；建议每 100–200 ms 一帧。文本控制帧：
+
+```json
+{"type":"finish"}
+{"type":"cancel"}
+```
+
+服务端事件：
+
+```json
+{"type":"ready"}
+{"type":"partial","text":"今天"}
+{"type":"final","text":"今天天气不错。"}
+{"type":"error","message":"语音识别失败，请稍后重试。"}
+```
+
+`finish` 后最多等待 12 秒最终结果；单次音频最多 2 MiB / 90 秒。旧的 `POST /api/v1/tools/asr` 保留作为整段文件回退。
+
 ## 10. 聊天记录云备份
 
 备份为客户端 gzip 后 AES-GCM 加密的二进制内容，服务端只存储密文，无法解密。加密后硬上限 **20 MiB**。

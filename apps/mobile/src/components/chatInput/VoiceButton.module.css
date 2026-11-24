@@ -171,3 +171,9 @@
     transform: rotate(360deg);
   }
 }
+
+.button {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}

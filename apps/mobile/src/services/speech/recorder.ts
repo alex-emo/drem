@@ -8,7 +8,7 @@ export const SAMPLE_RATE = 16000
 /** ASR 单次时长上限 120 秒 */
 export const MAX_SECONDS = 120
 
-const BUFFER_SIZE = 4096
+const BUFFER_SIZE = 2048
 
 export type Recording = {
   /** 停止录音并返回 WAV；没有采到声音时返回 null */
@@ -20,7 +20,10 @@ export type Recording = {
 }
 
 /** 开始录音；到达时长上限时调用 onLimit，由调用方决定何时 stop */
-export const startRecording = async (onLimit: () => void): Promise<Recording> => {
+export const startRecording = async (
+  onLimit: () => void,
+  onAudio?: (chunk: Uint8Array) => void
+): Promise<Recording> => {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
   })
@@ -67,7 +70,16 @@ export const startRecording = async (onLimit: () => void): Promise<Recording> =>
       if (limited) {
         return
       }
-      chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)))
+      const input = event.inputBuffer.getChannelData(0)
+      chunks.push(new Float32Array(input))
+      if (onAudio) {
+        const pcm = new Int16Array(input.length)
+        for (let i = 0; i < input.length; i++) {
+          const sample = Math.max(-1, Math.min(1, input[i]))
+          pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff
+        }
+        onAudio(new Uint8Array(pcm.buffer))
+      }
       length += BUFFER_SIZE
       if (length >= MAX_SECONDS * SAMPLE_RATE) {
         limited = true

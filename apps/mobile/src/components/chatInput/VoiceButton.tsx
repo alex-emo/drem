@@ -1,4 +1,5 @@
 import clsx from 'clsx'
+import { useRef } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconMicFill16, IconMicOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
@@ -6,73 +7,113 @@ import type { VoiceInputStatus } from './useVoiceInput.js'
 import styles from './VoiceButton.module.css'
 
 /**
- * 语音输入按钮。
- * 录音中为两层圆：外层半透明光圈 + 内层实心品牌色；
- * 外层先展开、内层随后放大，之后外层按固定节奏呼吸，与音量无关。
- * 按钮左侧显示「录音中 Ns」，窄屏不展示读秒。
+ * 按住说话按钮：按下开始流式识别，松手结束；上滑超过 60px 取消。
+ * 录音中显示品牌色光环，识别中的文字由输入框区域展示。
  */
 export const VoiceButton = ({
   status,
   disabled = false,
-  seconds,
-  onClick,
+  onStart,
+  onEnd,
+  onCancel,
 }: {
   status: VoiceInputStatus
-  /** 非安全上下文中按钮置灰，tooltip 提示录音需要 HTTPS */
   disabled?: boolean
-  /** 本次录音已录秒数，录音中显示在按钮左侧 */
-  seconds: number
-  onClick: () => void
+  onStart: () => void
+  onEnd: () => void
+  onCancel: () => void
 }) => {
   const t = useTranslate()
-  const recording = status === 'recording'
+  const pressingRef = useRef(false)
+  const cancelledRef = useRef(false)
+  const startYRef = useRef(0)
+  const active = status === 'preparing' || status === 'recording'
 
   const label = disabled
     ? t('voiceInputRequiresHttps')
-    : recording
-      ? t('voiceInputStop')
-      : status === 'transcribing'
-        ? t('voiceInputCancel')
-        : t('voiceInput')
+    : status === 'preparing'
+      ? t('voiceInputListening')
+      : status === 'recording'
+        ? t('voiceInputRelease')
+        : status === 'finishing'
+          ? t('voiceInputCancel')
+          : t('voiceInputHold')
+
+  const release = () => {
+    if (!pressingRef.current) return
+    pressingRef.current = false
+    if (!cancelledRef.current) {
+      onEnd()
+    }
+  }
 
   return (
-    <>
-      {recording ? <span className={styles.timer}>{t('voiceInputTimer', { seconds })}</span> : null}
-      <Tooltip content={label}>
-        <button
-          type="button"
-          className={clsx(
-            styles.button,
-            recording && styles.recording,
-            disabled && styles.disabled
-          )}
-          aria-label={label}
-          aria-pressed={recording}
-          aria-disabled={disabled}
-          onClick={() => {
-            if (!disabled) {
-              onClick()
-            }
-          }}
-        >
-          {recording ? (
-            <span className={styles.active}>
-              <span className={styles.halo} />
-              <span className={styles.core} />
-              <span className={styles.outline}>
-                <IconMicOutline16 />
-              </span>
-              <span className={styles.glyph}>
-                <IconMicFill16 />
-              </span>
+    <Tooltip content={label}>
+      <button
+        type="button"
+        className={clsx(styles.button, active && styles.recording, disabled && styles.disabled)}
+        aria-label={label}
+        aria-pressed={active}
+        aria-disabled={disabled}
+        onContextMenu={(event) => event.preventDefault()}
+        onPointerDown={(event) => {
+          if (disabled || pressingRef.current) return
+          event.preventDefault()
+          event.currentTarget.setPointerCapture(event.pointerId)
+          pressingRef.current = true
+          cancelledRef.current = false
+          startYRef.current = event.clientY
+          onStart()
+        }}
+        onPointerMove={(event) => {
+          if (!pressingRef.current || cancelledRef.current) return
+          if (event.clientY < startYRef.current - 60) {
+            cancelledRef.current = true
+            onCancel()
+          }
+        }}
+        onPointerUp={(event) => {
+          try {
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          } catch {
+            // ignore
+          }
+          release()
+        }}
+        onPointerCancel={() => {
+          if (pressingRef.current) {
+            pressedCancel()
+          }
+        }}
+        onLostPointerCapture={() => {
+          if (pressingRef.current) {
+            pressedCancel()
+          }
+        }}
+      >
+        {active ? (
+          <span className={styles.active}>
+            <span className={styles.halo} />
+            <span className={styles.core} />
+            <span className={styles.outline}>
+              <IconMicOutline16 />
             </span>
-          ) : status === 'transcribing' ? (
-            <span className={styles.loading} />
-          ) : (
-            <IconMicOutline16 />
-          )}
-        </button>
-      </Tooltip>
-    </>
+            <span className={styles.glyph}>
+              <IconMicFill16 />
+            </span>
+          </span>
+        ) : status === 'finishing' ? (
+          <span className={styles.loading} />
+        ) : (
+          <IconMicOutline16 />
+        )}
+      </button>
+    </Tooltip>
   )
+
+  function pressedCancel() {
+    pressingRef.current = false
+    cancelledRef.current = true
+    onCancel()
+  }
 }
