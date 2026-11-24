@@ -77,8 +77,8 @@ const model =
 
 export const config = {
   port: Number(process.env.PORT ?? 8787),
-  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.9",
-  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 32),
+  appVersion: process.env.DREAM_APP_VERSION ?? "1.7.10",
+  appVersionCode: Number(process.env.DREAM_APP_VERSION_CODE ?? 33),
   backupDir: process.env.DREAM_BACKUP_DIR ?? "data/backups",
   feedbackDir: process.env.DREAM_FEEDBACK_DIR ?? "data/feedback",
   host: process.env.DREAM_HOST ?? "127.0.0.1",

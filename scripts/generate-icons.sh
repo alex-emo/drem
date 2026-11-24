@@ -22,6 +22,9 @@ cp apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png 
   apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-1.png
 cp apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png \
   apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-2.png
+magick apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png -strip -colors 256 -define png:compression-level=9 PNG8:apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png
+cp apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-1.png
+cp apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png apps/mobile/ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-2.png
 
 # Android legacy + round
 for spec in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
@@ -46,8 +49,10 @@ for f in apps/mobile/android/app/src/main/res/drawable-port-*/splash.png \
   w=$(identify -format '%w' "$f"); h=$(identify -format '%h' "$f")
   short=$((w<h?w:h)); icon=$((short*42/100))
   magick -size "${w}x${h}" "xc:$BG" \( /tmp/dream-splash-rounded.png -resize "${icon}x${icon}" \) -gravity center -composite "$f"
+  magick "$f" -strip -colors 256 -define png:compression-level=9 PNG8:"$f"
 done
 magick -size 480x320 "xc:$BG" \( /tmp/dream-splash-rounded.png -resize 134x134 \) -gravity center -composite \
   apps/mobile/android/app/src/main/res/drawable/splash.png
+magick apps/mobile/android/app/src/main/res/drawable/splash.png -strip -colors 256 -define png:compression-level=9 PNG8:apps/mobile/android/app/src/main/res/drawable/splash.png
 
 echo "icons generated"
