@@ -361,16 +361,29 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   try {
     await streamChatOnce(tracked);
   } catch (error) {
-    if (received || !isRetryableNetworkError(error)) throw error;
-    const trimmed = trimMessagesForRetry(prepared);
-    const retryMessages = trimmed.length < prepared.length ? trimmed : prepared;
-    console.warn(
-      retryMessages.length < prepared.length
-        ? "请求上下文过大，已自动丢弃较早消息并重试"
-        : "流式连接中断，未产生输出，自动重试一次",
-      { before: prepared.length, after: retryMessages.length, reason: (error as Error)?.message },
-    );
-    await streamChatOnce({ ...tracked, messages: retryMessages });
+    if (!received && isRetryableNetworkError(error)) {
+      const trimmed = trimMessagesForRetry(prepared);
+      const retryMessages = trimmed.length < prepared.length ? trimmed : prepared;
+      console.warn(
+        retryMessages.length < prepared.length
+          ? "请求上下文过大，已自动丢弃较早消息并重试"
+          : "流式连接中断，未产生输出，自动重试一次",
+        { before: prepared.length, after: retryMessages.length, reason: (error as Error)?.message },
+      );
+      try {
+        await streamChatOnce({ ...tracked, messages: retryMessages });
+        return;
+      } catch (retryError) {
+        if (retryError instanceof TypeError) {
+          throw new ChatApiError("网络连接中断，请检查网络后重试。", 0, "NETWORK");
+        }
+        throw retryError;
+      }
+    }
+    if (error instanceof TypeError) {
+      throw new ChatApiError("网络连接中断，请检查网络后重试。", 0, "NETWORK");
+    }
+    throw error;
   }
 }
 
@@ -475,6 +488,7 @@ async function streamChatOnce(options: StreamChatOptions): Promise<void> {
           0,
           error?.code ?? "UPSTREAM_ERROR",
           error?.requestId,
+          error?.hex,
         );
       }
       default:

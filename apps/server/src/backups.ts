@@ -1,4 +1,5 @@
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { once } from "node:events";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
@@ -81,6 +82,10 @@ export async function saveBackupStream(
 
 export function readBackupBytes(path: string): Buffer {
   return readFileSync(path);
+}
+
+export async function readBackupBytesAsync(path: string): Promise<Buffer> {
+  return readFile(path);
 }
 
 export function deleteBackupFile(path: string | null | undefined): void {

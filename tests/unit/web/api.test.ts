@@ -140,9 +140,7 @@ describe("streamChat", () => {
     await expect(streamChat(baseOptions())).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
   });
 
-  // 已知缺口：streamChat 不做统一错误包装，单条消息无法再裁剪时直接把底层 TypeError 抛给调用方
-  // （requestJson 会包装成 NETWORK，两条路径行为不一致）。修好实现后把 it.fails 改成 it。
-  it.fails("网络异常应包装为 NETWORK 错误码", async () => {
+  it("网络异常应包装为 NETWORK 错误码", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(streamChat(baseOptions())).rejects.toMatchObject({ code: "NETWORK" });
   });

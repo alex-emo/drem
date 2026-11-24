@@ -39,6 +39,12 @@ interface BackupData {
   tombstones?: Tombstone[];
 }
 
+class CloudApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const controller = new AbortController();
@@ -62,7 +68,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!response.ok) {
     const data = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
-    throw new Error(data?.error?.message ?? `云端备份请求失败（${response.status}）`);
+    throw new CloudApiError(data?.error?.message ?? `云端备份请求失败（${response.status}）`, response.status);
   }
   return (await response.json()) as T;
 }
@@ -76,9 +82,12 @@ function decodePayload(payload: string): { iv: string; data: string } {
 export async function fetchCloudInfo(): Promise<CloudBackupInfo> {
   try {
     return await api<CloudBackupInfo>("/api/v1/backup/meta");
-  } catch {
-    // 兼容尚未部署流式接口的旧服务端。
-    return api<CloudBackupInfo>("/api/v1/backup");
+  } catch (error) {
+    // 仅旧服务端缺少 meta 路由时才回退；网络/鉴权错误不能被掩盖。
+    if (error instanceof CloudApiError && (error.status === 404 || error.status === 405)) {
+      return api<CloudBackupInfo>("/api/v1/backup");
+    }
+    throw error;
   }
 }
 

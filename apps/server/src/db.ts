@@ -461,6 +461,17 @@ export function getFeedbackReport(id: number): FeedbackReportRow | undefined {
     | undefined;
 }
 
+export function countFeedbackByUserSince(userId: string, since: string): number {
+  const row = db
+    .prepare("SELECT COUNT(*) AS n FROM feedback_reports WHERE user_id = ? AND created_at >= ?")
+    .get(userId, since) as { n: number };
+  return row.n;
+}
+
+export function clearFeedbackScreenshotPath(id: number): void {
+  db.prepare("UPDATE feedback_reports SET screenshot_path = NULL, screenshot_mime = NULL WHERE id = ?").run(id);
+}
+
 export function listFeedbackByUser(userId: string, limit = 50): FeedbackReportRow[] {
   const safe = Math.max(1, Math.min(100, Math.trunc(limit)));
   return db

@@ -117,5 +117,6 @@ export const config = {
     asr: Number(process.env.DREAM_RL_ASR ?? 30), // 每 IP 每分钟语音识别请求
     global: Number(process.env.DREAM_RL_GLOBAL ?? 1200), // 每 IP 每分钟全部 /api 请求
     archive: Number(process.env.DREAM_RL_ARCHIVE ?? 12), // 每 IP 每小时导入
+    feedback: Number(process.env.DREAM_RL_FEEDBACK ?? 10), // 每 IP 每小时反馈
   },
 } as const;

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
@@ -41,4 +41,13 @@ export function feedbackScreenshotMime(name: string): string {
   if (name.endsWith(".png")) return "image/png";
   if (name.endsWith(".jpg")) return "image/jpeg";
   return "image/webp";
+}
+
+export function deleteFeedbackScreenshot(name: string | null): void {
+  if (!name || !/^[a-f0-9-]+\.(png|jpg|webp)$/i.test(name)) return;
+  try {
+    unlinkSync(join(dir, name));
+  } catch {
+    // 文件已不在时忽略。
+  }
 }

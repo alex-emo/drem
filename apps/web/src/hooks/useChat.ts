@@ -456,8 +456,10 @@ export function useChat() {
         }
         abortRef.current = null;
 
+        const current = allMessagesRef.current.find((message) => message.id === assistantMessage.id);
         const final: Message = {
           ...assistantMessage,
+          ...(current?.excludeFromContext ? { excludeFromContext: true } : {}),
           content: acc.content,
           reasoning: acc.reasoning || undefined,
           files: options.files,
@@ -743,7 +745,10 @@ export function useChat() {
       const target = visible[index];
       if (!target || target.role !== "assistant" || !target.parentId) return;
       const question = allMessagesRef.current.find((message) => message.id === target.parentId);
-      if (question?.excludeFromContext) return;
+      if (question?.excludeFromContext) {
+        window.alert("该问题已被内容安全拦截，请重新编辑后再发送。");
+        return;
+      }
 
       const all = allMessagesRef.current;
       const path: Message[] = [];

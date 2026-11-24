@@ -37,6 +37,8 @@ import {
   createAnnouncement,
   createFeedbackReport,
   db,
+  clearFeedbackScreenshotPath,
+  countFeedbackByUserSince,
   deleteAnnouncement,
   getFeedbackReport,
   latestAnnouncement,
@@ -49,6 +51,7 @@ import {
   type FeedbackStatus,
 } from "./db.js";
 import {
+  deleteFeedbackScreenshot,
   feedbackScreenshotMime,
   MAX_FEEDBACK_SCREENSHOT_BYTES,
   readFeedbackScreenshot,
@@ -83,7 +86,7 @@ import {
 } from "./usage.js";
 import { listLogs, pushLog } from "./logs.js";
 import { getRelease } from "./release.js";
-import { MAX_BACKUP_BYTES, backupFilePath, deleteBackupFile, readBackupBytes, saveBackupStream } from "./backups.js"
+import { MAX_BACKUP_BYTES, backupFilePath, deleteBackupFile, readBackupBytes, readBackupBytesAsync, saveBackupStream } from "./backups.js"
 import { enforceRateLimit, type LimitRule } from "./rateLimit.js";
 
 type AppEnv = { Variables: { requestId: string; requestUser?: string } };
@@ -453,6 +456,17 @@ const feedbackPublic = (row: ReturnType<typeof getFeedbackReport>) => {
 
 app.post("/api/v1/feedback", feedbackBodyLimit, async (c) => {
   const { user } = requireUser(c.req.header("authorization"));
+  const limited = enforceRateLimit(c, {
+    name: "feedback",
+    limit: config.rateLimit.feedback,
+    windowMs: HOUR,
+    blockMs: HOUR,
+  });
+  if (limited) return limited;
+  const dayAgo = new Date(Date.now() - 24 * HOUR).toISOString();
+  if (countFeedbackByUserSince(user.id, dayAgo) >= 10) {
+    throw new ApiError(429, "RATE_LIMITED", "反馈提交过于频繁，请明天再试");
+  }
   const body = await c.req.parseBody();
   const platform = formText(body["platform"]);
   const os = formText(body["os"]).slice(0, 60);
@@ -516,7 +530,7 @@ app.get("/api/v1/feedback/:id/screenshot", (c) => {
   }
   const bytes = readFeedbackScreenshot(report.screenshot_path);
   if (!bytes) throw new ApiError(404, "NOT_FOUND", "截图不存在");
-  return new Response(bytes, {
+  return new Response(new Uint8Array(bytes), {
     headers: {
       "content-type": report.screenshot_mime ?? feedbackScreenshotMime(report.screenshot_path),
       "cache-control": "private, no-store",
@@ -669,14 +683,14 @@ app.put("/api/v1/backup/stream", async (c) => {
 });
 
 // 兼容旧客户端：仍可读取/写入 base64 payload；新客户端走 /backup/meta + /backup/stream。
-app.get("/api/v1/backup", (c) => {
+app.get("/api/v1/backup", async (c) => {
   const { user } = requireUser(c.req.header("authorization"));
   const { key, legacyKey } = getBackupKey(user.id);
   const row = getBackupRow(user.id);
   let payload = row?.payload ?? "";
   if (!payload && row?.path && row.iv) {
     try {
-      payload = `dream1.${row.iv}.${readBackupBytes(row.path).toString("base64")}`;
+      payload = `dream1.${row.iv}.${(await readBackupBytesAsync(row.path)).toString("base64")}`;
     } catch {
       payload = "";
     }
@@ -806,7 +820,7 @@ app.get("/api/v1/admin/feedback/:id/screenshot", (c) => {
   if (!report || !report.screenshot_path) throw new ApiError(404, "NOT_FOUND", "截图不存在");
   const bytes = readFeedbackScreenshot(report.screenshot_path);
   if (!bytes) throw new ApiError(404, "NOT_FOUND", "截图不存在");
-  return new Response(bytes, {
+  return new Response(new Uint8Array(bytes), {
     headers: {
       "content-type": report.screenshot_mime ?? feedbackScreenshotMime(report.screenshot_path),
       "cache-control": "private, no-store",
@@ -828,9 +842,15 @@ app.patch("/api/v1/admin/feedback/:id", async (c) => {
   if (!reply && status === "replied") {
     throw new ApiError(400, "INVALID_ARGUMENT", "回复内容不能为空");
   }
+  const existing = getFeedbackReport(id);
   const updated = replyFeedbackReport(id, reply, admin.username, status);
   if (!updated) throw new ApiError(404, "NOT_FOUND", "反馈不存在");
-  return c.json({ report: feedbackPublic(updated) });
+  if (status === "closed" && existing?.screenshot_path) {
+    deleteFeedbackScreenshot(existing.screenshot_path);
+    clearFeedbackScreenshotPath(id);
+  }
+  const latest = getFeedbackReport(id) ?? updated;
+  return c.json({ report: feedbackPublic(latest) });
 });
 
 app.patch("/api/v1/admin/users/:id", async (c) => {

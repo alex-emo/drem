@@ -336,6 +336,15 @@ export async function compressContext(
     };
   }
 
+  const enforceTokenLimit = (items: ChatMessage[]): ChatMessage[] => {
+    if (estimateMessagesTokens(items) <= CONTEXT_TOKEN_LIMIT || items.length <= 2) return items;
+    const kept = [...items];
+    while (kept.length > 2 && estimateMessagesTokens(kept) > CONTEXT_TOKEN_LIMIT) {
+      kept.splice(1, 1);
+    }
+    return kept;
+  };
+
   const prepared = clipped.messages;
   // 从尾部保留最近消息，直到达到 token/条数上限；至少保留最近 8 条。
   let cut = prepared.length;
@@ -355,7 +364,7 @@ export async function compressContext(
 
   if (segments.length === 0) {
     return {
-      messages: prepared,
+      messages: enforceTokenLimit(prepared),
       compressed: clipped.clipped > 0,
       segments: 0,
       cached: 0,
@@ -394,7 +403,7 @@ export async function compressContext(
   );
 
   const summaryBlock = await fitSummaryBudget(summaries, options.onUsage);
-  const finalMessages = [{ role: "system" as const, content: summaryBlock }, ...recent];
+  const finalMessages = enforceTokenLimit([{ role: "system" as const, content: summaryBlock }, ...recent]);
   return {
     messages: finalMessages,
     compressed: true,

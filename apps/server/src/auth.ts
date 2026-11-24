@@ -54,7 +54,11 @@ function createSession(
   const token = randomBytes(32).toString("base64url");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS).toISOString();
-  // 多设备：每个设备保留独立会话，互不踢出；过期会话由 requireUser 清理。
+  // 多设备：每台设备一个会话；同设备重复登录复用同一行，避免设备列表膨胀。
+  db.prepare("DELETE FROM sessions WHERE expires_at IS NOT NULL AND expires_at <= ?").run(now.toISOString());
+  if (deviceId) {
+    db.prepare("DELETE FROM sessions WHERE user_id = ? AND device_id = ?").run(userId, deviceId);
+  }
   db.prepare(
     `INSERT INTO sessions (id, user_id, token_hash, device_id, device_name, platform, created_at, last_seen_at, expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
