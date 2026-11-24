@@ -1,0 +1,29 @@
+name: Flutter
+
+on:
+  push:
+    paths:
+      - 'apps/mobile_flutter/**'
+      - '.github/workflows/flutter.yml'
+  pull_request:
+    paths:
+      - 'apps/mobile_flutter/**'
+      - '.github/workflows/flutter.yml'
+
+jobs:
+  analyze-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile_flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.1'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test

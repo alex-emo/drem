@@ -50,3 +50,6 @@ apps/mobile/ios/App/App/capacitor.config.json
 .idea/
 .android-user/
 **/android/.idea/
+
+# local Flutter SDK (never commit)
+.flutter/
