@@ -34,6 +34,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _canSend = false;
   AttachController? _attachController;
   VoiceController? _voiceController;
+  bool _webSearch = false;
 
   static const List<PromptSuggestion> _prompts = [
     PromptSuggestion(
@@ -128,7 +129,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     final files = _attachController?.selectedIds.toList() ?? const <String>[];
-    chat.sendMessage(text, files: files);
+    chat.sendMessage(text, files: files, webSearch: _webSearch);
     _attachController?.clearSelection();
   }
 
@@ -185,6 +186,126 @@ class _ChatScreenState extends State<ChatScreen> {
     if (confirmed == true) {
       await chat.removeConversation(id);
     }
+  }
+
+  Future<void> _showConversations() async {
+    final chat = _chat;
+    if (chat == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListenableBuilder(
+          listenable: chat,
+          builder: (context, _) {
+            final palette = context.dreamPalette;
+            final items = chat.conversations;
+            return ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      DreamSpacing.lg,
+                      0,
+                      DreamSpacing.md,
+                      DreamSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '会话',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: () {
+                            chat.newConversation();
+                            Navigator.of(context).pop();
+                          },
+                          icon: const Icon(Icons.add_rounded, size: 18),
+                          label: const Text('新对话'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (items.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(DreamSpacing.lg),
+                      child: Text(
+                        '还没有会话',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: palette.textTertiary,
+                        ),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final selected = item.id == chat.activeId;
+                          return ListTile(
+                            dense: true,
+                            selected: selected,
+                            selectedTileColor: palette.brandSoft,
+                            title: Text(
+                              item.title.isEmpty ? '未命名会话' : item.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () {
+                              chat.openConversation(item.id);
+                              Navigator.of(context).pop();
+                            },
+                            trailing: IconButton(
+                              tooltip: '删除会话',
+                              icon: const Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                              ),
+                              onPressed: () async {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('删除会话'),
+                                    content: const Text('删除后将无法恢复，确定删除吗？'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(false),
+                                        child: const Text('取消'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        child: const Text('删除'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true) {
+                                  await chat.removeConversation(item.id);
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   void _retryLast() {
@@ -276,6 +397,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   _TopBar(
                     onSettings: () => context.push('/settings'),
+                    onConversations: chat == null ? null : _showConversations,
+                    webSearch: _webSearch,
+                    onToggleWebSearch: () {
+                      setState(() => _webSearch = !_webSearch);
+                    },
                     onDelete: chat != null && chat.activeId != null
                         ? _deleteConversation
                         : null,
@@ -294,6 +420,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (streamError != null)
                     _ErrorBar(text: streamError, onRetry: _retryLast),
                   if (streaming) _StopBar(onStop: chat!.stop),
+                  if (_attachController != null &&
+                      _attachController!.selectedIds.isNotEmpty)
+                    _AttachedBar(controller: _attachController!),
                   Composer(
                     controller: _controller,
                     focusNode: _focusNode,
@@ -326,9 +455,18 @@ class _ChatScreenState extends State<ChatScreen> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onSettings, this.onDelete});
+  const _TopBar({
+    required this.onSettings,
+    this.onConversations,
+    this.webSearch = false,
+    this.onToggleWebSearch,
+    this.onDelete,
+  });
 
   final VoidCallback onSettings;
+  final VoidCallback? onConversations;
+  final bool webSearch;
+  final VoidCallback? onToggleWebSearch;
   final VoidCallback? onDelete;
 
   @override
@@ -347,6 +485,24 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: DreamSpacing.sm),
           Text('Dream', style: theme.textTheme.titleLarge),
           const Spacer(),
+          if (onToggleWebSearch != null)
+            IconButton(
+              tooltip: webSearch ? '关闭联网搜索' : '联网搜索',
+              onPressed: onToggleWebSearch,
+              icon: Icon(
+                webSearch ? Icons.public_rounded : Icons.public_off_rounded,
+                size: 20,
+                color: webSearch
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+            ),
+          if (onConversations != null)
+            IconButton(
+              tooltip: '会话列表',
+              onPressed: onConversations,
+              icon: const Icon(Icons.forum_outlined, size: 20),
+            ),
           if (onDelete != null)
             IconButton(
               tooltip: '删除会话',
@@ -419,6 +575,50 @@ class _StopBar extends StatelessWidget {
         onPressed: onStop,
         icon: const Icon(Icons.stop_rounded, size: 18),
         label: const Text('停止生成'),
+      ),
+    );
+  }
+}
+
+
+/// 输入区上方的已选附件条：显示名称、可单个移除。
+class _AttachedBar extends StatelessWidget {
+  const _AttachedBar({required this.controller});
+
+  final AttachController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.dreamPalette;
+    final selected = controller.files
+        .where((f) => controller.selectedIds.contains(f.id))
+        .toList();
+    if (selected.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        DreamSpacing.md,
+        0,
+        DreamSpacing.md,
+        DreamSpacing.xs,
+      ),
+      child: Wrap(
+        spacing: DreamSpacing.xs,
+        runSpacing: DreamSpacing.xxs,
+        children: [
+          for (final file in selected)
+            InputChip(
+              label: Text(
+                file.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onDeleted: () => controller.toggleSelected(file.id),
+              deleteIcon: const Icon(Icons.close_rounded, size: 14),
+              visualDensity: VisualDensity.compact,
+              side: BorderSide(color: palette.border),
+              backgroundColor: palette.composer,
+            ),
+        ],
       ),
     );
   }
