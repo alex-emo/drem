@@ -35,6 +35,7 @@ class SessionController extends ChangeNotifier {
     final token = await store.getToken();
     if (token == null || token.isEmpty) {
       _anonymous();
+      notifyListeners();
       return;
     }
     tokenHolder.value = token;
