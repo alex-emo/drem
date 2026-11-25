@@ -39,6 +39,8 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _canSend = false;
   bool _stickToBottom = true;
   bool _showJumpToBottom = false;
+  bool _showGestureHint = false;
+  Timer? _gestureHintTimer;
   AttachController? _attachController;
   VoiceController? _voiceController;
   bool _webSearch = false;
@@ -80,6 +82,7 @@ class _ChatScreenState extends State<ChatScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         chat.load();
         _maybeShowAnnouncement();
+        _maybeShowGestureHint();
       });
     }
   }
@@ -116,6 +119,21 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// 首次进入给一次手势提示，不遮屏、不阻塞；显示过就永久记住。
+  Future<void> _maybeShowGestureHint() async {
+    if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('dream-gesture-hint-seen') ?? false) return;
+    if (!mounted) return;
+    setState(() => _showGestureHint = true);
+    _gestureHintTimer?.cancel();
+    _gestureHintTimer = Timer(const Duration(seconds: 4), () async {
+      if (!mounted) return;
+      setState(() => _showGestureHint = false);
+      await prefs.setBool('dream-gesture-hint-seen', true);
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -133,6 +151,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _attachController?.dispose();
     _voiceController?.dispose();
+    _gestureHintTimer?.cancel();
     _controller.removeListener(_syncCanSend);
     _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
@@ -369,6 +388,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         ? () => context.push('/settings')
                         : null,
                   ),
+                  if (_showGestureHint) const _GestureHint(),
                   Expanded(
                     child: Stack(
                       children: [
@@ -582,6 +602,42 @@ class _AttachedBar extends StatelessWidget {
               side: BorderSide(color: palette.border),
               backgroundColor: palette.composer,
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GestureHint extends StatelessWidget {
+  const _GestureHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.dreamPalette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        DreamSpacing.pageMargin,
+        0,
+        DreamSpacing.pageMargin,
+        DreamSpacing.xs,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.swipe_left_alt_rounded,
+            size: 15,
+            color: palette.textTertiary,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '左滑看会话 · 长按说话',
+            style: TextStyle(
+              fontSize: 12,
+              color: palette.textTertiary,
+              height: 1.2,
+            ),
+          ),
         ],
       ),
     );
