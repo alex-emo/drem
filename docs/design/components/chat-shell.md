@@ -10,7 +10,7 @@ Owner: chat-shell · 依赖 T1 + T2
 
 ```text
 [ safe area ]
-ChatTopBar       56pt：左 DreamMark+“Dream”，右设置图标（44pt）
+ChatTopBar       56pt：左菜单 44pt + DreamMark+“Dream”，右「新对话」44pt
 content          弹性，max 780，水平边距 20/28
   ├─ 无消息：ChatEmptyState
   └─ 有消息：MessageList
@@ -22,8 +22,13 @@ Composer         贴底 + 安全区；发丝线分隔
 
 ## 3. ChatTopBar
 
-- 左：DreamMark（24）+ 文本“Dream”（titleLarge 19/600）。
-- 右：设置图标按钮，44pt，tooltip“设置”。
+- 左：菜单按钮 44×44（`Icons.menu_rounded`，20px，tooltip“会话”），打开会话抽屉。
+  左缘 44pt 右滑保留，作为同一动作的加速器，不是唯一入口
+  （决策见 `design-lab/decisions/0001-session-drawer-affordance.md`）。
+- 品牌：DreamMark（22）+ 文本“Dream”（titleMedium 15/600），不可点。
+- 右：“新对话”按钮 44×44（`Icons.add_comment_outlined`，tooltip“新对话”）。
+  P0 骨架没有控制器时退化为设置图标，44pt，tooltip“设置”。
+- 高度固定 56pt（48 行 + 上下 4），任何元素出现/消失都不顶动内容。
 - 无返回键（根页面）；横屏/平板仍单列。
 - 品牌蓝仅用于 DreamMark 柔光，不用作顶栏底色。
 
@@ -50,6 +55,7 @@ Composer         贴底 + 安全区；发丝线分隔
 ## 6. 交互
 
 - 点建议 → `onPromptTap(text)` 填入 composer 并 `focusNode.requestFocus()`。
+- 点菜单 → `Scaffold.openDrawer()`；点“新对话” → `ChatController.newConversation()`，与抽屉内同名动作一致。
 - 发送 → `onSend(text)`：P0 只清空 + 提示，不 append 假消息。
 - 附件 → `onAttach`：P1 占位提示，不崩溃。
 

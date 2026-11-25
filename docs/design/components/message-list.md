@@ -16,6 +16,7 @@ Owner: composer-messages
 - `empty` 非空时替代列表（由 chat-shell 传 `ChatEmptyState`）。
 - 新消息出现：滚到底（`scrollController` 由 shell 持有并传入，或内部自动）。
 - 流式期间不整列重建；只更新末尾一条。
+- 时间锚点：相邻消息本地日期不同才插 `DayDivider`（今天/昨天/11月20日/2025年11月20日），首条不插、单日零分隔；分隔嵌在该消息 item 内，不单独占 ListView index。精确时分不放列表，留给长按动作条（见 `design-lab/decisions/0002-day-anchors.md`）。
 
 ## 4. MessageBubble
 
