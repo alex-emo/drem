@@ -23,8 +23,8 @@ pnpm-store-operation-locks/
 # local server database
 apps/server/data/
 
-# local runtime data (SQLite)
-data/
+# local runtime data (SQLite)；只忽略仓库根 data/，不要吞掉 apps/mobile_flutter/lib/data/
+/data/
 apps/server/data/
 
 # Mobile
