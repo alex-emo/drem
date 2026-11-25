@@ -60,6 +60,15 @@ class ApiClient {
     return _decodeJsonObject(text);
   }
 
+  /// 当前公告；无公告返回 null。
+  Future<Announcement?> getAnnouncement() async {
+    final data = await requestJson('GET', '/announcement');
+    final raw = data['announcement'];
+    if (raw is! Map<String, dynamic>) return null;
+    final item = Announcement.fromJson(raw);
+    return item.id.isEmpty ? null : item;
+  }
+
   Future<AuthResult> register(
     String username,
     String password, {

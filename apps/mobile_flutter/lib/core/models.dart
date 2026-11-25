@@ -333,3 +333,25 @@ class AuthResult {
     user: AuthUser.fromJson(Map<String, dynamic>.from(json['user'] as Map)),
   );
 }
+
+/// 服务端公告（公开接口，登录后展示一次）。
+class Announcement {
+  final String id;
+  final String title;
+  final String body;
+  final DateTime? updatedAt;
+
+  const Announcement({
+    required this.id,
+    required this.title,
+    required this.body,
+    this.updatedAt,
+  });
+
+  factory Announcement.fromJson(Map<String, dynamic> json) => Announcement(
+    id: json['id']?.toString() ?? '',
+    title: json['title']?.toString() ?? '',
+    body: json['body']?.toString() ?? '',
+    updatedAt: DateTime.tryParse(json['updatedAt']?.toString() ?? ''),
+  );
+}

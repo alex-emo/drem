@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app/app_scope.dart';
 import '../../../core/models.dart' hide PromptSuggestion;
@@ -70,7 +71,40 @@ class _ChatScreenState extends State<ChatScreen> {
     if (chat != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         chat.load();
+        _maybeShowAnnouncement();
       });
+    }
+  }
+
+  /// 登录后展示一次服务端公告；失败静默，不影响聊天。
+  Future<void> _maybeShowAnnouncement() async {
+    final services = AppScope.maybeOf(context);
+    if (services == null) return;
+    try {
+      final notice = await services.api.getAnnouncement();
+      if (notice == null || !mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString('dream-announcement-seen') == notice.id) return;
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(notice.title.isEmpty ? '公告' : notice.title),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 360),
+            child: SingleChildScrollView(child: Text(notice.body)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+      await prefs.setString('dream-announcement-seen', notice.id);
+    } catch (_) {
+      // 公告拉取失败不阻塞聊天。
     }
   }
 
@@ -238,9 +272,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       padding: const EdgeInsets.all(DreamSpacing.lg),
                       child: Text(
                         '还没有会话',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: palette.textTertiary,
-                        ),
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: palette.textTertiary),
                       ),
                     )
                   else
@@ -492,9 +525,7 @@ class _TopBar extends StatelessWidget {
               icon: Icon(
                 webSearch ? Icons.public_rounded : Icons.public_off_rounded,
                 size: 20,
-                color: webSearch
-                    ? Theme.of(context).colorScheme.primary
-                    : null,
+                color: webSearch ? Theme.of(context).colorScheme.primary : null,
               ),
             ),
           if (onConversations != null)
@@ -579,7 +610,6 @@ class _StopBar extends StatelessWidget {
     );
   }
 }
-
 
 /// 输入区上方的已选附件条：显示名称、可单个移除。
 class _AttachedBar extends StatelessWidget {
