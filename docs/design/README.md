@@ -17,7 +17,8 @@
 5. [04-subagent-plan.md](04-subagent-plan.md)：子代理任务拆分与验收
 6. [05-motion-details.md](05-motion-details.md)：滚动物理、手势阈值、原文摘录与参数决策
 7. [06-design-criteria.md](06-design-criteria.md)：简约大方 / 廉价 / 直觉交互 / 非人交互的可操作定义与复核清单
-8. 组件规格：
+8. [07-optimization-backlog.md](07-optimization-backlog.md)：按 P0/P1/P2 排序的优化清单与验收方式
+9. 组件规格：
    - [components/chat-shell.md](components/chat-shell.md)
    - [components/composer.md](components/composer.md)
    - [components/message-list.md](components/message-list.md)
