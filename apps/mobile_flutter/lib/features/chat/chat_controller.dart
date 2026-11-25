@@ -146,6 +146,9 @@ class ChatController extends ChangeNotifier {
   List<Message> allMessages = <Message>[];
   bool streaming = false;
   bool thinking = false;
+
+  /// 深度思考开关（UI 维护，默认关闭，避免每条消息都走高成本推理模型）。
+  bool deepThinking = false;
   String? streamError;
 
   bool _sessionExpired = false;
@@ -333,7 +336,10 @@ class ChatController extends ChangeNotifier {
       ...historyFor(visible),
       <String, String>{'role': 'user', 'content': raw},
     ];
-    final body = <String, dynamic>{'messages': history, 'thinking': true};
+    final body = <String, dynamic>{
+      'messages': history,
+      'thinking': deepThinking,
+    };
     if (files.isNotEmpty) body['files'] = files;
     if (webSearch) body['webSearch'] = true;
 
@@ -435,7 +441,10 @@ class ChatController extends ChangeNotifier {
       ...historyFor(before),
       <String, String>{'role': 'user', 'content': raw},
     ];
-    final body = <String, dynamic>{'messages': history, 'thinking': true};
+    final body = <String, dynamic>{
+      'messages': history,
+      'thinking': deepThinking,
+    };
     if (previous.webSearch) body['webSearch'] = true;
     if (previous.files.isNotEmpty) body['files'] = previous.files;
 
@@ -478,7 +487,10 @@ class ChatController extends ChangeNotifier {
     await _persistMessages(<Message>[questionUpdated, newAssistant]);
 
     final history = historyFor(before);
-    final body = <String, dynamic>{'messages': history, 'thinking': true};
+    final body = <String, dynamic>{
+      'messages': history,
+      'thinking': deepThinking,
+    };
     if (question.webSearch) body['webSearch'] = true;
     if (question.files.isNotEmpty) body['files'] = question.files;
 

@@ -36,6 +36,7 @@ class _ChatScreenState extends State<ChatScreen> {
   AttachController? _attachController;
   VoiceController? _voiceController;
   bool _webSearch = false;
+  bool _deepThinking = false;
 
   static const List<PromptSuggestion> _prompts = [
     PromptSuggestion(
@@ -163,6 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     final files = _attachController?.selectedIds.toList() ?? const <String>[];
+    chat.deepThinking = _deepThinking;
     chat.sendMessage(text, files: files, webSearch: _webSearch);
     _attachController?.clearSelection();
   }
@@ -194,32 +196,6 @@ class _ChatScreenState extends State<ChatScreen> {
       selection: TextSelection.collapsed(offset: merged.length),
     );
     _focusNode.requestFocus();
-  }
-
-  Future<void> _deleteConversation() async {
-    final chat = _chat;
-    final id = chat?.activeId;
-    if (chat == null || id == null) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除会话'),
-        content: const Text('删除后将无法恢复，确定删除当前会话吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await chat.removeConversation(id);
-    }
   }
 
   Future<void> _showConversations() async {
@@ -400,7 +376,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final glow = theme.brightness == Brightness.dark ? 0.08 : 0.05;
 
     final chat = _chat;
     final messages = chat?.visibleMessages ?? const <Message>[];
@@ -409,18 +384,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final streamError = chat?.streamError;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              DreamColors.brand.withValues(alpha: glow),
-              DreamColors.brand.withValues(alpha: 0),
-            ],
-            stops: const [0, 0.55],
-          ),
-        ),
+      body: ColoredBox(
+        color: theme.scaffoldBackgroundColor,
         child: SafeArea(
           bottom: false,
           child: Center(
@@ -432,12 +397,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     onSettings: () => context.push('/settings'),
                     onConversations: chat == null ? null : _showConversations,
                     webSearch: _webSearch,
+                    deepThinking: _deepThinking,
                     onToggleWebSearch: () {
                       setState(() => _webSearch = !_webSearch);
                     },
-                    onDelete: chat != null && chat.activeId != null
-                        ? _deleteConversation
-                        : null,
+                    onToggleDeepThinking: () {
+                      setState(() => _deepThinking = !_deepThinking);
+                    },
                   ),
                   Expanded(
                     child: messages.isEmpty
@@ -492,15 +458,17 @@ class _TopBar extends StatelessWidget {
     required this.onSettings,
     this.onConversations,
     this.webSearch = false,
+    this.deepThinking = false,
     this.onToggleWebSearch,
-    this.onDelete,
+    this.onToggleDeepThinking,
   });
 
   final VoidCallback onSettings;
   final VoidCallback? onConversations;
   final bool webSearch;
+  final bool deepThinking;
   final VoidCallback? onToggleWebSearch;
-  final VoidCallback? onDelete;
+  final VoidCallback? onToggleDeepThinking;
 
   @override
   Widget build(BuildContext context) {
@@ -518,6 +486,20 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: DreamSpacing.sm),
           Text('Dream', style: theme.textTheme.titleLarge),
           const Spacer(),
+          if (onToggleDeepThinking != null)
+            IconButton(
+              tooltip: deepThinking ? '关闭深度思考' : '深度思考',
+              onPressed: onToggleDeepThinking,
+              icon: Icon(
+                deepThinking
+                    ? Icons.psychology_rounded
+                    : Icons.psychology_outlined,
+                size: 20,
+                color: deepThinking
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+            ),
           if (onToggleWebSearch != null)
             IconButton(
               tooltip: webSearch ? '关闭联网搜索' : '联网搜索',
@@ -533,12 +515,6 @@ class _TopBar extends StatelessWidget {
               tooltip: '会话列表',
               onPressed: onConversations,
               icon: const Icon(Icons.forum_outlined, size: 20),
-            ),
-          if (onDelete != null)
-            IconButton(
-              tooltip: '删除会话',
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline_rounded, size: 20),
             ),
           IconButton(
             tooltip: '设置',

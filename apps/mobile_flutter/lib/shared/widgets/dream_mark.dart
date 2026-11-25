@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../design/tokens.dart';
 
-/// Dream 的极简字标：圆角渐变底 + 一笔白色轨迹。
+/// Dream 的极简字标：纯色圆角底 + 一笔白色轨迹（无渐变/阴影）。
 class DreamMark extends StatelessWidget {
   const DreamMark({super.key, this.size = 30});
 
@@ -15,18 +15,7 @@ class DreamMark extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(size * 0.3),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF82A4FF), Color(0xFF3F63F5)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: DreamColors.brand.withValues(alpha: 0.3),
-            blurRadius: size * 0.6,
-            offset: Offset(0, size * 0.18),
-          ),
-        ],
+        color: DreamColors.brand,
       ),
       child: CustomPaint(painter: _MarkPainter()),
     );

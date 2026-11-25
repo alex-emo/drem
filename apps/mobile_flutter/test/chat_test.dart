@@ -158,8 +158,9 @@ void main() {
       expect(assistant.parentId, user.id);
       expect(user.selectedChildId, assistant.id);
 
-      // 请求体与 thinking 开关。
-      expect(api.bodies.single['thinking'], isTrue);
+      // 默认关闭深度思考，避免每条消息都走推理模型。
+      expect(api.bodies.single['thinking'], isFalse);
+      expect(chat.deepThinking, isFalse);
       expect(api.bodies.single['messages'], <Map<String, String>>[
         <String, String>{'role': 'user', 'content': '你好'},
       ]);

@@ -27,7 +27,7 @@ class DreamMarkdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final blocks = _parseBlocks(text);
+    final blocks = _parseBlocksCached(text);
     final children = <Widget>[];
     for (var i = 0; i < blocks.length; i++) {
       final isLast = i == blocks.length - 1;
@@ -155,6 +155,24 @@ class _TableBlock extends _MdBlock {
 // ---------------------------------------------------------------------------
 // 块级解析
 // ---------------------------------------------------------------------------
+
+const int _blockCacheLimit = 24;
+final Map<String, List<_MdBlock>> _blockCache = <String, List<_MdBlock>>{};
+
+/// 流式场景下同一段历史文本会被反复 build；按全文缓存解析结果。
+List<_MdBlock> _parseBlocksCached(String text) {
+  final cached = _blockCache.remove(text);
+  if (cached != null) {
+    _blockCache[text] = cached; // 触达即刷新 LRU 顺序。
+    return cached;
+  }
+  final blocks = _parseBlocks(text);
+  _blockCache[text] = blocks;
+  if (_blockCache.length > _blockCacheLimit) {
+    _blockCache.remove(_blockCache.keys.first);
+  }
+  return blocks;
+}
 
 List<_MdBlock> _parseBlocks(String text) {
   final lines = text.split('\n');

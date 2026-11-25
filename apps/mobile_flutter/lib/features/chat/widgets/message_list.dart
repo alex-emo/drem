@@ -37,7 +37,8 @@ class MessageList extends StatelessWidget {
     return ListView.builder(
       padding: EdgeInsets.only(bottom: bottomPadding),
       itemCount: messages.length,
-      itemBuilder: (context, index) => _buildItem(context, messages[index]),
+      itemBuilder: (context, index) =>
+          RepaintBoundary(child: _buildItem(context, messages[index])),
     );
   }
 
@@ -79,18 +80,22 @@ class MessageList extends StatelessWidget {
           : null,
     );
 
-    if (!canEdit && !canRegenerate) {
-      return bubble;
-    }
+    final row = canEdit || canRegenerate
+        ? GestureDetector(
+            onLongPress: () => _showActions(
+              context,
+              message,
+              canEdit: canEdit,
+              canRegenerate: canRegenerate,
+            ),
+            child: bubble,
+          )
+        : bubble;
 
-    return GestureDetector(
-      onLongPress: () => _showActions(
-        context,
-        message,
-        canEdit: canEdit,
-        canRegenerate: canRegenerate,
-      ),
-      child: bubble,
+    // 阅读边距：正文不贴屏幕边缘。
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: row,
     );
   }
 
