@@ -483,7 +483,7 @@ Token 数据来源：每次 `/api/v1/chat` 或上下文摘要请求收到上游 
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `PATCH` | `/api/v1/admin/users/:id` | `{"disabled":true}` 禁用（同时清理会话）或启用；`{"verified":false}` 仅修改隐藏的验证标记（默认全部用户已验证，用户端不可见） |
+| `PATCH` | `/api/v1/admin/users/:id` | `{"disabled":true}` 禁用（同时清理会话）或启用；`{"verified":false}` 仅修改隐藏验证标记；`{"modelId":"qwen3.7-pro"}` 切换用户模型（`qwen3.7-flash`/`qwen3.7-pro`/`deepseek-chat`/`deepseek-4.1-flash`） |
 | `POST` | `/api/v1/admin/users/:id/password` | `{"password":"..."}` 重置密码并清理会话 |
 | `POST` | `/api/v1/admin/users/:id/revoke` | 撤销该用户全部登录会话 |
 
@@ -617,7 +617,7 @@ App 在登录并解锁后拉取；按 `id:updatedAt` 记录已读，同一条公
 | POST | `/api/v1/auth/register` | `{ username, password, displayName?, deviceId? }` → `201 { token, user }` |
 | POST | `/api/v1/auth/login` | `{ username, password, deviceId? }` → `{ token, user }` |
 | POST | `/api/v1/auth/logout` | 使当前 token 失效 |
-| GET | `/api/v1/me` | 当前用户 `{ user }`（含 `isAdmin`） |
+| GET | `/api/v1/me` | 当前用户 `{ user }`（含 `customerNo`、`modelId`、`isAdmin`） |
 | GET | `/api/v1/admin/stats` | 管理员看板统计数据 |
 
 错误码新增：`INVALID_CREDENTIALS`（401）、`USERNAME_TAKEN`（409）、`UNAUTHORIZED`（401）。

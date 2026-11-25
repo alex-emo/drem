@@ -30,6 +30,7 @@ import {
   adminResetPassword,
   adminRevokeSessions,
   adminSetUserDisabled,
+  adminSetUserModel,
   adminSetUserVerified,
   requireAdmin,
   requireUser,
@@ -90,6 +91,7 @@ import {
 } from "./usage.js";
 import { listLogs, pushLog } from "./logs.js";
 import { getRelease } from "./release.js";
+import { DEFAULT_MODEL_ID, getModel, isKnownModel } from "./models.js";
 import { MAX_BACKUP_BYTES, backupFilePath, deleteBackupFile, readBackupBytes, readBackupBytesAsync, saveBackupStream } from "./backups.js"
 import { enforceRateLimit, type LimitRule } from "./rateLimit.js";
 
@@ -860,17 +862,26 @@ app.patch("/api/v1/admin/feedback/:id", async (c) => {
 app.patch("/api/v1/admin/users/:id", async (c) => {
   const admin = requireAdmin(c.req.header("authorization"));
   const id = c.req.param("id");
-  const body = (await readJsonBody(c)) as { disabled?: unknown; verified?: unknown };
-  if (typeof body.disabled !== "boolean" && typeof body.verified !== "boolean") {
-    throw new ApiError(400, "INVALID_ARGUMENT", "disabled 或 verified 必须是布尔值");
+  const body = (await readJsonBody(c)) as { disabled?: unknown; verified?: unknown; modelId?: unknown };
+  if (
+    typeof body.disabled !== "boolean" &&
+    typeof body.verified !== "boolean" &&
+    typeof body.modelId !== "string"
+  ) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "disabled、verified 或 modelId 参数不正确");
   }
   if (body.disabled === true && id === admin.id) {
     throw new ApiError(400, "INVALID_ARGUMENT", "不能禁用当前登录的管理员账号");
   }
+  if (typeof body.modelId === "string" && !isKnownModel(body.modelId)) {
+    throw new ApiError(400, "INVALID_ARGUMENT", "未知的模型");
+  }
   const result =
     typeof body.disabled === "boolean"
       ? adminSetUserDisabled(id, body.disabled)
-      : adminSetUserVerified(id, body.verified as boolean);
+      : typeof body.modelId === "string"
+        ? adminSetUserModel(id, body.modelId)
+        : adminSetUserVerified(id, body.verified as boolean);
   return c.json(result);
 });
 
@@ -974,7 +985,8 @@ app.post("/api/v1/context/warm", async (c) => {
         userId: user.id,
         username: user.username,
         keyId,
-        model: config.model,
+        model: getModel(DEFAULT_MODEL_ID).upstreamModel,
+        modelId: DEFAULT_MODEL_ID,
         kind: "summary",
         usage,
       }),
@@ -994,6 +1006,7 @@ app.post("/api/v1/chat", async (c) => {
   const requestId = c.get("requestId");
   const { user } = requireUser(c.req.header("authorization"));
   c.set("requestUser", user.username);
+  const selectedModel = getModel(user.modelId);
   const body = await readJsonBody(c);
   const parsed = parseChatRequest(body);
   let expandedMessages = parsed.messages;
@@ -1052,7 +1065,8 @@ app.post("/api/v1/chat", async (c) => {
           userId: user.id,
           username: user.username,
           keyId,
-          model: config.model,
+          model: getModel(DEFAULT_MODEL_ID).upstreamModel,
+          modelId: DEFAULT_MODEL_ID,
           kind: "chat",
           usage,
         });
@@ -1063,7 +1077,7 @@ app.post("/api/v1/chat", async (c) => {
 
   let opened;
   try {
-    opened = await openChatStream(effective, c.req.raw.signal);
+    opened = await openChatStream(effective, c.req.raw.signal, selectedModel);
   } catch (error) {
     if (!(error instanceof ApiError && error.code === "CONTENT_FILTERED")) throw error;
 
@@ -1076,7 +1090,7 @@ app.post("/api/v1/chat", async (c) => {
       try {
         const compacted = await compactLeadingMessages(effective.messages, FILTER_COMPACT_COUNT);
         if (compacted.compacted) {
-          opened = await openChatStream({ ...effective, messages: compacted.messages }, c.req.raw.signal);
+          opened = await openChatStream({ ...effective, messages: compacted.messages }, c.req.raw.signal, selectedModel);
           console.log(
             `[dream-server] ${requestId} content retry succeeded (compressed ${FILTER_COMPACT_COUNT} leading messages)`,
           );
@@ -1099,7 +1113,7 @@ app.post("/api/v1/chat", async (c) => {
       if (opened) break;
       if (fallback.messages.length >= effective.messages.length) continue;
       try {
-        opened = await openChatStream({ ...effective, messages: fallback.messages }, c.req.raw.signal);
+        opened = await openChatStream({ ...effective, messages: fallback.messages }, c.req.raw.signal, selectedModel);
         console.log(
           `[dream-server] ${requestId} content retry succeeded (${fallback.stage}, ${fallback.messages.length} messages)`,
         );
@@ -1119,8 +1133,8 @@ app.post("/api/v1/chat", async (c) => {
         userId: user.id,
         username: user.username,
         requestId,
-        provider: config.provider,
-        model: config.provider === "qwen" ? config.model : parsed.thinking ? config.reasonerModel : config.model,
+        provider: selectedModel.provider,
+        model: selectedModel.upstreamModel,
         stage: "fallback",
         messageCount: effective.messages.length,
         detail: lastFilterError.message,
@@ -1131,7 +1145,7 @@ app.post("/api/v1/chat", async (c) => {
       });
     }
   }
-  const { stream: upstream, keyId, model: effectiveModel } = opened;
+  const { stream: upstream, keyId, model: effectiveModel, modelId } = opened;
   const stream = dreamChatStream(
     upstream,
     {
@@ -1146,6 +1160,7 @@ app.post("/api/v1/chat", async (c) => {
         username: user.username,
         keyId,
         model: effectiveModel,
+        modelId,
         kind: "chat",
         usage,
       });

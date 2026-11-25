@@ -2,6 +2,7 @@ import { db } from "./db.js";
 import { keyPool } from "./keys.js";
 import { config } from "./config.js";
 import { API_VERSION, SERVER_VERSION } from "./protocol.js";
+import { DEFAULT_MODEL_ID, estimateCostMicros, getModel, listModels, type CatalogModel } from "./models.js";
 
 export interface TokenUsage {
   promptTokens: number;
@@ -29,6 +30,8 @@ export interface RecordUsageInput {
   username: string;
   keyId: number;
   model: string;
+  modelId?: string;
+  costMicros?: number;
   kind: "chat" | "summary";
   usage: TokenUsage | null;
 }
@@ -36,20 +39,25 @@ export interface RecordUsageInput {
 /** 记录一次请求的 token 消耗（没有 usage 时按 0 记，保留请求次数）。 */
 export function recordUsage(input: RecordUsageInput): void {
   const usage = input.usage ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  const modelId = input.modelId ?? DEFAULT_MODEL_ID;
+  const costMicros =
+    input.costMicros ?? estimateCostMicros(getModel(modelId), usage.promptTokens, usage.completionTokens);
   try {
     db.prepare(
       `INSERT INTO usage_events
-        (user_id, username, key_id, model, kind, prompt_tokens, completion_tokens, total_tokens, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, username, key_id, model, model_id, kind, prompt_tokens, completion_tokens, total_tokens, cost_micros, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.userId,
       input.username,
       input.keyId,
       input.model,
+      modelId,
       input.kind,
       usage.promptTokens,
       usage.completionTokens,
       usage.totalTokens,
+      costMicros,
       new Date().toISOString(),
     );
   } catch (error) {
@@ -129,6 +137,7 @@ interface TotalsRow {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cost_micros: number;
 }
 
 interface UserStatRow {
@@ -136,6 +145,7 @@ interface UserStatRow {
   username: string;
   display_name: string | null;
   customer_no: string | null;
+  model_id: string | null;
   disabled: number;
   verified: number;
   created_at: string;
@@ -145,6 +155,7 @@ interface UserStatRow {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cost_micros: number;
   moderation_count: number;
   last_moderation_at: string | null;
   backup_size: number;
@@ -165,6 +176,7 @@ interface DayStatRow {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cost_micros: number;
 }
 
 export interface AdminStats {
@@ -181,6 +193,7 @@ export interface AdminStats {
     keys: { total: number; available: number };
     lastRequestAt: string | null;
   };
+  models: CatalogModel[];
   totals: {
     users: number;
     activeSessions: number;
@@ -188,6 +201,7 @@ export interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    costMicros: number;
     moderationEvents: number;
     moderationUsers: number;
     errorEvents: number;
@@ -206,6 +220,8 @@ export interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    costMicros: number;
+    modelUsage: Array<{ modelId: string; label: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number; costMicros: number }>;
     moderationCount: number;
     lastModerationAt: string | null;
     memoryBytes: number;
@@ -257,7 +273,8 @@ function queryTotals(): TotalsRow {
       `SELECT COUNT(*) AS requests,
               COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
               COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
-              COALESCE(SUM(total_tokens), 0) AS total_tokens
+              COALESCE(SUM(total_tokens), 0) AS total_tokens,
+              COALESCE(SUM(cost_micros), 0) AS cost_micros
        FROM usage_events`,
     )
     .get() as unknown as TotalsRow;
@@ -275,13 +292,14 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
   const users = (
     db
       .prepare(
-        `SELECT u.id, u.username, u.display_name, u.customer_no, u.disabled, u.verified, u.created_at,
+        `SELECT u.id, u.username, u.display_name, u.customer_no, u.model_id, u.disabled, u.verified, u.created_at,
                 (SELECT MAX(last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen_at,
                 (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS sessions,
                 COUNT(e.id) AS requests,
                 COALESCE(SUM(e.prompt_tokens), 0) AS prompt_tokens,
                 COALESCE(SUM(e.completion_tokens), 0) AS completion_tokens,
                 COALESCE(SUM(e.total_tokens), 0) AS total_tokens,
+                COALESCE(SUM(e.cost_micros), 0) AS cost_micros,
                 (SELECT COUNT(DISTINCT request_id) FROM moderation_events m WHERE m.user_id = u.id) AS moderation_count,
                 (SELECT MAX(created_at) FROM moderation_events m WHERE m.user_id = u.id) AS last_moderation_at,
                 COALESCE((SELECT size FROM chat_backups b WHERE b.user_id = u.id), 0) AS backup_size
@@ -296,6 +314,7 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
     username: row.username,
     displayName: row.display_name,
     customerNo: row.customer_no ?? "",
+    modelId: row.model_id ?? DEFAULT_MODEL_ID,
     disabled: Boolean(row.disabled),
     verified: Boolean(row.verified),
     createdAt: row.created_at,
@@ -306,10 +325,47 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
     promptTokens: row.prompt_tokens,
     completionTokens: row.completion_tokens,
     totalTokens: row.total_tokens,
+    costMicros: row.cost_micros,
+    modelUsage: [] as Array<{ modelId: string; label: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number; costMicros: number }>,
     moderationCount: row.moderation_count,
     lastModerationAt: row.last_moderation_at,
     memoryBytes: row.backup_size ?? 0,
   }));
+
+  const modelRows = db
+    .prepare(
+      `SELECT user_id, model_id, COUNT(*) AS requests,
+              COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+              COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+              COALESCE(SUM(total_tokens), 0) AS total_tokens,
+              COALESCE(SUM(cost_micros), 0) AS cost_micros
+       FROM usage_events GROUP BY user_id, model_id`,
+    )
+    .all() as unknown as Array<{
+    user_id: string;
+    model_id: string | null;
+    requests: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    cost_micros: number;
+  }>;
+  const modelUsageByUser = new Map<string, Array<{ modelId: string; label: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number; costMicros: number }>>();
+  for (const row of modelRows) {
+    const modelId = row.model_id ?? DEFAULT_MODEL_ID;
+    const list = modelUsageByUser.get(row.user_id) ?? [];
+    list.push({
+      modelId,
+      label: getModel(modelId).label,
+      requests: row.requests,
+      promptTokens: row.prompt_tokens,
+      completionTokens: row.completion_tokens,
+      totalTokens: row.total_tokens,
+      costMicros: row.cost_micros,
+    });
+    modelUsageByUser.set(row.user_id, list);
+  }
+  for (const user of users) user.modelUsage = modelUsageByUser.get(user.id) ?? [];
 
   const keyRows = db
     .prepare(
@@ -446,6 +502,7 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
       keys: keyPool.stats(),
       lastRequestAt: last.at,
     },
+    models: listModels(),
     totals: {
       users: userCount.count,
       activeSessions: sessions.active,
@@ -453,6 +510,7 @@ export function getAdminStats(isAdmin: (username: string) => boolean): AdminStat
       promptTokens: totals.prompt_tokens,
       completionTokens: totals.completion_tokens,
       totalTokens: totals.total_tokens,
+      costMicros: totals.cost_micros,
       moderationEvents: moderationTotals.events,
       moderationUsers: moderationTotals.users,
       errorEvents: errorTotal.count,

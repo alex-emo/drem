@@ -2387,3 +2387,9 @@ body,
   max-width: 100%;
   height: auto;
 }
+
+.admin-model-select {
+  width: 118px;
+  padding: 4px 6px;
+  font-size: 12px;
+}

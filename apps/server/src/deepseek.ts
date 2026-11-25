@@ -1,15 +1,16 @@
-import { config } from "./config.js";
 import { withDreamIdentity } from "./identity.js";
 import { getModelSettings } from "./settings.js";
 import {
   cooldownForStatus,
+  deepseekKeyPool,
   isRetryableStatus,
-  keyPool,
+  qwenKeyPool,
   type KeyPool,
   type PooledKey,
 } from "./keys.js";
 import { ApiError } from "./protocol.js";
 import { normalizeUsage, type TokenUsage } from "./usage.js";
+import { DEFAULT_MODEL_ID, getModel, providerBaseUrl, type CatalogModel } from "./models.js";
 
 export type ChatRole = "system" | "user" | "assistant";
 
@@ -210,12 +211,16 @@ interface UpstreamTarget {
   keyEnv: string;
 }
 
-const primaryTarget: UpstreamTarget = {
-  pool: keyPool,
-  baseUrl: config.baseUrl,
-  label: config.providerLabel,
-  keyEnv: config.keyEnv,
-};
+function targetFor(model: CatalogModel): UpstreamTarget {
+  return {
+    pool: model.provider === "deepseek" ? deepseekKeyPool : qwenKeyPool,
+    baseUrl: providerBaseUrl(model.provider),
+    label: "Dream",
+    keyEnv: model.provider === "deepseek" ? "DEEPSEEK_API_KEYS" : "QWEN_API_KEYS",
+  };
+}
+
+const primaryTarget: UpstreamTarget = targetFor(getModel(DEFAULT_MODEL_ID));
 
 /**
  * 从 Key 池里轮询取 Key 发请求：连接失败/鉴权失败/限流/5xx 会自动换下一个 Key。
@@ -318,48 +323,57 @@ export async function requestUpstreamJson(
 export async function openChatStream(
   parsed: ParsedChatRequest,
   clientSignal: AbortSignal,
+  model: CatalogModel = getModel(DEFAULT_MODEL_ID),
 ): Promise<{
   stream: ReadableStream<Uint8Array>;
   keyId: number;
   model: string;
+  modelId: string;
+  modelLabel: string;
   provider: "deepseek" | "qwen";
 }> {
   const temperature = getModelSettings().temperature;
   const payload =
-    config.provider === "qwen"
+    model.provider === "qwen"
       ? {
-          model: config.model,
+          model: model.upstreamModel,
           messages: withDreamIdentity(parsed.messages),
           stream: true,
           stream_options: { include_usage: true },
           enable_thinking: parsed.thinking,
           temperature,
         }
-      : {
-          model: parsed.thinking ? config.reasonerModel : config.model,
-          messages: withDreamIdentity(parsed.messages),
-          stream: true,
-          stream_options: { include_usage: true },
-          ...(parsed.thinking ? {} : { temperature }),
-        };
-
-  const result = await fetchUpstream(primaryTarget, payload, clientSignal);
-  const servedModel =
-    config.provider === "qwen"
-      ? config.model
       : parsed.thinking
-        ? config.reasonerModel
-        : config.model;
+        ? {
+            model: model.upstreamModel,
+            messages: withDreamIdentity(parsed.messages),
+            stream: true,
+            stream_options: { include_usage: true },
+            thinking: { type: "enabled" },
+          }
+        : {
+            model: model.upstreamModel,
+            messages: withDreamIdentity(parsed.messages),
+            stream: true,
+            stream_options: { include_usage: true },
+            thinking: { type: "disabled" },
+            temperature,
+          };
+
+  const target = targetFor(model);
+  const result = await fetchUpstream(target, payload, clientSignal);
 
   const upstream = result.response;
   if (!upstream.body) {
-    throw new ApiError(502, "UPSTREAM_ERROR", `${config.providerLabel} API 未返回流式响应体`);
+    throw new ApiError(502, "UPSTREAM_ERROR", "Dream 模型服务未返回流式响应体");
   }
-  console.log(`[dream-server] upstream key #${result.key.id} served stream`);
+  console.log(`[dream-server] upstream key #${result.key.id} served stream (${model.id})`);
   return {
     stream: upstream.body,
     keyId: result.key.id,
-    model: servedModel,
-    provider: config.provider,
+    model: model.upstreamModel,
+    modelId: model.id,
+    modelLabel: model.label,
+    provider: model.provider,
   };
 }

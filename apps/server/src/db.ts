@@ -44,6 +44,7 @@ export interface UserRow {
   password_hash: string;
   created_at: string;
   customer_no?: string | null;
+  model_id?: string | null;
   disabled?: number;
   verified?: number;
   backup_key?: string | null;
@@ -66,6 +67,9 @@ if (!userColumns.some((column) => column.name === "backup_key_legacy")) {
 }
 if (!userColumns.some((column) => column.name === "customer_no")) {
   db.exec("ALTER TABLE users ADD COLUMN customer_no TEXT");
+}
+if (!userColumns.some((column) => column.name === "model_id")) {
+  db.exec("ALTER TABLE users ADD COLUMN model_id TEXT");
 }
 
 const CUSTOMER_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -151,6 +155,14 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_usage_key ON usage_events(key_id);
   CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
 `);
+
+const usageColumns = db.prepare("PRAGMA table_info(usage_events)").all() as Array<{ name: string }>;
+if (!usageColumns.some((column) => column.name === "model_id")) {
+  db.exec("ALTER TABLE usage_events ADD COLUMN model_id TEXT");
+}
+if (!usageColumns.some((column) => column.name === "cost_micros")) {
+  db.exec("ALTER TABLE usage_events ADD COLUMN cost_micros INTEGER NOT NULL DEFAULT 0");
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS context_summaries (

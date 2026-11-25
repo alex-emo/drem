@@ -41,10 +41,9 @@ function splitKeys(...values: Array<string | undefined>): string[] {
   return keys;
 }
 
-const apiKeys =
-  provider === "qwen"
-    ? splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS)
-    : splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS);
+const qwenApiKeys = splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS);
+const deepseekApiKeys = splitKeys(process.env.DEEPSEEK_API_KEY, process.env.DEEPSEEK_API_KEYS);
+const apiKeys = provider === "qwen" ? qwenApiKeys : deepseekApiKeys;
 
 // 语音识别固定使用 Qwen/DashScope Key；聊天供应商为 DeepSeek 时也允许单独配置 ASR Key。
 const qwenKeys = splitKeys(process.env.QWEN_API_KEY, process.env.QWEN_API_KEYS);
@@ -56,6 +55,7 @@ const asrKeys = splitKeys(
 const qwenBaseUrl = (
   process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"
 ).replace(/\/+$/, "");
+const deepseekBaseUrl = (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, "");
 
 function splitList(...values: Array<string | undefined>): string[] {
   const out: string[] = [];
@@ -87,12 +87,16 @@ export const config = {
   provider,
   providerLabel: provider === "qwen" ? "Qwen" : "DeepSeek",
   keyEnv: provider === "qwen" ? "QWEN_API_KEYS" : "DEEPSEEK_API_KEYS",
+  qwenApiKeys,
+  deepseekApiKeys,
+  qwenBaseUrl,
+  deepseekBaseUrl,
   apiKey: apiKeys[0] ?? "",
   apiKeys,
   baseUrl:
     provider === "qwen"
-      ? (process.env.QWEN_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1")
-      : (process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com").replace(/\/+$/, ""),
+      ? qwenBaseUrl
+      : deepseekBaseUrl,
   model,
   // Qwen 用同一模型 ID + enable_thinking 切换；DeepSeek 用独立 reasoner 模型。
   reasonerModel:

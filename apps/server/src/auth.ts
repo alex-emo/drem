@@ -15,6 +15,7 @@ export interface PublicUser {
   displayName: string | null;
   createdAt: string;
   customerNo: string;
+  modelId: string;
   isAdmin: boolean;
 }
 
@@ -34,6 +35,7 @@ function toPublic(row: UserRow): PublicUser {
     displayName: row.display_name,
     createdAt: row.created_at,
     customerNo: row.customer_no ?? "",
+    modelId: row.model_id ?? "qwen3.7-flash",
     isAdmin: isAdminUsername(row.username),
   };
 }
@@ -239,6 +241,13 @@ export function logoutUser(authorization: string | undefined): void {
   db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(hashToken(token));
 }
 
+
+export function adminSetUserModel(id: string, modelId: string): PublicUser {
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
+  if (!row) throw new ApiError(404, "NOT_FOUND", "用户不存在");
+  db.prepare("UPDATE users SET model_id = ? WHERE id = ?").run(modelId, id);
+  return toPublic({ ...row, model_id: modelId });
+}
 
 export function adminSetUserDisabled(id: string, disabled: boolean): PublicUser {
   const row = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;

@@ -17,6 +17,7 @@ interface AdminStats {
     keys: { total: number; available: number };
     lastRequestAt: string | null;
   };
+  models: Array<{ id: string; label: string; description: string }>;
   totals: {
     users: number;
     activeSessions: number;
@@ -24,6 +25,7 @@ interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    costMicros: number;
     moderationEvents: number;
     moderationUsers: number;
     errorEvents: number;
@@ -33,6 +35,7 @@ interface AdminStats {
     username: string;
     displayName: string | null;
     customerNo: string;
+    modelId: string;
     disabled: boolean;
     verified: boolean;
     createdAt: string;
@@ -43,6 +46,8 @@ interface AdminStats {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    costMicros: number;
+    modelUsage: Array<{ modelId: string; label: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number; costMicros: number }>;
     moderationCount: number;
     lastModerationAt: string | null;
     memoryBytes: number;
@@ -138,6 +143,7 @@ const PAGE_TITLES: Record<Page, string> = {
 };
 
 const number = (value: number) => value.toLocaleString("zh-CN");
+const cny = (micros: number): string => `¥${(micros / 1_000_000).toFixed(4)}`;
 
 function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -681,13 +687,14 @@ export default function AdminPage() {
   const exportUsers = () =>
     downloadCsv(
       "dream-users.csv",
-      ["用户", "显示名称", "角色", "状态", "验证", "会话", "记忆", "注册时间", "最近使用", "请求", "输入", "输出", "总tokens", "拦截"],
+      ["用户", "显示名称", "角色", "状态", "验证", "模型", "会话", "记忆", "注册时间", "最近使用", "请求", "输入", "输出", "总tokens", "费用", "拦截"],
       users.map((user) => [
         user.username,
         user.displayName ?? "",
         user.isAdmin ? "管理员" : "用户",
         user.disabled ? "已禁用" : "正常",
         user.verified ? "已验证" : "未验证",
+        stats.models.find((model) => model.id === user.modelId)?.label ?? user.modelId,
         user.sessions,
         formatBytes(user.memoryBytes),
         formatTime(user.createdAt),
@@ -696,6 +703,7 @@ export default function AdminPage() {
         user.promptTokens,
         user.completionTokens,
         user.totalTokens,
+        cny(user.costMicros),
         user.moderationCount,
       ]),
     );
@@ -746,12 +754,14 @@ export default function AdminPage() {
                   <th>角色</th>
                   <th>状态</th>
                   <th>验证</th>
+                  <th>模型</th>
                   <th className="num"><SortButton label="会话" column="sessions" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th className="num"><SortButton label="记忆" column="memory" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th><SortButton label="注册时间" column="created" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th><SortButton label="最近使用" column="lastSeen" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th className="num"><SortButton label="请求" column="requests" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th className="num"><SortButton label="总 tokens" column="tokens" sort={sort} direction={direction} onSort={onSort} /></th>
+                  <th className="num">费用</th>
                   <th className="num"><SortButton label="拦截" column="moderation" sort={sort} direction={direction} onSort={onSort} /></th>
                   <th>操作</th>
                 </tr>
@@ -769,12 +779,24 @@ export default function AdminPage() {
                     <td>{user.isAdmin ? <span className="admin-tag">管理员</span> : "用户"}</td>
                     <td>{user.disabled ? <span className="admin-tag bad">已禁用</span> : <span className="admin-tag ok">正常</span>}</td>
                     <td>{user.verified ? <span className="admin-tag ok">已验证</span> : <span className="admin-tag bad">未验证</span>}</td>
+                    <td>
+                      <select
+                        className="admin-select admin-model-select"
+                        value={user.modelId}
+                        disabled={busy !== null}
+                        title={user.modelUsage.map((item) => `${item.label}: ${number(item.totalTokens)} tokens / ${cny(item.costMicros)}`).join("\n")}
+                        onChange={(event) => void act(`/api/v1/admin/users/${user.id}`, "PATCH", { modelId: event.target.value }, `已切换 ${user.username} 的模型`)}
+                      >
+                        {stats.models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                      </select>
+                    </td>
                     <td className="num">{user.sessions}</td>
                     <td className="num">{formatBytes(user.memoryBytes)}</td>
                     <td>{formatTime(user.createdAt)}</td>
                     <td>{formatTime(user.lastSeenAt)}</td>
                     <td className="num">{number(user.requests)}</td>
                     <td className="num strong">{number(user.totalTokens)}</td>
+                    <td className="num" title={user.modelUsage.map((item) => `${item.label}: ${number(item.totalTokens)} tokens / ${cny(item.costMicros)}`).join("\n")}>{cny(user.costMicros)}</td>
                     <td className="num">{user.moderationCount ? <span className="admin-tag bad">{user.moderationCount}</span> : 0}</td>
                     <td>
                       <div className="admin-row-actions">

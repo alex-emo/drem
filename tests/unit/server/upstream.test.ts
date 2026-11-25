@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openChatStream, parseChatRequest, requestUpstreamJson } from "../../../apps/server/src/deepseek.js";
+import { getModel } from "../../../apps/server/src/models.js";
 import { ApiError } from "../../../apps/server/src/protocol.js";
 
 function parsed(overrides: Record<string, unknown> = {}) {
@@ -22,7 +23,7 @@ async function catchApiError(run: () => Promise<unknown>): Promise<ApiError> {
 
 /** 只检查状态码/错误码映射，不读流（失败时根本不会返回流）。 */
 const open = (options: Record<string, unknown> = {}, signal = new AbortController().signal) =>
-  openChatStream(parsed(options), signal);
+  openChatStream(parsed(options), signal, getModel("deepseek-chat"));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -47,8 +48,8 @@ describe("上游错误映射", () => {
 
     const error = await catchApiError(() => open());
     expect(error).toMatchObject({ status: expectedStatus, code });
-    // 原始上游文案保留在服务端 message 里供日志排查；对外文案由 index.ts 的 errorBody 覆盖
-    expect(error.message).toContain("DeepSeek");
+    // 原始上游文案不进入公开 message；对外文案由 protocol.ts 的错误目录统一生成
+    expect(error.message).toContain("Dream");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -91,7 +92,7 @@ describe("上游请求参数", () => {
     expect(url).toMatch(/\/chat\/completions$/);
     expect(init.headers.authorization).toMatch(/^Bearer /);
     const payload = JSON.parse(init.body);
-    expect(payload).toMatchObject({ model: "deepseek-chat", stream: true, stream_options: { include_usage: true } });
+    expect(payload).toMatchObject({ model: "deepseek-v4-pro", stream: true, stream_options: { include_usage: true } });
     expect(typeof payload.temperature).toBe("number");
     expect(payload.messages[0].role).toBe("system");
     expect(payload.messages.at(-1)).toEqual({ role: "user", content: "你好" });
@@ -105,7 +106,7 @@ describe("上游请求参数", () => {
     await open({ thinking: true });
 
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(payload.model).toBe("deepseek-reasoner");
+    expect(payload.model).toBe("deepseek-v4-pro");
     expect(payload).not.toHaveProperty("temperature");
   });
 

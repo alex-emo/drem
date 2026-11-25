@@ -79,7 +79,9 @@ export class KeyPool {
   }
 }
 
-export const keyPool = new KeyPool(config.apiKeys);
+export const qwenKeyPool = new KeyPool(config.qwenApiKeys);
+export const deepseekKeyPool = new KeyPool(config.deepseekApiKeys, 100);
+export const keyPool = config.provider === "deepseek" ? deepseekKeyPool : qwenKeyPool;
 /** 语音识别独立池；ID 从 201 开始，避免与聊天 Key 统计混淆。 */
 export const asrKeyPool = new KeyPool(config.asrKeys, 200);
 /** DeepSeek 回退池；ID 从 101 开始，避免与主 Key 池统计混淆。 */
