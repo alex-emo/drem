@@ -1062,7 +1062,35 @@ app.post("/api/v1/chat", async (c) => {
   try {
     opened = await openChatStream(effective, c.req.raw.signal);
   } catch (error) {
-    if (error instanceof ApiError && error.code === "CONTENT_FILTERED") {
+    if (!(error instanceof ApiError && error.code === "CONTENT_FILTERED")) throw error;
+
+    // Qwen 的输入安全审核会把整段历史一起判定，长对话里较早的角色扮演/敏感词
+    // 常常导致「本轮完全正常」的提问被误杀。先降级为最近 8 条，再降级为仅本轮；
+    // 当前用户消息仍会经过上游审核，不会绕过真正有害内容。
+    const fallbacks = [
+      { stage: "retry_recent", messages: effective.messages.slice(-8) },
+      { stage: "fallback", messages: effective.messages.slice(-1) },
+    ];
+
+    let lastFilterError = error;
+    for (const fallback of fallbacks) {
+      if (fallback.messages.length >= effective.messages.length) continue;
+      try {
+        opened = await openChatStream({ ...effective, messages: fallback.messages }, c.req.raw.signal);
+        console.log(
+          `[dream-server] ${requestId} content retry succeeded (${fallback.stage}, ${fallback.messages.length} messages)`,
+        );
+        break;
+      } catch (retryError) {
+        if (retryError instanceof ApiError && retryError.code === "CONTENT_FILTERED") {
+          lastFilterError = retryError;
+          continue;
+        }
+        throw retryError;
+      }
+    }
+
+    if (!opened) {
       // 与 DeepSeek 客户端一致：内容安全拒绝不报错，返回固定拒绝答复。
       recordModeration({
         userId: user.id,
@@ -1070,16 +1098,15 @@ app.post("/api/v1/chat", async (c) => {
         requestId,
         provider: config.provider,
         model: config.provider === "qwen" ? config.model : parsed.thinking ? config.reasonerModel : config.model,
-        stage: "primary",
+        stage: "fallback",
         messageCount: effective.messages.length,
-        detail: error.message,
+        detail: lastFilterError.message,
       });
-      console.log(`[dream-server] ${requestId} content refused by ${config.providerLabel}`);
+      console.log(`[dream-server] ${requestId} content refused by ${config.providerLabel} after retries`);
       return new Response(refusalStream({ requestId, model: publicModel(parsed.thinking), thinking: parsed.thinking }), {
         headers: sseHeaders(requestId),
       });
     }
-    throw error;
   }
   const { stream: upstream, keyId, model: effectiveModel } = opened;
   const stream = dreamChatStream(
