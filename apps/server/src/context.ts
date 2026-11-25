@@ -53,6 +53,18 @@ const SUMMARY_PROMPT = `你是对话记录压缩器。把下面这段对话压�
 2. 不要评论、不要扩写、不要编造；
 3. 直接输出摘要正文，不要提及“压缩”“摘要”这件事。`;
 
+/** 超过 100 条时，把最前面 50 条压成一条摘要，避免上下文无限增长。 */
+export const LEAD_COMPACT_TRIGGER = 100;
+export const LEAD_COMPACT_COUNT = 50;
+/** 内容审核拒绝时，优先压缩最前面 70 条再重试。 */
+export const FILTER_COMPACT_COUNT = 70;
+
+export interface LeadingCompaction {
+  messages: ChatMessage[];
+  compacted: boolean;
+  summaryTokens: number;
+}
+
 export interface CompressionOutcome {
   messages: ChatMessage[];
   compressed: boolean;
@@ -316,23 +328,73 @@ async function fitSummaryBudget(
  * 把过长的历史压成分段摘要，只保留最近一段原文。
  * 摘要按分段内容哈希缓存，追加新消息时旧分段不会重复计算。
  */
+function leadingKey(segment: ChatMessage[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ v: SUMMARY_CACHE_VERSION, kind: "lead", segment }))
+    .digest("hex");
+}
+
+/**
+ * 把前 count 条消息压成一条 system 摘要，剩余消息保持原样。
+ * 用于按条数触发的静默压缩，以及内容审核拒绝后的重试。
+ */
+export async function compactLeadingMessages(
+  messages: ChatMessage[],
+  count = LEAD_COMPACT_COUNT,
+  onUsage?: (usage: TokenUsage | null, keyId: number) => void,
+): Promise<LeadingCompaction> {
+  const size = Math.min(Math.max(1, count), messages.length - 1);
+  if (messages.length <= 2 || size <= 0) {
+    return { messages, compacted: false, summaryTokens: 0 };
+  }
+  const head = messages.slice(0, size);
+  const rest = messages.slice(size);
+  const key = leadingKey(head);
+  const cached = getContextSummary(key);
+  let summary = cached;
+  if (!summary) {
+    summary = await summarizeSegmentSafe(head, onUsage);
+    putContextSummary(key, summary);
+  }
+  const block = `【较早对话摘要】\n${summary}`;
+  return {
+    messages: [{ role: "system" as const, content: block }, ...rest],
+    compacted: true,
+    summaryTokens: estimateTokens(block),
+  };
+}
+
 export async function compressContext(
   messages: ChatMessage[],
   options: { onUsage?: (usage: TokenUsage | null, keyId: number) => void } = {},
 ): Promise<CompressionOutcome> {
   const originalMessages = messages.length;
   const clipped = clipOversizedMessages(messages);
+  let prepared = clipped.messages;
+  let leadCompacted = false;
+  let leadSummaryTokens = 0;
+  if (prepared.length > LEAD_COMPACT_TRIGGER) {
+    const compacted = await compactLeadingMessages(prepared, LEAD_COMPACT_COUNT, options.onUsage);
+    prepared = compacted.messages;
+    leadCompacted = compacted.compacted;
+    leadSummaryTokens = compacted.summaryTokens;
+    if (leadCompacted) {
+      console.log(
+        `[dream-server] context compacted by count: ${originalMessages} -> ${prepared.length} messages (${LEAD_COMPACT_COUNT} leading summarized)`,
+      );
+    }
+  }
   // 裁剪后仍可能很短；只要发生过裁剪，就返回裁剪后的历史，避免原始超大消息再次发送。
-  if (!needsCompression(clipped.messages)) {
+  if (!needsCompression(prepared) && !leadCompacted) {
     return {
-      messages: clipped.messages,
-      compressed: clipped.clipped > 0,
+      messages: prepared,
+      compressed: clipped.clipped > 0 || leadCompacted,
       segments: 0,
       cached: 0,
       originalMessages,
-      estimatedTokens: estimateMessagesTokens(clipped.messages),
+      estimatedTokens: estimateMessagesTokens(prepared),
       clippedMessages: clipped.clipped,
-      summaryTokens: 0,
+      summaryTokens: leadSummaryTokens,
     };
   }
 
@@ -345,7 +407,6 @@ export async function compressContext(
     return kept;
   };
 
-  const prepared = clipped.messages;
   // 从尾部保留最近消息，直到达到 token/条数上限；至少保留最近 8 条。
   let cut = prepared.length;
   let recentTokens = 0;
@@ -412,6 +473,6 @@ export async function compressContext(
     originalMessages,
     estimatedTokens: estimateMessagesTokens(finalMessages),
     clippedMessages: clipped.clipped,
-    summaryTokens: estimateTokens(summaryBlock),
+    summaryTokens: leadSummaryTokens + estimateTokens(summaryBlock),
   };
 }
