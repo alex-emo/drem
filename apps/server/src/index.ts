@@ -16,6 +16,9 @@ import {
   COMPRESS_MESSAGE_THRESHOLD,
   COMPRESS_TOKEN_THRESHOLD,
   CONTEXT_TOKEN_LIMIT,
+  FILTER_COMPACT_COUNT,
+  LEAD_COMPACT_TRIGGER,
+  compactLeadingMessages,
   compressContext,
   needsCompression,
 } from "./context.js";
@@ -1013,7 +1016,7 @@ app.post("/api/v1/chat", async (c) => {
   }
 
   let effective = parsedWithFiles;
-  if (needsCompression(parsedWithFiles.messages)) {
+  if (needsCompression(parsedWithFiles.messages) || parsedWithFiles.messages.length > LEAD_COMPACT_TRIGGER) {
     const startedAt = Date.now();
     const compressed = await compressContext(parsedWithFiles.messages, {
       onUsage: (usage: TokenUsage | null, keyId: number) =>
@@ -1065,15 +1068,35 @@ app.post("/api/v1/chat", async (c) => {
     if (!(error instanceof ApiError && error.code === "CONTENT_FILTERED")) throw error;
 
     // Qwen 的输入安全审核会把整段历史一起判定，长对话里较早的角色扮演/敏感词
-    // 常常导致「本轮完全正常」的提问被误杀。先降级为最近 8 条，再降级为仅本轮；
-    // 当前用户消息仍会经过上游审核，不会绕过真正有害内容。
+    // 常常导致「本轮完全正常」的提问被误杀。先压前 70 条摘要，再降级最近 8 条、
+    // 最后仅本轮；当前用户消息仍会经过上游审核，不会绕过真正有害内容。
+    let lastFilterError = error;
+
+    if (effective.messages.length > FILTER_COMPACT_COUNT) {
+      try {
+        const compacted = await compactLeadingMessages(effective.messages, FILTER_COMPACT_COUNT);
+        if (compacted.compacted) {
+          opened = await openChatStream({ ...effective, messages: compacted.messages }, c.req.raw.signal);
+          console.log(
+            `[dream-server] ${requestId} content retry succeeded (compressed ${FILTER_COMPACT_COUNT} leading messages)`,
+          );
+        }
+      } catch (retryError) {
+        if (retryError instanceof ApiError && retryError.code === "CONTENT_FILTERED") {
+          lastFilterError = retryError;
+        } else {
+          throw retryError;
+        }
+      }
+    }
+
     const fallbacks = [
       { stage: "retry_recent", messages: effective.messages.slice(-8) },
       { stage: "fallback", messages: effective.messages.slice(-1) },
     ];
 
-    let lastFilterError = error;
     for (const fallback of fallbacks) {
+      if (opened) break;
       if (fallback.messages.length >= effective.messages.length) continue;
       try {
         opened = await openChatStream({ ...effective, messages: fallback.messages }, c.req.raw.signal);

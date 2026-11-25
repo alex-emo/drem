@@ -745,10 +745,7 @@ export function useChat() {
       const target = visible[index];
       if (!target || target.role !== "assistant" || !target.parentId) return;
       const question = allMessagesRef.current.find((message) => message.id === target.parentId);
-      if (question?.excludeFromContext) {
-        window.alert("该问题已被内容安全拦截，请重新编辑后再发送。");
-        return;
-      }
+      if (question?.excludeFromContext) return;
 
       const all = allMessagesRef.current;
       const path: Message[] = [];
