@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "cn.pum.dream"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler 13.x 要求 compileSdk >= 37；本机已装 android-37。
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
