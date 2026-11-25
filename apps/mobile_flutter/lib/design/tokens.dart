@@ -9,6 +9,10 @@ abstract final class DreamSpacing {
   static const double lg = 24;
   static const double xl = 32;
   static const double xxl = 48;
+
+  /// 页面水平边距：紧凑屏 20，宽屏 28（对应 01 文档布局章节）。
+  static const double pageMargin = 20;
+  static const double pageMarginWide = 28;
 }
 
 abstract final class DreamRadius {
@@ -27,11 +31,15 @@ abstract final class DreamMotion {
   static const Duration pageOut = Duration(milliseconds: 220);
   static const Duration bubble = Duration(milliseconds: 260);
   static const Duration staggerStep = Duration(milliseconds: 45);
+  static const Duration skeleton = Duration(milliseconds: 1200);
+  static const Duration cursor = Duration(milliseconds: 600);
+  static const Duration errorIn = Duration(milliseconds: 220);
 
   /// cubic-bezier(0.2, 0, 0, 1)
   static const Curve standard = Cubic(0.2, 0, 0, 1);
   static const Curve exit = Cubic(0.4, 0, 1, 1);
   static const Curve emphasized = Cubic(0.2, 0, 0, 1);
+  static const Curve skeletonCurve = Curves.easeInOut;
 }
 
 /// 品牌蓝沿用 Dream 标识；表面色是 Flutter 端自有的一套，

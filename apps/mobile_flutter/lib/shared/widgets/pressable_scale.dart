@@ -50,7 +50,8 @@ class _PressableScaleState extends State<PressableScale> {
         onTapCancel: _enabled ? () => _setPressed(false) : null,
         onTap: _enabled ? _handleTap : null,
         child: AnimatedScale(
-          scale: _pressed ? widget.pressedScale : 1,
+          // 减少动效时缩放直接归 1，只保留状态突变，不做按压位移。
+          scale: reduceMotion ? 1.0 : (_pressed ? widget.pressedScale : 1.0),
           duration: reduceMotion ? Duration.zero : DreamMotion.press,
           curve: DreamMotion.standard,
           child: widget.child,

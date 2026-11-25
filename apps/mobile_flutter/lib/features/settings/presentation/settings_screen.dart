@@ -5,10 +5,25 @@ import 'package:material_ui/material_ui.dart';
 import '../../../app/theme_controller.dart';
 import '../../../design/dream_theme.dart';
 import '../../../design/tokens.dart';
-import '../../../shared/widgets/pressable_scale.dart';
+
+/// 与 `pubspec.yaml` 的 `version: 1.7.12+35` 对齐；接入构建注入后再统一替换。
+const String kAppVersion = '1.7.12 (35)';
+
+/// 当前重写分支，关于区可复制。
+const String kBuildBranch = 'feat/flutter-mobile-rewrite';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  Future<void> _copyBranch(BuildContext context) async {
+    await Clipboard.setData(const ClipboardData(text: kBuildBranch));
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('已复制分支名')));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,78 +39,79 @@ class SettingsScreen extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
             children: [
+              // 外观
               const _SectionLabel('外观'),
-              Text('主题', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 6),
+              Text('主题', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 4),
               Text(
                 '跟随系统，或固定为浅色 / 深色。',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: palette.textTertiary,
                 ),
               ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _ThemeChoice(
-                      icon: Icons.brightness_auto_rounded,
-                      label: '系统',
-                      selected: controller.mode == ThemeMode.system,
-                      onTap: () => controller.setMode(ThemeMode.system),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _ThemeChoice(
-                      icon: Icons.light_mode_rounded,
-                      label: '浅色',
-                      selected: controller.mode == ThemeMode.light,
-                      onTap: () => controller.setMode(ThemeMode.light),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _ThemeChoice(
-                      icon: Icons.dark_mode_rounded,
-                      label: '深色',
-                      selected: controller.mode == ThemeMode.dark,
-                      onTap: () => controller.setMode(ThemeMode.dark),
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 12),
+              _ThemeSegmented(
+                mode: controller.mode,
+                onChanged: controller.setMode,
               ),
-              const SizedBox(height: 32),
+
+              const _GroupDivider(),
+
+              // 体验
               const _SectionLabel('体验'),
               _SettingsRow(
-                icon: Icons.animation_rounded,
                 title: '界面与动效',
                 subtitle: '按压、气泡、弹层与错误态',
                 onTap: () => context.push('/motion'),
               ),
               Divider(color: palette.border),
-              const SizedBox(height: 32),
+
+              const _GroupDivider(),
+
+              // 关于
               const _SectionLabel('关于'),
               _SettingsRow(
-                icon: Icons.info_outline_rounded,
                 title: '版本',
                 trailing: Text(
-                  '1.7.12 (35)',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: palette.textTertiary,
+                  kAppVersion,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: palette.textSecondary,
                   ),
                 ),
               ),
               Divider(color: palette.border),
               _SettingsRow(
-                icon: Icons.description_outlined,
+                title: '重构分支',
+                onTap: () => _copyBranch(context),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      kBuildBranch,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.copy_rounded,
+                      size: 16,
+                      color: palette.textTertiary,
+                    ),
+                  ],
+                ),
+              ),
+              Divider(color: palette.border),
+              _SettingsRow(
                 title: '开源许可',
                 onTap: () => showLicensePage(
                   context: context,
                   applicationName: 'Dream',
-                  applicationVersion: '1.7.12 (35)',
+                  applicationVersion: kAppVersion,
                 ),
               ),
               Divider(color: palette.border),
+
               const SizedBox(height: 24),
               Text(
                 'Dream Mobile · Flutter',
@@ -132,61 +148,122 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _ThemeChoice extends StatelessWidget {
-  const _ThemeChoice({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+/// 分组之间的 1px 结构线 + 上下留白。
+class _GroupDivider extends StatelessWidget {
+  const _GroupDivider();
 
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final palette = Theme.of(context).extension<DreamPalette>()!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: DreamSpacing.lg),
+      child: Container(height: 1, color: palette.border),
+    );
+  }
+}
+
+/// 三档主题 segmented 控件：当前值高亮 brandSoft，改动立即生效并持久化。
+class _ThemeSegmented extends StatelessWidget {
+  const _ThemeSegmented({required this.mode, required this.onChanged});
+
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final palette = theme.extension<DreamPalette>()!;
-    return PressableScale(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: AnimatedContainer(
-        duration: DreamMotion.fast,
-        curve: DreamMotion.standard,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: selected ? palette.brandSoft : Colors.transparent,
-          borderRadius: BorderRadius.circular(DreamRadius.md),
-          border: Border.all(
-            color: selected
-                ? theme.colorScheme.primary.withValues(alpha: 0.5)
-                : palette.border,
+    final reduce = MediaQuery.disableAnimationsOf(context);
+
+    return Container(
+      padding: const EdgeInsets.all(DreamSpacing.xxs),
+      decoration: BoxDecoration(
+        color: palette.sidebar,
+        borderRadius: BorderRadius.circular(DreamRadius.md),
+        border: Border.all(color: palette.border),
+      ),
+      child: Row(
+        children: [
+          _segment(
+            context,
+            value: ThemeMode.system,
+            icon: Icons.brightness_auto_rounded,
+            label: '系统',
+            reduce: reduce,
           ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: selected
-                  ? theme.colorScheme.primary
-                  : palette.textSecondary,
+          const SizedBox(width: DreamSpacing.xxs),
+          _segment(
+            context,
+            value: ThemeMode.dark,
+            icon: Icons.dark_mode_rounded,
+            label: '深色',
+            reduce: reduce,
+          ),
+          const SizedBox(width: DreamSpacing.xxs),
+          _segment(
+            context,
+            value: ThemeMode.light,
+            icon: Icons.light_mode_rounded,
+            label: '浅色',
+            reduce: reduce,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment(
+    BuildContext context, {
+    required ThemeMode value,
+    required IconData icon,
+    required String label,
+    required bool reduce,
+  }) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<DreamPalette>()!;
+    final selected = mode == value;
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onChanged(value);
+          },
+          child: AnimatedContainer(
+            duration: reduce ? Duration.zero : DreamMotion.fast,
+            curve: DreamMotion.standard,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? palette.brandSoft : Colors.transparent,
+              borderRadius: BorderRadius.circular(DreamRadius.sm),
             ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: selected
-                    ? theme.colorScheme.primary
-                    : palette.textSecondary,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : palette.textSecondary,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? theme.colorScheme.primary
+                        : palette.textSecondary,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -196,14 +273,12 @@ class _ThemeChoice extends StatelessWidget {
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     required this.title,
-    this.icon,
     this.subtitle,
     this.trailing,
     this.onTap,
   });
 
   final String title;
-  final IconData? icon;
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
@@ -219,15 +294,11 @@ class _SettingsRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
         child: Row(
           children: [
-            if (icon != null) ...[
-              Icon(icon, size: 20, color: palette.textSecondary),
-              const SizedBox(width: 14),
-            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: theme.textTheme.bodyLarge),
+                  Text(title, style: theme.textTheme.labelLarge),
                   if (subtitle != null) ...[
                     const SizedBox(height: 3),
                     Text(

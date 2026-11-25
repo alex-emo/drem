@@ -96,6 +96,7 @@ class MessageBubble extends StatelessWidget {
     this.entrance = false,
     this.isStreaming = false,
     this.errorText,
+    this.onRetry,            // 错误横幅重试回调（isError 时必需）
   });
 }
 ```
@@ -103,10 +104,17 @@ class MessageBubble extends StatelessWidget {
 ### ChatEmptyState（`lib/features/chat/widgets/empty_state.dart`）
 
 ```dart
+class PromptSuggestion {
+  const PromptSuggestion({required this.title, required this.subtitle, required this.fill});
+  final String title;
+  final String subtitle;
+  final String fill;
+}
+
 class ChatEmptyState extends StatelessWidget {
   const ChatEmptyState({super.key, required this.prompts, required this.onPromptTap});
-  final List<String> prompts;            // 最多 4 条
-  final ValueChanged<String> onPromptTap;
+  final List<PromptSuggestion> prompts;  // 最多 4 条
+  final ValueChanged<String> onPromptTap; // 回调收到 fill 文本
 }
 ```
 
@@ -124,8 +132,9 @@ class ChatEmptyState extends StatelessWidget {
 ## 5. 主题约定
 
 - feature 层禁止 `Color(0x...)`、`TextStyle(fontSize: ...)` 硬编码。
-- 一律经 `Theme.of(context)` / `DreamPalette.of(context)` 取。
+- 一律经 `Theme.of(context)` / `context.dreamPalette` 扩展（`lib/design/context_extension.dart` 的 `DreamContext`，等价 `Theme.of(this).extension<DreamPalette>()!`）取。
 - 间距/圆角/动效走 `lib/design/tokens.dart`。
+- 说明：material_ui 的 `TextField` 无 `semanticsLabel` 参数，用外层 `Semantics(textField: true, label: '消息输入框')` 等价实现。
 
 ## 6. 验收（每个任务）
 

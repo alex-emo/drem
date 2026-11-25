@@ -17,8 +17,10 @@
 | 页面进入 | 280ms | `cubic(0.2,0,0,1)` |
 | 页面退出 | 220ms | `cubic(0.4,0,1,1)` |
 | 气泡进入 | 260ms | `cubic(0.2,0,0,1)` |
-| 主题切换 | 280ms | linear |
+| 主题切换 | 280ms | linear（实现用 DreamMotion.standard，见下方 token 表） |
 | 骨架闪烁 | 1200ms 循环 | easeInOut |
+| 流式光标呼吸 | 600ms 循环 | linear |
+| 错误横幅淡入 | 220ms | `cubic(0.2,0,0,1)` |
 
 标准曲线 token：`DreamMotion.standard = cubic(0.2,0,0,1)`。
 
