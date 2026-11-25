@@ -52,8 +52,10 @@ class _PressableScaleState extends State<PressableScale> {
         child: AnimatedScale(
           // 减少动效时缩放直接归 1，只保留状态突变，不做按压位移。
           scale: reduceMotion ? 1.0 : (_pressed ? widget.pressedScale : 1.0),
-          duration: reduceMotion ? Duration.zero : DreamMotion.press,
-          curve: DreamMotion.standard,
+          duration: reduceMotion
+              ? Duration.zero
+              : (_pressed ? DreamMotion.pressIn : DreamMotion.pressOut),
+          curve: Curves.easeOut,
           child: widget.child,
         ),
       ),

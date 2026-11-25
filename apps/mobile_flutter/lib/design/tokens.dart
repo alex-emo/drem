@@ -26,6 +26,10 @@ abstract final class DreamRadius {
 /// 动效基线：120–320ms，统一使用标准曲线；系统开启“减少动效”时全部降级为 0。
 abstract final class DreamMotion {
   static const Duration press = Duration(milliseconds: 120);
+
+  /// 按下要跟手、回弹要柔和：进入 90ms，恢复 180ms。
+  static const Duration pressIn = Duration(milliseconds: 90);
+  static const Duration pressOut = Duration(milliseconds: 180);
   static const Duration fast = Duration(milliseconds: 180);
   static const Duration page = Duration(milliseconds: 280);
   static const Duration pageOut = Duration(milliseconds: 220);

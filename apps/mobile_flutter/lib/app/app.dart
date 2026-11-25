@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../design/dream_theme.dart';
+import '../design/dream_scroll_physics.dart';
 import '../design/tokens.dart';
 import '../shared/widgets/dream_mark.dart';
 import 'app_scope.dart';
@@ -126,6 +127,7 @@ class _DreamAppState extends State<DreamApp> {
           themeMode: _themeController.mode,
           themeAnimationDuration: DreamMotion.page,
           themeAnimationCurve: DreamMotion.standard,
+          scrollBehavior: const DreamScrollBehavior(),
           routerConfig: _router,
           builder: _appBuilder,
         ),
@@ -147,6 +149,7 @@ class _DreamAppState extends State<DreamApp> {
               themeMode: _themeController.mode,
               themeAnimationDuration: DreamMotion.page,
               themeAnimationCurve: DreamMotion.standard,
+              scrollBehavior: const DreamScrollBehavior(),
               routerConfig: _router,
               builder: _appBuilder,
             );
@@ -159,6 +162,7 @@ class _DreamAppState extends State<DreamApp> {
             themeMode: _themeController.mode,
             themeAnimationDuration: DreamMotion.page,
             themeAnimationCurve: DreamMotion.standard,
+            scrollBehavior: const DreamScrollBehavior(),
             home: session.status == AuthStatus.anonymous
                 ? LoginScreen(controller: session)
                 : _BootScreen(

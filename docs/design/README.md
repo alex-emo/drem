@@ -15,7 +15,9 @@
 3. [02-motion-and-interaction.md](02-motion-and-interaction.md)：时长、曲线、触感、减少动效
 4. [03-component-contracts.md](03-component-contracts.md)：组件 API、状态、文件边界
 5. [04-subagent-plan.md](04-subagent-plan.md)：子代理任务拆分与验收
-6. 组件规格：
+6. [05-motion-details.md](05-motion-details.md)：滚动物理、手势阈值、原文摘录与参数决策
+7. [06-design-criteria.md](06-design-criteria.md)：简约大方 / 廉价 / 直觉交互 / 非人交互的可操作定义与复核清单
+8. 组件规格：
    - [components/chat-shell.md](components/chat-shell.md)
    - [components/composer.md](components/composer.md)
    - [components/message-list.md](components/message-list.md)

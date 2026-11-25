@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../core/models.dart';
+import '../../../design/dream_scroll_physics.dart';
 import 'message_bubble.dart';
 
 /// 消息列表：`ListView.builder`，底部 padding，新消息在底；
@@ -19,6 +20,7 @@ class MessageList extends StatelessWidget {
     this.onEdit,
     this.onRegenerate,
     this.onVersionSelect,
+    this.controller,
   });
 
   final List<Message> messages;
@@ -28,17 +30,23 @@ class MessageList extends StatelessWidget {
   final ValueChanged<String>? onEdit;
   final ValueChanged<String>? onRegenerate;
   final ValueChanged<String>? onVersionSelect;
+  final ScrollController? controller;
 
   @override
   Widget build(BuildContext context) {
     if (messages.isEmpty && empty != null) {
       return empty!;
     }
-    return ListView.builder(
-      padding: EdgeInsets.only(bottom: bottomPadding),
-      itemCount: messages.length,
-      itemBuilder: (context, index) =>
-          RepaintBoundary(child: _buildItem(context, messages[index])),
+    return _OverscrollHaptics(
+      child: ListView.builder(
+        controller: controller,
+        physics: dreamScrollPhysics,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.only(bottom: bottomPadding),
+        itemCount: messages.length,
+        itemBuilder: (context, index) =>
+            RepaintBoundary(child: _buildItem(context, messages[index])),
+      ),
     );
   }
 
@@ -105,6 +113,7 @@ class MessageList extends StatelessWidget {
     required bool canEdit,
     required bool canRegenerate,
   }) {
+    HapticFeedback.mediumImpact();
     showModalBottomSheet<void>(
       context: context,
       builder: (context) {
@@ -142,6 +151,38 @@ class MessageList extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 顶部越界时给一次轻触，不按帧触发；一次手势最多一次。
+class _OverscrollHaptics extends StatefulWidget {
+  const _OverscrollHaptics({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_OverscrollHaptics> createState() => _OverscrollHapticsState();
+}
+
+class _OverscrollHapticsState extends State<_OverscrollHaptics> {
+  bool _fired = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollStartNotification) {
+          _fired = false;
+        } else if (notification is OverscrollNotification &&
+            notification.overscroll < 0 &&
+            !_fired) {
+          _fired = true;
+          HapticFeedback.selectionClick();
+        }
+        return false;
+      },
+      child: widget.child,
     );
   }
 }
