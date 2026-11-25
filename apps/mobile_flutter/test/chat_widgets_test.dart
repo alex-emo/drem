@@ -1,5 +1,5 @@
+import 'package:dream/core/models.dart';
 import 'package:dream/design/dream_theme.dart';
-import 'package:dream/features/chat/widgets/chat_message.dart';
 import 'package:dream/features/chat/widgets/composer.dart';
 import 'package:dream/features/chat/widgets/message_bubble.dart';
 import 'package:dream/features/chat/widgets/message_list.dart';
@@ -109,18 +109,16 @@ void main() {
       expect(field.controller!.text, isEmpty);
     });
 
-    testWidgets('附件按钮为 P1 占位：调用 onAttach 并提示', (tester) async {
+    testWidgets('附件按钮触发 onAttach', (tester) async {
       var attached = 0;
       await tester.pumpWidget(
         wrap(_ComposerHarness(onAttach: () => attached++)),
       );
 
       await tester.tap(attachButton());
-      await tester.pump(); // SnackBar 入队
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
 
       expect(attached, 1);
-      expect(find.text('附件将在 P1 接入'), findsOneWidget);
     });
   });
 
@@ -233,16 +231,18 @@ void main() {
 
     testWidgets('有消息时渲染气泡', (tester) async {
       final messages = [
-        ChatMessage(
+        Message(
           id: '1',
+          conversationId: 'c1',
           role: ChatRole.user,
-          text: '你好',
+          content: '你好',
           createdAt: DateTime(2025, 1, 1),
         ),
-        ChatMessage(
+        Message(
           id: '2',
+          conversationId: 'c1',
           role: ChatRole.assistant,
-          text: '嗨',
+          content: '嗨',
           createdAt: DateTime(2025, 1, 1, 0, 0, 1),
         ),
       ];

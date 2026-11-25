@@ -100,7 +100,7 @@ class _EmptyStateBodyState extends State<_EmptyStateBody>
                 index: 0,
                 enabled: !reduceMotion,
                 child: Text(
-                  '从一个问题开始。',
+                  '今天想问 Dream 什么？',
                   style: compact
                       ? theme.textTheme.displaySmall?.copyWith(fontSize: 30)
                       : theme.textTheme.displaySmall,
@@ -112,7 +112,7 @@ class _EmptyStateBodyState extends State<_EmptyStateBody>
                 index: 1,
                 enabled: !reduceMotion,
                 child: Text(
-                  '写下你的问题，Dream 会陪你把它想清楚。',
+                  '从一个问题开始。',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: palette.textSecondary,
                   ),

@@ -6,6 +6,8 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用于语音输入转文字</string>
 	<key>CFBundleDisplayName</key>
 	<string>Dream</string>
 	<key>CFBundleExecutable</key>

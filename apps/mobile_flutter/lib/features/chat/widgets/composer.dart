@@ -16,6 +16,7 @@ class Composer extends StatefulWidget {
     required this.onAttach,
     this.onFocusChanged,
     this.hintText = '给 Dream 发送消息',
+    this.trailing,
   });
 
   final TextEditingController controller;
@@ -25,6 +26,9 @@ class Composer extends StatefulWidget {
   final VoidCallback onAttach;
   final ValueChanged<bool>? onFocusChanged;
   final String hintText;
+
+  /// 输入框右侧、发送按钮之前的可选控件（如语音输入）。
+  final Widget? trailing;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -79,9 +83,6 @@ class _ComposerState extends State<Composer> {
   void _handleAttach() {
     HapticFeedback.selectionClick();
     widget.onAttach();
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('附件将在 P1 接入')));
   }
 
   @override
@@ -149,6 +150,7 @@ class _ComposerState extends State<Composer> {
                 ),
               ),
             ),
+            if (widget.trailing != null) widget.trailing!,
             IconButton(
               tooltip: '发送',
               onPressed: widget.canSend ? _handleSend : null,

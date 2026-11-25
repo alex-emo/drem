@@ -1,18 +1,19 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../design/context_extension.dart';
 import '../../../design/dream_theme.dart';
 import '../../../design/tokens.dart';
+import 'markdown/dream_markdown.dart';
 
 /// 单条消息气泡。
 ///
 /// - 用户：右对齐、气泡底 `DreamPalette.bubbleUser`、圆角 md、max 宽 78%。
-/// - 助手：左对齐、无气泡底、正文 bodyLarge。
-/// - `isStreaming`：末尾 1.5pt brand 竖条呼吸光标（600ms）。
+/// - 助手：左对齐、无气泡底。
+/// - `isStreaming`：正文末尾 1.5pt brand 竖条呼吸光标（600ms）。
+/// - `reasoning`：思考过程块（仅助手），流式时显示「思考中」。
 /// - `errorText != null`：气泡下方错误横幅（danger）+ 重试按钮（220ms 淡入）。
+/// - `versionCount > 1`：版本切换器 `‹ 1/2 ›`。
 /// - `entrance`：260ms 进入动画（淡入 + 6pt 上移）；减少动效直接到位。
-///
-/// 注意：`onRetry` 为 03 冻结 API 之外的补充参数（错误横幅的重试按钮需要回调），
-/// 已通知 Lead，待其回填 03 契约。
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
     super.key,
@@ -22,6 +23,11 @@ class MessageBubble extends StatelessWidget {
     this.isStreaming = false,
     this.errorText,
     this.onRetry,
+    this.reasoning,
+    this.versionIndex,
+    this.versionCount,
+    this.onPrevVersion,
+    this.onNextVersion,
   });
 
   final String text;
@@ -30,31 +36,32 @@ class MessageBubble extends StatelessWidget {
   final bool isStreaming;
   final String? errorText;
   final VoidCallback? onRetry;
+  final String? reasoning;
+  final int? versionIndex;
+  final int? versionCount;
+  final VoidCallback? onPrevVersion;
+  final VoidCallback? onNextVersion;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final palette = theme.extension<DreamPalette>()!;
+    final palette = context.dreamPalette;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final cursorHeight = theme.textTheme.bodyLarge?.fontSize ?? 16;
+    final showReasoning = reasoning != null && reasoning!.isNotEmpty;
+    final showVersions =
+        versionCount != null && versionCount! > 1 && versionIndex != null;
 
-    final textWidget = Text.rich(
-      TextSpan(
-        style: theme.textTheme.bodyLarge?.copyWith(color: palette.textPrimary),
-        children: [
-          TextSpan(text: text),
-          if (isStreaming)
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: _StreamingCursor(
-                color: theme.colorScheme.primary,
-                height: cursorHeight,
-                animate: !reduceMotion,
-              ),
-            ),
-        ],
-      ),
+    final textWidget = DreamMarkdown(
+      text: text,
+      isUser: isUser,
+      trailing: isStreaming
+          ? _StreamingCursor(
+              color: theme.colorScheme.primary,
+              height: cursorHeight,
+              animate: !reduceMotion,
+            )
+          : null,
     );
 
     final bubble = isUser
@@ -89,7 +96,24 @@ class MessageBubble extends StatelessWidget {
                 ? CrossAxisAlignment.end
                 : CrossAxisAlignment.start,
             children: [
+              if (showReasoning && !isUser)
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+                  child: _ThinkingBlock(
+                    text: reasoning!,
+                    isStreaming: isStreaming,
+                    palette: palette,
+                  ),
+                ),
               body,
+              if (showVersions)
+                _VersionSwitcher(
+                  index: versionIndex!,
+                  count: versionCount!,
+                  onPrev: onPrevVersion,
+                  onNext: onNextVersion,
+                  palette: palette,
+                ),
               if (errorText != null)
                 ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxBubbleWidth),
@@ -128,6 +152,117 @@ class MessageBubble extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// 思考过程块：流式时显示「思考中」，结束后显示「思考过程」。
+class _ThinkingBlock extends StatelessWidget {
+  const _ThinkingBlock({
+    required this.text,
+    required this.isStreaming,
+    required this.palette,
+  });
+
+  final String text;
+  final bool isStreaming;
+  final DreamPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: DreamSpacing.xs),
+      padding: const EdgeInsets.all(DreamSpacing.sm),
+      decoration: BoxDecoration(
+        color: palette.code,
+        borderRadius: BorderRadius.circular(DreamRadius.sm),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.psychology_outlined,
+                size: 14,
+                color: palette.textTertiary,
+              ),
+              const SizedBox(width: DreamSpacing.xxs),
+              Text(
+                isStreaming ? '思考中' : '思考过程',
+                style: TextStyle(color: palette.textTertiary, fontSize: 11),
+              ),
+            ],
+          ),
+          const SizedBox(height: DreamSpacing.xxs),
+          Text(
+            text,
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 版本切换器：`‹ 1/2 ›`。
+class _VersionSwitcher extends StatelessWidget {
+  const _VersionSwitcher({
+    required this.index,
+    required this.count,
+    required this.palette,
+    this.onPrev,
+    this.onNext,
+  });
+
+  final int index;
+  final int count;
+  final DreamPalette palette;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: DreamSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+        horizontal: DreamSpacing.xxs,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: palette.code,
+        borderRadius: BorderRadius.circular(DreamRadius.sm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: '上一个版本',
+            visualDensity: VisualDensity.compact,
+            iconSize: 16,
+            color: palette.textSecondary,
+            icon: const Icon(Icons.chevron_left_rounded),
+            onPressed: onPrev,
+          ),
+          Text(
+            '${index + 1}/$count',
+            style: TextStyle(color: palette.textSecondary, fontSize: 12),
+          ),
+          IconButton(
+            tooltip: '下一个版本',
+            visualDensity: VisualDensity.compact,
+            iconSize: 16,
+            color: palette.textSecondary,
+            icon: const Icon(Icons.chevron_right_rounded),
+            onPressed: onNext,
+          ),
+        ],
       ),
     );
   }
