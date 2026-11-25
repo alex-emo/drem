@@ -712,11 +712,35 @@ class _ModeChip extends StatelessWidget {
   }
 }
 
-class _ConversationDrawer extends StatelessWidget {
+class _ConversationDrawer extends StatefulWidget {
   const _ConversationDrawer({required this.chat, required this.onSettings});
 
   final ChatController chat;
   final VoidCallback onSettings;
+
+  @override
+  State<_ConversationDrawer> createState() => _ConversationDrawerState();
+}
+
+class _ConversationDrawerState extends State<_ConversationDrawer> {
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      setState(() => _query = value.trim().toLowerCase());
+    });
+  }
 
   Future<bool> _confirmDelete(BuildContext context) async {
     final ok = await showDialog<bool>(
@@ -751,9 +775,15 @@ class _ConversationDrawer extends StatelessWidget {
       ),
       child: SafeArea(
         child: ListenableBuilder(
-          listenable: chat,
+          listenable: widget.chat,
           builder: (context, _) {
-            final items = chat.conversations;
+            final items = _query.isEmpty
+                ? widget.chat.conversations
+                : widget.chat.conversations
+                      .where(
+                        (item) => item.title.toLowerCase().contains(_query),
+                      )
+                      .toList();
             return Column(
               children: [
                 Padding(
@@ -771,13 +801,63 @@ class _ConversationDrawer extends StatelessWidget {
                     ],
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    DreamSpacing.pageMargin,
+                    0,
+                    DreamSpacing.pageMargin,
+                    DreamSpacing.sm,
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    style: theme.textTheme.bodyMedium,
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: '搜索会话',
+                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                        color: palette.textTertiary,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        size: 18,
+                        color: palette.textTertiary,
+                      ),
+                      prefixIconConstraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                      filled: true,
+                      fillColor: palette.composer,
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 10,
+                        horizontal: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DreamRadius.md),
+                        borderSide: BorderSide(color: palette.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DreamRadius.md),
+                        borderSide: BorderSide(color: palette.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DreamRadius.md),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
                 ListTile(
                   leading: const Icon(Icons.add_rounded, size: 20),
                   title: const Text('新对话'),
                   dense: true,
                   onTap: () {
                     Navigator.of(context).pop();
-                    chat.newConversation();
+                    widget.chat.newConversation();
                   },
                 ),
                 Divider(height: 1, color: palette.border),
@@ -786,7 +866,7 @@ class _ConversationDrawer extends StatelessWidget {
                       ? Padding(
                           padding: const EdgeInsets.all(DreamSpacing.lg),
                           child: Text(
-                            '还没有会话',
+                            _query.isEmpty ? '还没有会话' : '没有匹配的会话',
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: palette.textTertiary,
                             ),
@@ -802,7 +882,7 @@ class _ConversationDrawer extends StatelessWidget {
                               direction: DismissDirection.endToStart,
                               confirmDismiss: (_) => _confirmDelete(context),
                               onDismissed: (_) =>
-                                  chat.removeConversation(item.id),
+                                  widget.chat.removeConversation(item.id),
                               background: Container(
                                 color: theme.colorScheme.error.withValues(
                                   alpha: 0.16,
@@ -818,7 +898,7 @@ class _ConversationDrawer extends StatelessWidget {
                               ),
                               child: ListTile(
                                 dense: true,
-                                selected: item.id == chat.activeId,
+                                selected: item.id == widget.chat.activeId,
                                 selectedTileColor: palette.brandSoft,
                                 title: Text(
                                   item.title.isEmpty ? '未命名会话' : item.title,
@@ -827,7 +907,7 @@ class _ConversationDrawer extends StatelessWidget {
                                 ),
                                 onTap: () {
                                   Navigator.of(context).pop();
-                                  chat.openConversation(item.id);
+                                  widget.chat.openConversation(item.id);
                                 },
                               ),
                             );
@@ -841,7 +921,7 @@ class _ConversationDrawer extends StatelessWidget {
                   dense: true,
                   onTap: () {
                     Navigator.of(context).pop();
-                    onSettings();
+                    widget.onSettings();
                   },
                 ),
               ],
