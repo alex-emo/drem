@@ -76,5 +76,5 @@ abstract final class DreamColors {
 
   static const Color lightTextPrimary = Color(0xFF141416);
   static const Color lightTextSecondary = Color(0xFF575A61);
-  static const Color lightTextTertiary = Color(0xFF858992);
+  static const Color lightTextTertiary = Color(0xFF6C7079);
 }

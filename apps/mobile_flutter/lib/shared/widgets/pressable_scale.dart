@@ -43,6 +43,8 @@ class _PressableScaleState extends State<PressableScale> {
     return Semantics(
       button: _enabled,
       enabled: _enabled,
+      // GestureDetector 不产生无障碍动作；显式补 onTap，读屏才能激活。
+      onTap: _enabled ? _handleTap : null,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: _enabled ? (_) => _setPressed(true) : null,

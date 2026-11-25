@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../core/models.dart';
 import '../../../design/dream_scroll_physics.dart';
+import 'day_divider.dart';
 import 'message_bubble.dart';
 
 /// 消息列表：`ListView.builder`，底部 padding，新消息在底；
@@ -45,12 +46,14 @@ class MessageList extends StatelessWidget {
         padding: EdgeInsets.only(bottom: bottomPadding),
         itemCount: messages.length,
         itemBuilder: (context, index) =>
-            RepaintBoundary(child: _buildItem(context, messages[index])),
+            RepaintBoundary(child: _buildItem(context, index)),
       ),
     );
   }
 
-  Widget _buildItem(BuildContext context, Message message) {
+  Widget _buildItem(BuildContext context, int index) {
+    final message = messages[index];
+    final previous = index > 0 ? messages[index - 1] : null;
     final version = versions?[message.id];
     final vIndex = version?.index;
     final vCount = version?.ids.length ?? 1;
@@ -100,11 +103,33 @@ class MessageList extends StatelessWidget {
           )
         : bubble;
 
+    final showDivider =
+        previous != null && !_isSameDay(previous.createdAt, message.createdAt);
+    final content = showDivider
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DayDivider(
+                label: dayAnchorLabel(message.createdAt, now: DateTime.now()),
+              ),
+              row,
+            ],
+          )
+        : row;
+
     // 阅读边距：正文不贴屏幕边缘。
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: row,
+      child: content,
     );
+  }
+
+  static bool _isSameDay(DateTime a, DateTime b) {
+    final localA = a.toLocal();
+    final localB = b.toLocal();
+    return localA.year == localB.year &&
+        localA.month == localB.month &&
+        localA.day == localB.day;
   }
 
   void _showActions(

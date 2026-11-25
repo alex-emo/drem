@@ -371,7 +371,9 @@ class _ErrorBanner extends StatelessWidget {
               foregroundColor: danger,
               disabledForegroundColor: danger.withValues(alpha: 0.5),
               visualDensity: VisualDensity.compact,
-              minimumSize: const Size(44, 36),
+              // 44×44 起（omd:feel 命中区下限）；错误横幅本身矮，靠
+              // tapTargetSize 之外的显式高度保证可点。
+              minimumSize: const Size(44, 44),
               padding: const EdgeInsets.symmetric(horizontal: DreamSpacing.xs),
             ),
             child: const Text('重试'),

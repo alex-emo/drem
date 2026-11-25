@@ -16,6 +16,7 @@ import '../../attach/attach_controller.dart';
 import '../../attach/widgets/attach_panel.dart';
 import '../../voice/voice_controller.dart';
 import '../chat_controller.dart';
+import '../widgets/chat_header.dart';
 import '../widgets/composer.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/message_list.dart';
@@ -39,8 +40,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _canSend = false;
   bool _stickToBottom = true;
   bool _showJumpToBottom = false;
-  bool _showGestureHint = false;
-  Timer? _gestureHintTimer;
   AttachController? _attachController;
   VoiceController? _voiceController;
   bool _webSearch = false;
@@ -82,7 +81,6 @@ class _ChatScreenState extends State<ChatScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         chat.load();
         _maybeShowAnnouncement();
-        _maybeShowGestureHint();
       });
     }
   }
@@ -119,21 +117,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// 首次进入给一次手势提示，不遮屏、不阻塞；显示过就永久记住。
-  Future<void> _maybeShowGestureHint() async {
-    if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('dream-gesture-hint-seen') ?? false) return;
-    if (!mounted) return;
-    setState(() => _showGestureHint = true);
-    _gestureHintTimer?.cancel();
-    _gestureHintTimer = Timer(const Duration(seconds: 4), () async {
-      if (!mounted) return;
-      setState(() => _showGestureHint = false);
-      await prefs.setBool('dream-gesture-hint-seen', true);
-    });
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -151,7 +134,6 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _attachController?.dispose();
     _voiceController?.dispose();
-    _gestureHintTimer?.cancel();
     _controller.removeListener(_syncCanSend);
     _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
@@ -257,6 +239,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _fillFromVoice(String text) {
+    final previous = _controller.value;
     final existing = _controller.text.trim();
     final merged = existing.isEmpty ? text : '$existing $text';
     _controller.value = TextEditingValue(
@@ -264,15 +247,33 @@ class _ChatScreenState extends State<ChatScreen> {
       selection: TextSelection.collapsed(offset: merged.length),
     );
     _focusNode.requestFocus();
+    // 转写结果不自动发送；给 5 秒撤销窗口（0006 §4.4）。
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('已转写'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: '撤销',
+            onPressed: () {
+              if (mounted) _controller.value = previous;
+            },
+          ),
+        ),
+      );
   }
 
-  Future<void> _startVoiceHold() async {
+  /// 开始录音；返回是否真的开始（供输入区决定是否进入聆听态）。
+  Future<bool> _startVoiceHold() async {
     final voice = _voiceController;
-    if (voice == null || _chat?.streaming == true) return;
+    if (voice == null || _chat?.streaming == true) return false;
     try {
       await voice.startRecording();
+      return true;
     } catch (error) {
       if (mounted) _showError('无法开始录音：$error');
+      return false;
     }
   }
 
@@ -283,15 +284,46 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _finishVoice(VoiceController voice, bool cancel) async {
+    String? path;
     try {
-      final path = await voice.stopRecording();
+      path = await voice.stopRecording();
       if (cancel || path == null) return;
+      await _transcribe(voice, path);
+    } catch (error) {
+      if (mounted) _showVoiceFailure(error, path);
+    }
+  }
+
+  Future<void> _transcribe(VoiceController voice, String path) async {
+    try {
       final text = await voice.transcribeFile(path);
-      if (!mounted || text.trim().isEmpty) return;
+      if (!mounted) return;
+      if (text.trim().isEmpty) {
+        _showError('没听清，请再说一次');
+        return;
+      }
       _fillFromVoice(text);
     } catch (error) {
-      if (mounted) _showError('语音转写失败：$error');
+      if (mounted) _showVoiceFailure(error, path);
     }
+  }
+
+  /// 转写失败不静默：有音频文件时给「重试」，否则只报错。
+  void _showVoiceFailure(Object error, String? path) {
+    final voice = _voiceController;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('语音转写失败：$error'),
+          action: path != null && voice != null
+              ? SnackBarAction(
+                  label: '重试',
+                  onPressed: () => unawaited(_transcribe(voice, path)),
+                )
+              : null,
+        ),
+      );
   }
 
   void _showError(String message) {
@@ -383,12 +415,17 @@ class _ChatScreenState extends State<ChatScreen> {
               constraints: const BoxConstraints(maxWidth: 780),
               child: Column(
                 children: [
-                  _ChatHeader(
-                    onSettings: chat == null
-                        ? () => context.push('/settings')
-                        : null,
+                  Builder(
+                    builder: (headerContext) => ChatHeader(
+                      onMenu: chat == null
+                          ? null
+                          : () => Scaffold.of(headerContext).openDrawer(),
+                      onNewChat: chat?.newConversation,
+                      onSettings: chat == null
+                          ? () => context.push('/settings')
+                          : null,
+                    ),
                   ),
-                  if (_showGestureHint) const _GestureHint(),
                   Expanded(
                     child: Stack(
                       children: [
@@ -409,9 +446,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             right: 0,
                             bottom: DreamSpacing.sm,
                             child: Center(
-                              child: _JumpToBottomButton(
-                                onTap: _jumpToBottom,
-                              ),
+                              child: _JumpToBottomButton(onTap: _jumpToBottom),
                             ),
                           ),
                       ],
@@ -608,88 +643,6 @@ class _AttachedBar extends StatelessWidget {
   }
 }
 
-class _GestureHint extends StatelessWidget {
-  const _GestureHint();
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.dreamPalette;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        DreamSpacing.pageMargin,
-        0,
-        DreamSpacing.pageMargin,
-        DreamSpacing.xs,
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.swipe_left_alt_rounded,
-            size: 15,
-            color: palette.textTertiary,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '左滑看会话 · 长按说话',
-            style: TextStyle(
-              fontSize: 12,
-              color: palette.textTertiary,
-              height: 1.2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChatHeader extends StatelessWidget {
-  const _ChatHeader({this.onSettings});
-
-  final VoidCallback? onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = context.dreamPalette;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        DreamSpacing.pageMargin,
-        DreamSpacing.sm,
-        DreamSpacing.pageMargin,
-        DreamSpacing.xs,
-      ),
-      child: Row(
-        children: [
-          const DreamMark(size: 24),
-          const SizedBox(width: DreamSpacing.sm),
-          Text(
-            'Dream',
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: palette.textPrimary,
-            ),
-          ),
-          const Spacer(),
-          if (onSettings != null)
-            IconButton(
-              tooltip: '设置',
-              onPressed: onSettings,
-              icon: const Icon(Icons.tune_rounded, size: 20),
-            )
-          else
-            Text(
-              '左滑会话',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: palette.textTertiary,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ModeChip extends StatelessWidget {
   const _ModeChip({
     required this.label,
@@ -712,36 +665,47 @@ class _ModeChip extends StatelessWidget {
         onTap();
       },
       borderRadius: BorderRadius.circular(DreamRadius.pill),
-      child: AnimatedContainer(
-        duration: DreamMotion.fast,
-        curve: DreamMotion.standard,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: active ? palette.brandSoft : Colors.transparent,
-          border: Border.all(
-            color: active ? primary.withValues(alpha: 0.45) : palette.border,
+      // 视觉仍是小药丸，命中区补到 44pt（omd:feel tap-target 规则）。
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Center(
+          child: AnimatedContainer(
+            duration: DreamMotion.fast,
+            curve: DreamMotion.standard,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: active ? palette.brandSoft : Colors.transparent,
+              border: Border.all(
+                color: active
+                    ? primary.withValues(alpha: 0.45)
+                    : palette.border,
+              ),
+              borderRadius: BorderRadius.circular(DreamRadius.pill),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: active ? primary : palette.textTertiary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  label,
+                  style:
+                      (theme.textTheme.labelSmall ??
+                              theme.textTheme.labelMedium)
+                          ?.copyWith(
+                            color: active ? primary : palette.textSecondary,
+                          ),
+                ),
+              ],
+            ),
           ),
-          borderRadius: BorderRadius.circular(DreamRadius.pill),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 5,
-              height: 5,
-              decoration: BoxDecoration(
-                color: active ? primary : palette.textTertiary,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: active ? primary : palette.textSecondary,
-              ),
-            ),
-          ],
         ),
       ),
     );
