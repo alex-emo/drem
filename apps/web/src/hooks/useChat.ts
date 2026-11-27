@@ -380,13 +380,33 @@ export function useChat() {
       let lastActivityAt = Date.now();
 
       // 隧道/代理常把 SSE 攒成一批送达；这里按时间把文本摊开显示。
+      // 不能用 setInterval：标签页隐藏后浏览器会把定时器节流到 1 次/分钟，
+      // 队列会看起来永久卡住。隐藏时直接落盘全部文本，可见时用 rAF 平滑。
       let pending = "";
-      let timer: number | null = null;
+      let frame: number | null = null;
+      let frameKind: "raf" | "timeout" | null = null;
       let streamEnded = false;
       let drainResolve: (() => void) | null = null;
       const drainPromise = new Promise<void>((resolve) => {
         drainResolve = resolve;
       });
+      const flushPending = () => {
+        if (!pending) return;
+        acc.content += pending;
+        pending = "";
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === assistantMessage.id ? { ...message, content: acc.content } : message,
+          ),
+        );
+      };
+      const cancelFrame = () => {
+        if (frame === null) return;
+        if (frameKind === "raf") window.cancelAnimationFrame(frame);
+        else window.clearTimeout(frame);
+        frame = null;
+        frameKind = null;
+      };
       const tick = () => {
         if (pending) {
           const take = pending.length > 160 ? 8 : pending.length > 60 ? 6 : 4;
@@ -398,28 +418,53 @@ export function useChat() {
             ),
           );
         }
-        if (!pending && streamEnded) {
-          if (timer !== null) window.clearInterval(timer);
-          timer = null;
+        if (pending) schedule();
+        else if (streamEnded) {
           drainResolve?.();
           drainResolve = null;
         }
       };
-      const ensureTimer = () => {
-        if (timer === null) timer = window.setInterval(tick, 30);
+      const schedule = () => {
+        if (frame !== null) return;
+        if (document.visibilityState === "hidden") {
+          flushPending();
+          return;
+        }
+        if (typeof window.requestAnimationFrame === "function") {
+          frameKind = "raf";
+          frame = window.requestAnimationFrame(() => {
+            frame = null;
+            frameKind = null;
+            tick();
+          });
+        } else {
+          frameKind = "timeout";
+          frame = window.setTimeout(() => {
+            frame = null;
+            frameKind = null;
+            tick();
+          }, 30);
+        }
       };
+      const onVisibilityChange = () => {
+        if (document.visibilityState === "hidden") {
+          flushPending();
+          cancelFrame();
+          return;
+        }
+        if (pending) schedule();
+        if (streamEnded && !pending) {
+          drainResolve?.();
+          drainResolve = null;
+        }
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
 
       // 用户点停止或上游长时间无数据时，立即结算，不能依赖 fetch abort 一定 reject。
       const settleNow = (reason: "stop" | "timeout") => {
         if (settled) return;
-        if (reason === "stop" && pending) {
-          acc.content += pending;
-          pending = "";
-        }
-        if (timer !== null) {
-          window.clearInterval(timer);
-          timer = null;
-        }
+        if (reason === "stop") flushPending();
+        cancelFrame();
         drainResolve?.();
         drainResolve = null;
         if (reason === "timeout") {
@@ -445,14 +490,11 @@ export function useChat() {
         settled = true;
         settleRef.current = null;
         window.clearInterval(watchdog);
+        cancelFrame();
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         if (deletedIdsRef.current.has(conversation.id)) {
           abortRef.current = null;
           return;
-        }
-        window.clearInterval(watchdog);
-        if (timer !== null) {
-          window.clearInterval(timer);
-          timer = null;
         }
         abortRef.current = null;
 
@@ -520,7 +562,7 @@ export function useChat() {
           onDelta: (chunk) => {
             lastActivityAt = Date.now();
             pending += chunk;
-            ensureTimer();
+            schedule();
           },
           onReasoning: (chunk) => {
             lastActivityAt = Date.now();
@@ -542,14 +584,13 @@ export function useChat() {
           },
         });
         streamEnded = true;
-        ensureTimer();
+        if (document.visibilityState === "hidden") flushPending();
         if (pending) await drainPromise;
-        if (timer !== null) window.clearInterval(timer);
+        cancelFrame();
         if (refused) await markBlocked();
         await finish(refused ? "refused" : "done");
       } catch (error) {
-        if (timer !== null) window.clearInterval(timer);
-        timer = null;
+        cancelFrame();
         if (error instanceof Error && error.name === "AbortError") {
           await finish("stopped");
         } else {
